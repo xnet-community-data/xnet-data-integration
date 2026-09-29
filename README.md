@@ -77,7 +77,7 @@ https://docs.google.com/spreadsheets/u/0/d/1NebqJ876SNlO4xPihfJWzsH-V0xzgeA-Qw8i
 
 https://docs.google.com/spreadsheets/d/1NebqJ876SNlO4xPihfJWzsH-V0xzgeA-Qw8i5VcHDU4/export?format=csv&gid=1205842263
 
-For revenue calculations, use the spreadsheet's **`GB per month`** series. Do **not** substitute the daily network-offload API's GB series. They represent different source series and must remain separate in downstream models.
+For revenue calculations, use the spreadsheet's **`GB per month`** series. 
 
 Relevant spreadsheet rows include:
 
@@ -98,7 +98,6 @@ Relevant spreadsheet rows include:
 
 `WiFi Payment (Received)` is the separate payment-received series.
 
-A third-party provider should map these fields to its own definitions only after confirming that provider's accounting methodology. For example, a platform's definition of protocol revenue may differ from the spreadsheet's projected WiFi revenue.
 
 ## 4. Revenue settlement pipeline
 

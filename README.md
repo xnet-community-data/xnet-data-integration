@@ -1,0 +1,204 @@
+# XNET Public Data Integration Guide
+
+> **Community-maintained resource.** This repository documents public and project-supplied XNET data sources for third-party analytics integrations. It is not an official XNET corporate repository. The linked upstream sources remain the source of truth.
+
+**Purpose:** a compact source-of-truth for third-party data providers integrating XNET network, device, revenue and on-chain metrics.
+
+**Last validated:** 29 September 2026
+
+This guide points providers to the upstream public sources. It is not intended to replace those sources. Integrations should fetch the source data directly and preserve the distinctions between network usage, billing/revenue data and on-chain activity.
+
+## Quick reference
+
+| Metric | Source | Format | Authentication |
+| --- | --- | --- | --- |
+| Network offload | `https://xnet-offload-scraper.vercel.app` | JSON | None observed |
+| Total and operational devices | `https://xnet-total-devices-api.vercel.app` | JSON | None observed |
+| Revenue and billing GB | XNET public revenue spreadsheet | Google Sheet / CSV | Public |
+| Token, burns, transfers and liquidity | Solana | On-chain | Public |
+| Market price | Provider's preferred market source | Market data | Provider-specific |
+
+## 1. Network offload
+
+**Base URL**
+
+`https://xnet-offload-scraper.vercel.app`
+
+This feed reports daily network offload in gigabytes.
+
+| Endpoint | Purpose |
+| --- | --- |
+| `/api/data` | All stored daily records, newest first |
+| `/api/latest` | Newest available daily record |
+| `/api/data?days=N` | Records for the last N calendar days, including the current day |
+| `/api/summary?days=N` | Total, daily average, date range and record count |
+| `/api/data?start=YYYY-MM-DD&end=YYYY-MM-DD` | Inclusive date-range query |
+
+Core fields are `day`, `gigabytes` and `formattedGigabytes`. Use `gigabytes` for calculations. `formattedGigabytes` is display text.
+
+### Integration note
+
+The current calendar day's record may be incomplete while traffic is still accumulating. For a finalized headline daily metric, use the latest completed calendar day rather than assuming `/api/latest` is a closed period.
+
+Do not fill a missing day with zero unless XNET explicitly defines the missing observation as zero.
+
+The API does not expose timezone metadata. Preserve the returned `day` value rather than applying an assumed timezone conversion.
+
+## 2. Total and operational devices
+
+**Base URL**
+
+`https://xnet-total-devices-api.vercel.app`
+
+| Endpoint | Purpose |
+| --- | --- |
+| `/api/latest` | Latest total and operational device counts with scrape timestamps |
+| `/api/history?limit=N` | Historical observations, newest first. Supported limit: 1 to 100 |
+
+Core fields:
+
+- `scrapeDate` — observation date
+- `scrapeTime` — upstream scrape timestamp
+- `totalDevices` — total device count reported by the feed
+- `totalOperational` — operational device count reported by the feed
+- `createdAt` — API record creation timestamp
+
+Preserve the upstream term **operational**. Do not silently relabel it as "active in the last 24 hours", "online", or another activity-window definition unless XNET publishes that definition.
+
+Historical observations are scrape records, not a guaranteed gap-free daily series. A missing observation must not be treated as zero devices.
+
+## 3. Revenue and billing GB
+
+**Human-readable sheet**
+
+https://docs.google.com/spreadsheets/u/0/d/1NebqJ876SNlO4xPihfJWzsH-V0xzgeA-Qw8i5VcHDU4/htmlview?pli=1#gid=1205842263
+
+**Machine-readable CSV export**
+
+https://docs.google.com/spreadsheets/d/1NebqJ876SNlO4xPihfJWzsH-V0xzgeA-Qw8i5VcHDU4/export?format=csv&gid=1205842263
+
+For revenue calculations, use the spreadsheet's **`GB per month`** series. Do **not** substitute the daily network-offload API's GB series. They represent different source series and must remain separate in downstream models.
+
+Relevant spreadsheet rows include:
+
+- `GB per month`
+- `WiFi Revenue (Projected)`
+- `Blended Rate per GB (Projected)`
+- `WiFi Payment (Received)`
+- `WiFi Payment Date`
+- `Total Emitted Tokens`
+- `Projected Buy & Burn`
+- `Transferred to Buy & Burn`
+- `Transferred to Fiat Operators`
+- `Balance Outstanding to Transfer`
+
+### Revenue classification
+
+`WiFi Revenue (Projected)` is a projected source figure. It should not be presented as cash received or verified realized revenue.
+
+`WiFi Payment (Received)` is the separate payment-received series.
+
+A third-party provider should map these fields to its own definitions only after confirming that provider's accounting methodology. For example, a platform's definition of protocol revenue may differ from the spreadsheet's projected WiFi revenue.
+
+## 4. Revenue settlement pipeline
+
+The revenue spreadsheet represents several different stages of the revenue and Buy & Burn process. They should not be collapsed into a single same-month metric.
+
+The practical flow is:
+
+`GB per month`
+→ `WiFi Revenue (Projected)`
+→ `WiFi Payment (Received)`
+→ `Transferred to Buy & Burn`
+→ on-chain BBB, liquidity and burn activity
+
+There is a settlement delay between projected WiFi revenue and cash being received. Historically, payments have commonly arrived roughly two months after the underlying revenue period, although the exact delay varies.
+
+A further timing difference can exist between payment receipt and funds being transferred into the Buy & Burn process.
+
+For this reason:
+
+- do not treat projected revenue as cash already received
+- do not treat a month's projected revenue as that same month's Buy & Burn transfer
+- do not derive BBB transfers directly from daily network-offload GB
+- use the spreadsheet's `GB per month` series for the revenue calculation basis
+- preserve `WiFi Payment (Received)` as a separate settlement-stage metric
+- preserve `Transferred to Buy & Burn` as a separate downstream cash-flow metric
+- preserve `Transferred to Fiat Operators` separately as that route becomes used
+- treat `Balance Outstanding to Transfer` as the source spreadsheet's outstanding-transfer accounting field
+
+Blank spreadsheet cells should be treated as **null / not reported**, not automatically converted to zero.
+
+## 5. On-chain data
+
+XNET is on Solana.
+
+**Current XNET mint**
+
+`xNETbUB7cRb3AAu2pNG2pUwQcJ2BHcktfvSB8x1Pq6L`
+
+### Burn and BBB wallets
+
+The public XNET revenue spreadsheet lists the following addresses under **XNET Burn Wallets**:
+
+- `6UE1gdvgFPbu8REp5YWKRkC5CZiXgwd7iEfTAqwbzUqV`
+- `B9SXSuPwpzmYUgk1GRfuW9R9QDMJ6P9SfTybSoawHiLj`
+- `5QsyByFVJcg7oN76Ma26KEDFQdHt1tsiVExK94zURzfd`
+
+The address ending `URzfd` is additionally identified by current community on-chain analysis as the **current primary BBB/liquidity wallet**.
+
+That BBB/liquidity role is a community-derived classification rather than an explicit role label in the revenue spreadsheet. Because the address is used in the BBB/liquidity flow, an inbound transfer should not automatically be classified as a completed burn. Providers should inspect the subsequent Solana transactions when distinguishing funding, liquidity activity and completed burns.
+
+For token supply, transfers, burns, treasury movements, DEX liquidity and other chain-native metrics, providers should derive the metric from Solana rather than copying a dashboard snapshot where practical.
+
+Market data can be sourced independently. CoinGecko currently lists XNET Mobile under `xnet-mobile-2`:
+
+https://www.coingecko.com/en/coins/xnet-mobile-2
+
+## 6. Metric separation
+
+The following distinctions are deliberate and should be preserved:
+
+| Metric | Use |
+| --- | --- |
+| Daily offload API GB | Network usage and offload reporting |
+| Revenue-sheet `GB per month` | Revenue and billing calculations |
+| `WiFi Revenue (Projected)` | Projected revenue only |
+| `WiFi Payment (Received)` | Recorded payments received |
+| `totalDevices` | Total devices from the device feed |
+| `totalOperational` | Operational devices from the device feed |
+| Solana transactions | On-chain token, burn, treasury and liquidity analytics |
+
+Do not derive revenue by multiplying daily-offload API GB by the spreadsheet rate. Revenue calculations should use the monthly revenue-sheet GB series.
+
+## 7. Validation snapshot
+
+A full endpoint check was run on 29 September 2026.
+
+- Offload `/api/data` returned HTTP 200 and 793 records.
+- The offload history covered 29 July 2024 through 29 September 2026 with one unique record for every calendar day in that interval.
+- Offload `/api/latest`, `?days=1`, seven-day summary and explicit date-range queries all returned HTTP 200.
+- Device `/api/latest` returned 6,629 total devices and 5,839 operational devices.
+- Device history returned valid results at limits 1, 30 and 100.
+- The Google Sheet CSV export returned HTTP 200 and the expected revenue rows.
+
+These values are a validation snapshot, not fixed network constants. Consumers should query the live sources.
+
+
+## 8. Project references
+
+- XNET website: https://www.xnetmobile.com/
+- XNET contact: https://www.xnetmobile.com/contact
+
+For source ownership, commercial definitions or formal project confirmation, third-party providers should use XNET's official contact channels.
+
+---
+
+### Maintenance principle
+
+Keep this document small. When an upstream schema or definition changes, update the source definition here and avoid creating a second competing copy of the metric.
+
+
+### API consumption
+
+No public SLA or rate-limit policy is currently documented for the network endpoints. Third-party consumers should cache responses and poll at a reasonable frequency rather than making unnecessarily frequent requests.

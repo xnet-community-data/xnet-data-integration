@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="Public XNET data sources for third-party integrations.">
+<title>XNET Public Data Integration Guide</title>
+<style>
+:root {
+  --bg:#f6f7f8; --paper:#ffffff; --ink:#111418; --muted:#66707a;
+  --line:#e3e7eb; --accent:#167d63; --accent-soft:#e9f5f1;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+main{max-width:980px;margin:48px auto;padding:0 22px 70px}
+header{background:var(--paper);border:1px solid var(--line);border-radius:16px;padding:34px 36px;margin-bottom:22px}
+.eyebrow{font-weight:700;letter-spacing:.08em;text-transform:uppercase;font-size:12px;color:var(--accent)}
+h1{font-size:36px;line-height:1.15;margin:8px 0 12px}
+.lede{font-size:18px;color:#39434c;max-width:760px}
+.badges{display:flex;gap:9px;flex-wrap:wrap;margin-top:18px}
+.badge{display:inline-block;padding:5px 10px;border-radius:999px;background:var(--accent-soft);color:#105f4d;font-size:13px;font-weight:650}
+section{background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:28px 30px;margin:18px 0}
+h2{font-size:22px;margin:0 0 14px} h3{font-size:16px;margin:24px 0 8px}
+p{margin:10px 0} code{background:#f1f3f5;border:1px solid #e7eaed;border-radius:5px;padding:2px 5px;font-size:.93em}
+pre{overflow:auto;background:#11161a;color:#eef5f2;border-radius:10px;padding:16px}
+a{color:var(--accent);text-decoration:none} a:hover{text-decoration:underline}
+table{width:100%;border-collapse:collapse;margin:14px 0 4px}
+th,td{text-align:left;vertical-align:top;border-bottom:1px solid var(--line);padding:10px 9px}
+th{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
+.note{border-left:3px solid var(--accent);padding:9px 13px;background:var(--accent-soft);border-radius:0 8px 8px 0}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.stat{border:1px solid var(--line);border-radius:10px;padding:15px}
+.stat strong{display:block;font-size:23px;line-height:1.2} .stat span{color:var(--muted);font-size:13px}
+footer{color:var(--muted);font-size:13px;padding:14px 4px}
+@media(max-width:720px){h1{font-size:30px}header,section{padding:24px 20px}.grid{grid-template-columns:1fr}table{font-size:13px}}
+</style>
+</head>
+<body>
+<main>
+<header>
+  <div class="eyebrow">XNET · Data integration</div>
+  <p style="margin:0 0 12px;color:#66707a;font-size:13px">Community-maintained integration reference · upstream XNET sources remain the source of truth</p>
+  <h1>Public data sources</h1>
+  <p class="lede">A concise reference for data providers integrating XNET network usage, device counts, revenue data and on-chain metrics.</p>
+  <div class="badges">
+    <span class="badge">Validated 29 Sep 2026</span>
+    <span class="badge">Public read-only sources</span>
+    <span class="badge">Solana</span>
+  </div>
+</header>
+
+<section>
+<h2>Source map</h2>
+<table>
+<thead><tr><th>Metric</th><th>Source</th><th>Format</th></tr></thead>
+<tbody>
+<tr><td>Network offload</td><td><a href="https://xnet-offload-scraper.vercel.app">https://xnet-offload-scraper.vercel.app</a></td><td>JSON</td></tr>
+<tr><td>Total + operational devices</td><td><a href="https://xnet-total-devices-api.vercel.app">https://xnet-total-devices-api.vercel.app</a></td><td>JSON</td></tr>
+<tr><td>Revenue + billing GB</td><td><a href="https://docs.google.com/spreadsheets/u/0/d/1NebqJ876SNlO4xPihfJWzsH-V0xzgeA-Qw8i5VcHDU4/htmlview?pli=1#gid=1205842263">XNET public revenue spreadsheet</a></td><td>Sheet / CSV</td></tr>
+<tr><td>Token + burns + transfers + liquidity</td><td>Solana</td><td>On-chain</td></tr>
+</tbody>
+</table>
+</section>
+
+<section>
+<h2>Network offload</h2>
+<p><code>https://xnet-offload-scraper.vercel.app</code></p>
+<table>
+<tr><td><code>/api/data</code></td><td>All stored daily records, newest first</td></tr>
+<tr><td><code>/api/latest</code></td><td>Newest available daily record</td></tr>
+<tr><td><code>/api/data?days=N</code></td><td>Last N calendar days including the current day</td></tr>
+<tr><td><code>/api/summary?days=N</code></td><td>Total, average, range and count</td></tr>
+<tr><td><code>/api/data?start=YYYY-MM-DD&amp;end=YYYY-MM-DD</code></td><td>Inclusive date range</td></tr>
+</table>
+<p>Use the numeric <code>gigabytes</code> field for calculations.</p>
+<p class="note"><strong>Important:</strong> the current calendar day's value may be incomplete. Do not use it as a finalized full-day metric. Missing dates should not be converted to zero unless XNET defines them that way.</p>
+</section>
+
+<section>
+<h2>Devices</h2>
+<p><code>https://xnet-total-devices-api.vercel.app</code></p>
+<table>
+<tr><td><code>/api/latest</code></td><td>Latest <code>totalDevices</code> and <code>totalOperational</code></td></tr>
+<tr><td><code>/api/history?limit=N</code></td><td>Historical scrape observations, newest first. N = 1–100.</td></tr>
+</table>
+<p>Preserve the upstream term <strong>operational</strong>. Do not impose an undocumented activity window.</p>
+</section>
+
+<section>
+<h2>Revenue</h2>
+<p><a href="https://docs.google.com/spreadsheets/u/0/d/1NebqJ876SNlO4xPihfJWzsH-V0xzgeA-Qw8i5VcHDU4/htmlview?pli=1#gid=1205842263">Open the human-readable revenue sheet</a> · <a href="https://docs.google.com/spreadsheets/d/1NebqJ876SNlO4xPihfJWzsH-V0xzgeA-Qw8i5VcHDU4/export?format=csv&gid=1205842263">CSV export</a></p>
+<p>For revenue calculations, use the spreadsheet's <code>GB per month</code> series. The daily offload API is a separate network-usage series and must not be substituted for billing/revenue GB.</p>
+<table>
+<tr><td><code>WiFi Revenue (Projected)</code></td><td>Projected source figure. Not the same as cash received.</td></tr>
+<tr><td><code>WiFi Payment (Received)</code></td><td>Separate recorded payment-received series.</td></tr>
+<tr><td><code>Blended Rate per GB (Projected)</code></td><td>Projected rate used in the source sheet.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>Revenue settlement pipeline</h2>
+
+<p>The spreadsheet records different stages of the revenue and Buy &amp; Burn process. These should not be treated as a single same-month metric.</p>
+
+<div class="note">
+<strong>Flow:</strong><br>
+Billing GB → Projected WiFi revenue → Payment received → Transfer to Buy &amp; Burn → on-chain BBB / liquidity / burn activity
+</div>
+
+<p>Historically, WiFi payments have commonly been received roughly two months after the underlying revenue period, although the exact settlement timing varies. A further timing difference can occur before funds are transferred into the Buy &amp; Burn process.</p>
+
+<table>
+<tr><td><code>GB per month</code></td><td>Revenue/billing usage basis</td></tr>
+<tr><td><code>WiFi Revenue (Projected)</code></td><td>Projected revenue for the source period</td></tr>
+<tr><td><code>WiFi Payment (Received)</code></td><td>Cash settlement recorded later</td></tr>
+<tr><td><code>Transferred to Buy &amp; Burn</code></td><td>Funds subsequently moved into the BBB process</td></tr>
+<tr><td><code>Transferred to Fiat Operators</code></td><td>Separate operator-payment route; preserve independently</td></tr>
+<tr><td><code>Balance Outstanding to Transfer</code></td><td>Spreadsheet accounting field for remaining transfer balance</td></tr>
+</table>
+
+<p class="note"><strong>Do not assume same-month matching.</strong> Projected revenue, received payments and BBB transfers are different stages with settlement timing between them. Blank spreadsheet cells should be treated as null / not reported rather than automatically converted to zero.</p>
+</section>
+
+<section>
+<h2>On-chain reference</h2>
+<p>XNET is on Solana. Current mint:</p>
+<pre>xNETbUB7cRb3AAu2pNG2pUwQcJ2BHcktfvSB8x1Pq6L</pre>
+
+<h3>Burn and BBB wallets</h3>
+
+<p>The public XNET revenue spreadsheet lists these addresses under <strong>XNET Burn Wallets</strong>:</p>
+
+<table>
+<tr>
+<td><code>6UE1gdvgFPbu8REp5YWKRkC5CZiXgwd7iEfTAqwbzUqV</code></td>
+<td>XNET Burn Wallet</td>
+</tr>
+<tr>
+<td><code>B9SXSuPwpzmYUgk1GRfuW9R9QDMJ6P9SfTybSoawHiLj</code></td>
+<td>XNET Burn Wallet</td>
+</tr>
+<tr>
+<td><code>5QsyByFVJcg7oN76Ma26KEDFQdHt1tsiVExK94zURzfd</code></td>
+<td>XNET Burn Wallet · community-observed current primary BBB/liquidity wallet</td>
+</tr>
+</table>
+
+<p class="note"><strong>Classification note:</strong> the current primary BBB/liquidity role for the address ending <code>URzfd</code> comes from community on-chain analysis. The revenue spreadsheet itself labels it as an XNET Burn Wallet. Because the address is used in the BBB/liquidity flow, an inbound transfer should not automatically be interpreted as a completed burn.</p>
+<p>Chain-native metrics such as supply, transfers, burns, treasury movements and DEX liquidity should be derived from Solana where practical. Market data is also available from <a href="https://www.coingecko.com/en/coins/xnet-mobile-2">CoinGecko</a>.</p>
+</section>
+
+<section>
+<h2>Integration rules</h2>
+<table>
+<tr><td>Network usage</td><td>Use the daily offload API.</td></tr>
+<tr><td>Revenue calculations</td><td>Use the revenue sheet's monthly GB series.</td></tr>
+<tr><td>Projected revenue</td><td>Do not present as realized cash revenue.</td></tr>
+<tr><td>Payments received</td><td>Keep separate from projected revenue.</td></tr>
+<tr><td>Device counts</td><td>Use <code>totalDevices</code> and <code>totalOperational</code> as labelled.</td></tr>
+<tr><td>Missing observations</td><td>Do not zero-fill without a source definition.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>Validation snapshot</h2>
+<div class="grid">
+<div class="stat"><strong>793</strong><span>offload records</span></div>
+<div class="stat"><strong>6,629</strong><span>total devices</span></div>
+<div class="stat"><strong>5,839</strong><span>operational devices</span></div>
+</div>
+<p>On 29 September 2026, all documented offload endpoints returned HTTP 200, device history worked at limits 1, 30 and 100, and the public revenue-sheet CSV export returned HTTP 200 with the expected rows.</p>
+<p>These figures are a dated test snapshot. Consumers should query the live sources.</p>
+</section>
+
+<section>
+<h2>Project references</h2>
+<p><a href="https://www.xnetmobile.com/">XNET website</a> · <a href="https://www.xnetmobile.com/contact">Official contact page</a></p>
+<p>For formal source ownership, commercial definitions or project confirmation, use XNET's official contact channels.</p>
+</section>
+
+<footer>Prepared as a provider-facing integration reference. Upstream sources remain the source of truth.</footer>
+</main>
+</body>
+</html>

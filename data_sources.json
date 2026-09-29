@@ -1,0 +1,162 @@
+{
+  "project": {
+    "name": "XNET",
+    "website": "https://www.xnetmobile.com/",
+    "chain": "Solana",
+    "token_symbol": "XNET",
+    "solana_mint": "xNETbUB7cRb3AAu2pNG2pUwQcJ2BHcktfvSB8x1Pq6L",
+    "coingecko_id": "xnet-mobile-2"
+  },
+  "last_validated": "2026-09-29",
+  "sources": {
+    "network_offload": {
+      "status": "project-supplied public integration endpoint",
+      "base_url": "https://xnet-offload-scraper.vercel.app",
+      "authentication": "none observed as of 2026-09-29",
+      "unit": "GB",
+      "primary_numeric_field": "gigabytes",
+      "endpoints": [
+        {
+          "path": "/api/data",
+          "method": "GET",
+          "purpose": "all stored daily records, newest first"
+        },
+        {
+          "path": "/api/latest",
+          "method": "GET",
+          "purpose": "newest available daily record"
+        },
+        {
+          "path": "/api/data?days=N",
+          "method": "GET",
+          "purpose": "last N calendar days including current day"
+        },
+        {
+          "path": "/api/summary?days=N",
+          "method": "GET",
+          "purpose": "period total, average, range and record count"
+        },
+        {
+          "path": "/api/data?start=YYYY-MM-DD&end=YYYY-MM-DD",
+          "method": "GET",
+          "purpose": "inclusive date range"
+        }
+      ],
+      "notes": [
+        "Current-day values may be incomplete.",
+        "Do not treat missing dates as zero without an explicit source definition.",
+        "Timezone metadata is not exposed by the API.",
+        "No public SLA or rate-limit policy is documented; cache responses and poll at a reasonable frequency."
+      ]
+    },
+    "devices": {
+      "status": "project-supplied public integration endpoint",
+      "base_url": "https://xnet-total-devices-api.vercel.app",
+      "authentication": "none observed as of 2026-09-29",
+      "fields": [
+        "scrapeDate",
+        "scrapeTime",
+        "totalDevices",
+        "totalOperational",
+        "createdAt"
+      ],
+      "endpoints": [
+        {
+          "path": "/api/latest",
+          "method": "GET",
+          "purpose": "latest total and operational device counts"
+        },
+        {
+          "path": "/api/history?limit=N",
+          "method": "GET",
+          "purpose": "historical scrape observations",
+          "limit_min": 1,
+          "limit_max": 100
+        }
+      ],
+      "notes": [
+        "Preserve the source term operational.",
+        "Historical scrape dates are not guaranteed to be gap-free.",
+        "Do not interpret a missing observation as zero devices."
+      ]
+    },
+    "revenue": {
+      "status": "public XNET revenue source",
+      "human_url": "https://docs.google.com/spreadsheets/u/0/d/1NebqJ876SNlO4xPihfJWzsH-V0xzgeA-Qw8i5VcHDU4/htmlview?pli=1#gid=1205842263",
+      "csv_url": "https://docs.google.com/spreadsheets/d/1NebqJ876SNlO4xPihfJWzsH-V0xzgeA-Qw8i5VcHDU4/export?format=csv&gid=1205842263",
+      "sheet_gid": "1205842263",
+      "revenue_basis": "Use the spreadsheet GB per month series for revenue calculations.",
+      "do_not_substitute": "Do not substitute daily network-offload API GB for revenue-sheet GB.",
+      "rows": [
+        "GB per month",
+        "WiFi Revenue (Projected)",
+        "Blended Rate per GB (Projected)",
+        "WiFi Payment (Received)",
+        "WiFi Payment Date",
+        "Total Emitted Tokens",
+        "Projected Buy & Burn",
+        "Transferred to Buy & Burn",
+        "Transferred to Fiat Operators",
+        "Balance Outstanding to Transfer"
+      ],
+      "pipeline": {
+        "stages": [
+          "GB per month",
+          "WiFi Revenue (Projected)",
+          "WiFi Payment (Received)",
+          "Transferred to Buy & Burn",
+          "on-chain BBB/liquidity/burn activity"
+        ],
+        "settlement_note": "Projected revenue and received payments are separate stages. Historical settlement has commonly involved a delay of roughly two months, although timing varies. Do not assume a same-month mapping.",
+        "bbb_transfer_note": "Transferred to Buy & Burn is a downstream cash-flow field and should not be inferred directly from projected revenue or daily offload GB.",
+        "fiat_operator_note": "Transferred to Fiat Operators should remain a separate field. Blank historical cells are null/not reported, not automatically zero.",
+        "outstanding_transfer_note": "Balance Outstanding to Transfer is the spreadsheet's source accounting field for funds still outstanding for transfer at that point in the schedule."
+      },
+      "blank_cell_semantics": "Treat blank cells as null/not reported unless the upstream source explicitly defines zero."
+    },
+    "onchain": {
+      "chain": "Solana",
+      "mint": "xNETbUB7cRb3AAu2pNG2pUwQcJ2BHcktfvSB8x1Pq6L",
+      "guidance": "Derive chain-native metrics directly from Solana where practical.",
+      "burn_wallets": [
+        {
+          "address": "6UE1gdvgFPbu8REp5YWKRkC5CZiXgwd7iEfTAqwbzUqV",
+          "source_label": "XNET Burn Wallets",
+          "classification_source": "public XNET revenue spreadsheet"
+        },
+        {
+          "address": "B9SXSuPwpzmYUgk1GRfuW9R9QDMJ6P9SfTybSoawHiLj",
+          "source_label": "XNET Burn Wallets",
+          "classification_source": "public XNET revenue spreadsheet"
+        },
+        {
+          "address": "5QsyByFVJcg7oN76Ma26KEDFQdHt1tsiVExK94zURzfd",
+          "source_label": "XNET Burn Wallets",
+          "classification_source": "public XNET revenue spreadsheet",
+          "community_observed_role": "current primary BBB/liquidity wallet",
+          "role_note": "The primary BBB/liquidity classification is community-derived. Do not classify every inbound transfer as a completed burn."
+        }
+      ]
+    }
+  },
+  "validation_snapshot": {
+    "date": "2026-09-29",
+    "offload": {
+      "records": 793,
+      "oldest_day": "2024-07-29",
+      "newest_day": "2026-09-29",
+      "unique_consecutive_calendar_days": 793
+    },
+    "devices": {
+      "scrape_date": "2026-09-29",
+      "total_devices": 6629,
+      "total_operational": 5839,
+      "history_limits_tested": [
+        1,
+        30,
+        100
+      ]
+    },
+    "revenue_csv_export": "HTTP 200; expected rows present"
+  }
+}

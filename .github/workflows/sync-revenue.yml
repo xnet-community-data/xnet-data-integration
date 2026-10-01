@@ -1,0 +1,44 @@
+name: Sync XNET revenue data
+
+on:
+  workflow_dispatch:
+
+  schedule:
+    - cron: "17 9 * * *"
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Fetch and normalize revenue sheet
+        run: python scripts/sync_revenue.py
+
+      - name: Commit source changes
+        shell: bash
+        run: |
+          if git diff --quiet -- data/xnet_revenue_sheet_raw.csv data/xnet_revenue_monthly.json; then
+            echo "Revenue source unchanged."
+            exit 0
+          fi
+
+          git config user.name "XNET Community Data"
+          git config user.email "335743616+xnet-community-data@users.noreply.github.com"
+
+          git add \
+            data/xnet_revenue_sheet_raw.csv \
+            data/xnet_revenue_monthly.json
+
+          git commit -m "Update XNET revenue data"
+          git push

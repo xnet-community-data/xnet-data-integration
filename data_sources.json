@@ -112,7 +112,21 @@
         "fiat_operator_note": "Transferred to Fiat Operators should remain a separate field. Blank historical cells are null/not reported, not automatically zero.",
         "outstanding_transfer_note": "Balance Outstanding to Transfer is the spreadsheet's source accounting field for funds still outstanding for transfer at that point in the schedule."
       },
-      "blank_cell_semantics": "Treat blank cells as null/not reported unless the upstream source explicitly defines zero."
+      "blank_cell_semantics": "Treat blank cells as null/not reported unless the upstream source explicitly defines zero.",
+      "derived_feeds": {
+        "defillama_revenue": {
+          "path": "data/xnet_defillama_revenue.json",
+          "generator": "scripts/build_defillama_revenue.py",
+          "accounting_basis": "settlement-confirmed service revenue",
+          "notes": [
+            "The feed reconciles carrier cash receipts to their underlying service month or contiguous service months where uniquely supported.",
+            "Service-period attribution and cash-settlement dates are both preserved.",
+            "Unattributed payments remain visible but are excluded from recognized DeFiLlama revenue.",
+            "Projected but unsettled WiFi revenue is excluded.",
+            "The DeFiLlama adapter uses settlement dates for ingestion while preserving service-month provenance in this feed."
+          ]
+        }
+      }
     },
     "onchain": {
       "chain": "Solana",

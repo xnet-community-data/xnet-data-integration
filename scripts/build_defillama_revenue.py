@@ -286,6 +286,39 @@ def main():
         "schema_version": 1,
         "accounting_basis": "settled_service_period",
         "source": source["source"],
+        "policy_regimes": [
+            {
+                "effective_from": "2024-09-30",
+                "effective_to": "2025-05-21",
+                "holders_revenue_pct": 80,
+                "protocol_revenue_pct": 20,
+                "protocol_revenue_breakdown_pct": {
+                    "operations": 20,
+                    "protocol_owned_liquidity": 0,
+                },
+                "description": (
+                    "Historical allocation: 80% of carrier service revenue "
+                    "allocated to XNET market buyback-and-burn and 20% to "
+                    "operations."
+                ),
+            },
+            {
+                "effective_from": "2025-05-22",
+                "effective_to": None,
+                "holders_revenue_pct": 60,
+                "protocol_revenue_pct": 40,
+                "protocol_revenue_breakdown_pct": {
+                    "operations": 20,
+                    "protocol_owned_liquidity": 20,
+                },
+                "description": (
+                    "XIP-12 allocation: 60% of carrier service revenue "
+                    "continues to XNET market buyback-and-burn, 20% is "
+                    "allocated to protocol-owned liquidity to bolster XNET "
+                    "liquidity, and 20% remains allocated to operations."
+                ),
+            },
+        ],
         "methodology": {
             "fees": (
                 "Carrier WiFi service revenue is recognized only after "
@@ -304,21 +337,40 @@ def main():
                 "Payments without sufficient date or service-period "
                 "evidence remain unattributed and are excluded."
             ),
+            "policy_allocation": (
+                "For DeFiLlama policy-based allocation, recognized service "
+                "periods before 2025-05-22 use the historical 80% "
+                "Holders Revenue / 20% Protocol Revenue split. Recognized "
+                "service periods from 2025-05-22 use the XIP-12 60% "
+                "Holders Revenue / 40% Protocol Revenue split, with the "
+                "40% Protocol Revenue comprising 20% protocol-owned "
+                "liquidity and 20% operations."
+            ),
             "protocol_revenue": (
-                "Not emitted in DeFiLlama v1 because the source now "
-                "reports fiat-operator transfers and their exact "
-                "service-period attribution and transfer dates are not "
-                "yet established."
+                "Policy-derived Protocol Revenue is 20% of carrier "
+                "service revenue under the historical allocation. From "
+                "2025-05-22 under XIP-12 it is 40%: 20% for operations "
+                "and 20% for protocol-owned liquidity. The liquidity "
+                "allocation remains Protocol Revenue even when part of it "
+                "is used to acquire XNET for the XNET side of the "
+                "protocol-owned liquidity position."
             ),
             "supply_side_revenue": (
-                "Fiat-operator transfers are preserved separately but "
-                "are not assigned to a DeFiLlama day until their timing "
-                "and service attribution can be verified."
+                "No Supply-side Revenue is estimated from the policy "
+                "allocation used by the covered adapter history. Reported "
+                "fiat-operator transfers are preserved separately and are "
+                "not assigned to service periods until their timing and "
+                "service attribution can be independently established."
             ),
             "holders_revenue": (
-                "Not estimated from policy percentages. XNET token "
-                "buybacks, burns and liquidity purchases should be "
-                "measured from actual on-chain execution."
+                "Policy-derived Holders Revenue is historically 80% "
+                "of carrier service revenue allocated to XNET market "
+                "buyback-and-burn. From 2025-05-22 under XIP-12, 60% "
+                "continues to fund XNET buyback-and-burn while 20 "
+                "percentage points were redirected to protocol-owned "
+                "liquidity to bolster XNET liquidity. These percentages "
+                "represent policy allocation rather than measured "
+                "on-chain execution amounts."
             ),
         },
         "totals": {

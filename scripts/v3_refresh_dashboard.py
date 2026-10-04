@@ -91,6 +91,8 @@ def execute(spec, params=None):
         raise RuntimeError(f"Execution {execution_id} has no cost metadata.")
     record = {"query_id": spec["query_id"], "execution_id": execution_id,
         "execution_cost_credits": float(cost), "completed_at_utc": stamp(),
+        "execution_started_at": status.get("execution_started_at"),
+        "execution_ended_at": status.get("execution_ended_at"),
         "result_metadata": status.get("result_metadata", {}), "billing": usage}
     if status["state"] != "QUERY_STATE_COMPLETED":
         raise RuntimeError(f"Execution {execution_id}: {status['state']}; no automatic retry.")
@@ -153,6 +155,8 @@ def main():
     parser.add_argument("--resume", action="store_true", help="Explicitly clear a reviewed pause; never used by cron")
     parser.add_argument("--benchmark", action="store_true", help="Measure query costs without changing canonical state")
     parser.add_argument("--benchmark-sources", action="store_true", help="Measure bounded sources only")
+    parser.add_argument("--benchmark-batches", type=int, choices=range(1, 4), default=1)
+    parser.add_argument("--benchmark-repetitions", type=int, choices=range(1, 7), default=1)
     args = parser.parse_args()
     if args.benchmark or args.benchmark_sources:
         records = []
@@ -160,10 +164,15 @@ def main():
         specs = sorted(CONFIG["presentation"], key=lambda spec: spec["query_id"] != 8895092) + CONFIG["sources"]
         if args.benchmark_sources:
             specs = CONFIG["sources"]
-        for spec in specs:
-            records.append({"key": spec["key"], **execute(spec)})
-            save(ROOT / "state/v3_credit_benchmark.json", {"generated_at_utc": stamp(), "performance": CONFIG["performance"], "queries": records})
-            print(spec["key"], records[-1]["execution_cost_credits"], "credits", flush=True)
+        for batch in range(1, args.benchmark_batches + 1):
+            for repetition in range(1, args.benchmark_repetitions + 1):
+                for spec in specs:
+                    params = {"lookback_hours": 2} if spec in CONFIG["sources"] else None
+                    records.append({"batch": batch, "repetition": repetition,
+                        "key": spec["key"], "lookback_hours": 2 if params else None,
+                        **execute(spec, params)})
+                    save(ROOT / "state/v3_credit_benchmark.json", {"generated_at_utc": stamp(), "performance": CONFIG["performance"], "queries": records})
+                    print(batch, repetition, spec["key"], records[-1]["execution_cost_credits"], "credits", flush=True)
         return 0
     state = load(STATE, {"schema_version": 1, "queries": {}})
     if state.get("paused") and not args.resume:

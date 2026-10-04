@@ -513,6 +513,16 @@ for row in burn_rows:
     )
 
 supply_rows = load(DATA / "xnet_supply_history.json")
+# The daily ledger is updated by each chain collection. Rebuild its absolute
+# values here as well so publication cannot serve an older history file.
+checkpoint = load(ROOT / "config/xnet_supply_checkpoint.json")
+rolling_supply = D(checkpoint["checkpoint_circulating_supply_xnet"])
+with (DATA / "xnet_supply_daily.csv").open() as supply_file:
+    supply_rows = []
+    for row in csv.DictReader(supply_file):
+        if row["day"] > checkpoint["checkpoint_date"]:
+            rolling_supply += D(row["circulation_change_xnet"])
+            supply_rows.append({**row, "circulating_supply_xnet": str(rolling_supply)})
 historical_path = DATA / "history/circulating_supply_seed.json"
 if historical_path.exists():
     combined = {r["day"]: r for r in load(historical_path)["data"]}

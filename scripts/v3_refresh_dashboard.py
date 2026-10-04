@@ -35,7 +35,7 @@ def save(path, value):
     tmp.write_text(json.dumps(value, indent=2) + "\n")
     tmp.replace(path)
 
-def api(path, payload=None):
+def api(path, payload=None, include_wire_size=False):
     key = os.environ.get("DUNE_API_KEY")
     if not key:
         raise RuntimeError("DUNE_API_KEY is not configured; no executions submitted.")
@@ -44,7 +44,9 @@ def api(path, payload=None):
         headers={"X-Dune-Api-Key": key, "Content-Type": "application/json"})
     try:
         with urllib.request.urlopen(request, timeout=45) as response:
-            return json.load(response)
+            body = response.read()
+            value = json.loads(body)
+            return (value, len(body)) if include_wire_size else value
     except urllib.error.HTTPError as error:
         try:
             body = json.loads(error.read())
@@ -102,18 +104,23 @@ def export_source(record, spec, remaining):
     if "column_names" not in meta or "total_row_count" not in meta:
         raise RuntimeError("Missing complete result metadata; source export stopped.")
     points = int(meta.get("datapoint_count", rows * len(meta["column_names"])))
+    result_bytes = int(meta.get("total_result_set_bytes", meta.get("result_set_bytes", 0)))
+    if result_bytes > CONFIG["max_export_bytes_per_run"]:
+        raise RuntimeError("Source result exceeds export byte allowance; manual review required.")
     if points > remaining or rows > 10000:
         raise RuntimeError(f"Source export exceeds bounded allowance ({points} points); manual review required.")
     if rows == 0:
         result = {"state": "QUERY_STATE_COMPLETED", "result": {"rows": [], "metadata": meta}}
+        wire_bytes = 0
     else:
         usage_guard()
-        result = api(f'execution/{record["execution_id"]}/results?limit=10000&allow_partial_results=false')
+        result, wire_bytes = api(f'execution/{record["execution_id"]}/results?limit=10000&allow_partial_results=false', include_wire_size=True)
         fetched = result.get("result", {}).get("rows", [])
         if len(fetched) != rows or result.get("next_uri") or result.get("next_offset"):
             raise RuntimeError("Source result is incomplete; canonical state not reduced.")
     record["export_points"] = points
-    record["estimated_export_credits"] = points / CONFIG["data_points_per_export_credit"]
+    record["export_wire_bytes"] = wire_bytes
+    record["estimated_export_credits"] = max(result_bytes, wire_bytes) / 1000000 * CONFIG["export_credits_per_megabyte"]
     save(ROOT / spec["output"], result)
     return remaining - points
 

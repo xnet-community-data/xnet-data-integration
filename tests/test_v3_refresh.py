@@ -71,6 +71,14 @@ class RefreshTests(unittest.TestCase):
             api.assert_not_called()
             self.assertEqual(record["estimated_export_credits"], 0)
 
+    def test_export_estimate_uses_megabytes_and_actual_response_bytes(self):
+        record = {"execution_id": "test", "result_metadata": {
+            "total_row_count": 1, "column_names": ["a"], "datapoint_count": 1, "total_result_set_bytes": 100}}
+        with patch.object(refresh, "api", return_value=({"result": {"rows": [{"a": 1}]}}, 200)), patch.object(refresh, "usage_guard", return_value={}), patch.object(refresh, "save"):
+            refresh.export_source(record, {"output": "unused"}, 3000)
+        self.assertEqual(record["export_wire_bytes"], 200)
+        self.assertAlmostEqual(record["estimated_export_credits"], 200 / 1000000 * refresh.CONFIG["export_credits_per_megabyte"])
+
     def test_pause_prevents_execution(self):
         with tempfile.TemporaryDirectory() as directory:
             state = Path(directory) / "state.json"

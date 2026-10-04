@@ -539,6 +539,7 @@ def derive_supply(transfers: list[dict]) -> None:
         w.writerows(rows)
 
     circulating = checkpoint_supply
+    supply_history = []
 
     for row in rows:
         row_day = date.fromisoformat(row["day"])
@@ -547,6 +548,7 @@ def derive_supply(transfers: list[dict]) -> None:
             circulating += dec(
                 row["circulation_change_xnet"]
             )
+            supply_history.append({**row, "circulating_supply_xnet": decstr(circulating)})
 
     latest_event = max(
         (r["block_time"] for r in transfers),
@@ -556,6 +558,7 @@ def derive_supply(transfers: list[dict]) -> None:
     max_supply = dec(json.loads(Path("config/xnet_protocol_config.json").read_text())["published_max_supply_xnet"])
     if circulating < 0 or circulating > max_supply:
         raise RuntimeError(f"Circulating supply outside token supply bounds: {circulating}")
+    Path("data/xnet_supply_history.json").write_text(json.dumps(supply_history, indent=2) + "\n")
 
     state = {
         "schema_version": 2,

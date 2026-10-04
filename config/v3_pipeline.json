@@ -1,0 +1,80 @@
+{
+  "schema_version": 1,
+  "token": {
+    "symbol": "XNET",
+    "mint": "xNETbUB7cRb3AAu2pNG2pUwQcJ2BHcktfvSB8x1Pq6L",
+    "bbb_wallet": "5QsyByFVJcg7oN76Ma26KEDFQdHt1tsiVExK94zURzfd"
+  },
+  "sources": {
+    "market": {
+      "source": "dexscreener",
+      "execution": "external",
+      "cadence_minutes": 15,
+      "purpose": [
+        "price",
+        "liquidity",
+        "pool_state",
+        "24h_volume",
+        "buy_sell_activity"
+      ]
+    },
+    "xnet_transfers": {
+      "source": "tokens_solana.transfers",
+      "execution": "dune",
+      "cadence_minutes": 30,
+      "hot_lookback_hours": 2,
+      "daily_repair_days": 3,
+      "purpose": [
+        "holder_state",
+        "circulating_supply",
+        "burns",
+        "bbb_wallet_activity"
+      ],
+      "max_expected_run_credits": 0.5,
+      "query_id": 8894037
+    },
+    "bbb_dex": {
+      "source": "dex_solana.trades",
+      "execution": "dune",
+      "cadence_minutes": 30,
+      "hot_lookback_hours": 2,
+      "purpose": [
+        "bbb_buys",
+        "bbb_sells",
+        "bbb_xnet_acquired",
+        "bbb_trade_value",
+        "bbb_venue"
+      ],
+      "max_expected_run_credits": 0.75,
+      "query_id": 8894132
+    },
+    "network": {
+      "source": "xnet_offload_and_device_apis",
+      "execution": "external",
+      "cadence_minutes": 1440
+    },
+    "revenue": {
+      "source": "xnet_canonical_revenue",
+      "execution": "external",
+      "cadence_minutes": 1440
+    },
+    "emissions": {
+      "source": "deterministic_schedule",
+      "execution": "local",
+      "cadence_minutes": null
+    },
+    "all_xnet_dex_detail": {
+      "source": "dex_solana.trades",
+      "execution": "dune",
+      "cadence_minutes": null,
+      "mode": "manual_research_only"
+    }
+  },
+  "principles": {
+    "dashboard_never_scans_raw_chain_directly": true,
+    "derive_multiple_metrics_from_each_source": true,
+    "overlap_and_deduplicate_hot_windows": true,
+    "preserve_last_good_data_on_failure": true,
+    "do_not_auto_retry_expensive_failures": true
+  }
+}

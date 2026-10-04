@@ -657,6 +657,7 @@ def main():
         fetched,
     )
 
+    record_history = json.loads((ROOT / "config/v3_refresh.json").read_text()).get("record_market_history", False)
     pair_history = merge_csv(
         PAIR_HISTORY,
         rows,
@@ -665,7 +666,7 @@ def main():
             r["snapshot_utc"],
             r["pair_address"],
         ),
-    )
+    ) if record_history else []
 
     market_history = merge_csv(
         MARKET_HISTORY,
@@ -674,7 +675,10 @@ def main():
         key_fn=lambda r: (
             r["snapshot_utc"],
         ),
-    )
+    ) if record_history else []
+
+    latest_path = ROOT / "data/current/xnet_market_pairs.json"
+    latest_path.write_text(json.dumps({"fetched_at_utc": fetched, "raw": raw, "data": rows}, indent=2) + "\n")
 
     state = {
         "schema_version": 1,

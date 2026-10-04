@@ -367,7 +367,6 @@ def bbb_scope_start():
 holders = load("xnet_holder_state.json")
 supply = load("xnet_supply_state.json")
 burns = load("xnet_bbb_burn_state.json")
-bbb = load("xnet_bbb_trade_state.json")
 
 circulating = D(
     supply["latest_circulating_supply_xnet"]
@@ -445,26 +444,8 @@ snapshot = {
     "bbb_execution_policy":
         policy,
 
-    "bbb_recent_trade_scope_start_utc":
-        bbb_scope_start(),
-
-    "bbb_recent_transaction_count":
-        bbb["canonical_transaction_count"],
-
-    "bbb_recent_gross_xnet_bought":
-        bbb["gross_xnet_bought"],
-
-    "bbb_recent_gross_xnet_sold":
-        bbb["gross_xnet_sold"],
-
-    "bbb_recent_trade_value_usd":
-        bbb["trade_value_usd"],
-
     "latest_transfer_event_utc":
         supply["latest_transfer_event_utc"],
-
-    "latest_bbb_trade_utc":
-        bbb["latest_trade_utc"],
 
     "methodology":
         "official_excluded_wallet_flow_plus_burn"

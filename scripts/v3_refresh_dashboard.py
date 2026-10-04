@@ -135,13 +135,16 @@ def due(last, cadence_minutes):
     elapsed = (now() - datetime.fromisoformat(last.replace("Z", "+00:00"))).total_seconds()
     return elapsed >= cadence_minutes * 60 - 60
 
-def reduce_atomically(transfer_path, bbb_path):
+def reduce_atomically(transfer_path, bbb_path=None):
     # A failed reduction must preserve canonical data and all derived state.
     with tempfile.TemporaryDirectory() as directory:
         backup = Path(directory) / "data"
         shutil.copytree(ROOT / "data", backup)
         try:
-            run("v3_reduce_chain.py", "--transfer-result", str(transfer_path), "--bbb-result", str(bbb_path))
+            args = ["--transfer-result", str(transfer_path)]
+            if bbb_path:
+                args.extend(["--bbb-result", str(bbb_path)])
+            run("v3_reduce_chain.py", *args)
         except Exception:
             shutil.rmtree(ROOT / "data")
             shutil.copytree(backup, ROOT / "data")
@@ -194,19 +197,23 @@ def main():
                 lookback = CONFIG["repair_lookback_hours"]
             remaining = CONFIG["max_repair_export_points"] if repair else CONFIG["max_export_points_per_run"]
             records = []
-            for spec in CONFIG["sources"]:
+            active_sources = [s for s in CONFIG["sources"] if s.get("enabled", True)]
+            for spec in active_sources:
                 record = execute(spec, {"lookback_hours": lookback})
                 remaining = export_source(record, spec, remaining)
                 state["queries"][spec["key"]] = record
                 save(STATE, state)
                 records.append(record)
-            reduce_atomically(ROOT / CONFIG["sources"][0]["output"], ROOT / CONFIG["sources"][1]["output"])
+            paths = {s["key"]: ROOT / s["output"] for s in active_sources}
+            reduce_atomically(paths["xnet_transfers"], paths.get("bbb_dex"))
+            for disabled in (s for s in CONFIG["sources"] if not s.get("enabled", True)):
+                state["queries"].pop(disabled["key"], None)
             state["chain_completed_at_utc"] = stamp()
             if repair:
                 state["chain_repaired_at_utc"] = state["chain_completed_at_utc"]
             save(HEALTH, {"schema_version": 1, "last_refresh_completed_utc": state["chain_completed_at_utc"],
                 "status": "HEALTHY", "cadence_minutes": CONFIG["chain_cadence_minutes"], "paused_due_to_cost": False,
-                "sources": {s["key"]: r for s, r in zip(CONFIG["sources"], records)}, "automatic_retry": False})
+                "sources": {s["key"]: r for s, r in zip(active_sources, records)}, "automatic_retry": False})
         run("v3_build_chain_snapshot.py")
         run("v3_collect_market.py")
         save(STATE, state)

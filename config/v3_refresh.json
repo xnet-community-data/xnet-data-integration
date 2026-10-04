@@ -12,16 +12,64 @@
   "max_export_points_per_run": 3000,
   "max_catchup_hours": 24,
   "sources": [
-    {"key": "xnet_transfers", "query_id": 8894037, "max_run_credits": 1.5, "output": "state/v3_transfer_hot_latest.json"},
-    {"key": "bbb_dex", "query_id": 8894132, "max_run_credits": 0.75, "output": "state/v3_bbb_hot_latest.json"}
+    {
+      "key": "xnet_transfers",
+      "query_id": 8894037,
+      "max_run_credits": 1.5,
+      "output": "state/v3_transfer_hot_latest.json",
+      "enabled": true
+    },
+    {
+      "key": "bbb_dex",
+      "query_id": 8894132,
+      "max_run_credits": 0.75,
+      "output": "state/v3_bbb_hot_latest.json",
+      "enabled": false
+    }
   ],
   "presentation": [
-    {"key": "current", "query_id": 8894185, "cadence_minutes": 15, "max_run_credits": 0.35},
-    {"key": "burns", "query_id": 8895090, "cadence_minutes": 30, "max_run_credits": 0.35},
-    {"key": "tokenomics", "query_id": 8895091, "cadence_minutes": 30, "max_run_credits": 0.35},
-    {"key": "holders", "query_id": 8895092, "cadence_minutes": 30, "max_run_credits": 0.35},
-    {"key": "pools", "query_id": 8895093, "cadence_minutes": 15, "max_run_credits": 0.4},
-    {"key": "network", "query_id": 8895088, "cadence_minutes": 1440, "max_run_credits": 0.35},
-    {"key": "commercial", "query_id": 8895089, "cadence_minutes": 1440, "max_run_credits": 0.35}
-  ]
+    {
+      "key": "current",
+      "query_id": 8894185,
+      "cadence_minutes": 15,
+      "max_run_credits": 0.75
+    },
+    {
+      "key": "burns",
+      "query_id": 8895090,
+      "cadence_minutes": 30,
+      "max_run_credits": 0.75
+    },
+    {
+      "key": "tokenomics",
+      "query_id": 8895091,
+      "cadence_minutes": 30,
+      "max_run_credits": 0.35
+    },
+    {
+      "key": "holders",
+      "query_id": 8895092,
+      "cadence_minutes": 30,
+      "max_run_credits": 0.35
+    },
+    {
+      "key": "pools",
+      "query_id": 8895093,
+      "cadence_minutes": 15,
+      "max_run_credits": 0.4
+    },
+    {
+      "key": "network",
+      "query_id": 8895088,
+      "cadence_minutes": 1440,
+      "max_run_credits": 0.35
+    },
+    {
+      "key": "commercial",
+      "query_id": 8895089,
+      "cadence_minutes": 1440,
+      "max_run_credits": 0.35
+    }
+  ],
+  "record_market_history": false
 }

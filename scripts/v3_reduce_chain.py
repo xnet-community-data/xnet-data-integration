@@ -798,7 +798,6 @@ def main():
     ap.add_argument(
         "--bbb-result",
         type=Path,
-        required=True,
     )
 
     args = ap.parse_args()
@@ -810,7 +809,7 @@ def main():
 
     bbb_rows = [
         normalise_bbb(r)
-        for r in read_dune_rows(args.bbb_result)
+        for r in (read_dune_rows(args.bbb_result) if args.bbb_result else [])
     ]
 
     transfers = merge_csv(
@@ -827,16 +826,18 @@ def main():
         "tx_id",
         BBB_FIELDS,
         ("block_time", "tx_id"),
-    )
+    ) if args.bbb_result else []
 
     derive_holders(transfers)
     derive_supply(transfers)
     derive_bbb_burns(transfers)
-    derive_bbb_trades(bbb)
+    if args.bbb_result:
+        derive_bbb_trades(bbb)
 
     print("=== XNET V3 CHAIN REDUCTION COMPLETE ===")
     print("Canonical transfer rows:", len(transfers))
-    print("Canonical BBB trade rows:", len(bbb))
+    if args.bbb_result:
+        print("Canonical BBB trade rows:", len(bbb))
 
     print()
     print("Holder state:")

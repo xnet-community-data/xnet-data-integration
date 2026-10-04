@@ -43,9 +43,7 @@ jobs:
           RESUME: ${{ inputs.resume }}
           EVENT: ${{ github.event_name }}
         run: |
-          if [ "$EVENT" = "push" ]; then
-            python scripts/v3_refresh_dashboard.py --benchmark --benchmark-batches 2 --benchmark-repetitions 3
-          elif [ "$RESUME" = "true" ]; then
+          if [ "$RESUME" = "true" ]; then
             python scripts/v3_refresh_dashboard.py --resume
           else
             python scripts/v3_refresh_dashboard.py

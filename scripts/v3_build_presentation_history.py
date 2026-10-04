@@ -658,12 +658,14 @@ save(
 # ---------------------------------------------------------
 # CURRENT DEX POOLS
 # ---------------------------------------------------------
-pool_file = DATA / "canonical/market_pair_snapshots.csv"
+pool_file = DATA / "current/xnet_market_pairs.json"
+if not pool_file.exists():
+    pool_file = DATA / "canonical/market_pair_snapshots.csv"
 pool_rows = []
 
 if pool_file.exists():
     with pool_file.open() as f:
-        raw = list(csv.DictReader(f))
+        raw = json.load(f)["data"] if pool_file.suffix == ".json" else list(csv.DictReader(f))
 
     if raw:
         time_keys = [

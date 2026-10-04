@@ -1,0 +1,38 @@
+name: Monitor Dune credits
+on:
+  schedule:
+    - cron: "10 3 * * *"
+  workflow_dispatch:
+  push:
+    paths:
+      - "scripts/v3_credit_usage.py"
+      - ".github/workflows/monitor-v3-credits.yml"
+permissions:
+  contents: write
+concurrency:
+  group: xnet-live-state
+  cancel-in-progress: false
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Read account usage and preserve history
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DUNE_API_KEY: ${{ secrets.DUNE_API_KEY }}
+        run: |
+          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
+          git fetch --depth 1 origin live-state
+          git switch --force-create live-state FETCH_HEAD
+          git show "${{ github.sha }}:scripts/v3_credit_usage.py" > /tmp/v3_credit_usage.py
+          DUNE_USAGE_STATE_PATH="$PWD/data/current/v3_credit_usage.json" python /tmp/v3_credit_usage.py
+          git config user.name "xnet-data-bot"
+          git config user.email "xnet-data-bot@users.noreply.github.com"
+          git add data/current/v3_credit_usage.json
+          git commit -m "Record daily Dune credit usage"
+          git push origin live-state

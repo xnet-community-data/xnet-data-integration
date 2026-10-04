@@ -1,0 +1,35 @@
+name: Test XNET DeFiLlama adapter
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/test-defillama-adapter.yml"
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: DefiLlama/dimension-adapters
+          ref: 65bb7c860ece07096d170f34c58c213cb393d784
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install upstream dependencies
+        run: npm ci
+      - name: Test historical service months and a day without recognition
+        env:
+          DEBUG_BREAKDOWN_FEES: "true"
+        run: |
+          npm test fees xnet 2025-03-01
+          npm test fees xnet 2026-03-01
+          npm test fees xnet 2026-08-01
+          npm test fees xnet 2026-07-16
+      - name: Check upstream adapter types
+        run: npm run ts-check
+      - name: Check upstream CLI types
+        run: npm run ts-check-cli

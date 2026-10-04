@@ -120,7 +120,7 @@ For example, the $33,688.91 payment received on 25 September 2026 reconciles exa
 
 Payments that cannot be uniquely reconciled remain explicitly unattributed and are not silently assigned to a service period. Projected but unsettled WiFi revenue is excluded.
 
-The DeFiLlama adapter uses settlement dates for its daily ingestion so newly received payments do not require retroactively rewriting historical DeFiLlama records. Service-period attribution remains available in this public reconciliation feed.
+The DeFiLlama adapter recognizes reconciled revenue on the final calendar day of its service month. Payment receipt dates remain separate. A later carrier settlement can add revenue to an earlier service month, so DeFiLlama must refill those historical dates after the feed changes. The current adapter covers service periods through July 2026; projected but unsettled months are excluded. October 2026 fiat-operator transfers need service-period attribution before extending retained-revenue accounting to that activity.
 
 Run both normalization stages with:
 

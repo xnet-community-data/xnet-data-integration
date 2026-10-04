@@ -16,11 +16,14 @@ jobs:
           repository: DefiLlama/dimension-adapters
           ref: 65bb7c860ece07096d170f34c58c213cb393d784
           fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+        with:
+          version: "10"
       - uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: "20"
       - name: Install upstream dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
       - name: Test historical service months and a day without recognition
         env:
           DEBUG_BREAKDOWN_FEES: "true"

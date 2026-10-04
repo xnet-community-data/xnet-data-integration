@@ -41,7 +41,8 @@ fi
 mkdir -p \
   data/canonical \
   data/current \
-  data/derived
+  data/derived \
+  data/network
 
 SOURCE="$ROOT"
 
@@ -76,6 +77,18 @@ cp \
 cp \
   "$SOURCE/data/current/xnet_chain_health.json" \
   data/current/
+
+cp \
+  "$SOURCE/data/current/xnet_network_state.json" \
+  data/current/
+
+cp \
+  "$SOURCE/data/network/device_history.json" \
+  data/network/
+
+cp \
+  "$SOURCE/data/network/offload_monthly.json" \
+  data/network/
 
 cp \
   "$SOURCE/data/derived/xnet_owner_balances.csv" \

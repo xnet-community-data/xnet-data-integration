@@ -10,6 +10,22 @@ refresh = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(refresh)
 
 class RefreshTests(unittest.TestCase):
+    def test_failed_reduction_restores_canonical_and_derived_data(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "data").mkdir()
+            original = root / "data/canonical.csv"
+            original.write_text("last good data")
+            def broken(*args):
+                original.write_text("partial result")
+                (root / "data/partial.json").write_text("bad")
+                raise RuntimeError("reduction failed")
+            with patch.object(refresh, "ROOT", root), patch.object(refresh, "run", broken):
+                with self.assertRaisesRegex(RuntimeError, "reduction failed"):
+                    refresh.reduce_atomically("transfers", "bbb")
+            self.assertEqual(original.read_text(), "last good data")
+            self.assertFalse((root / "data/partial.json").exists())
+
     def test_cadence_skips_early_runs_and_catches_up(self):
         from datetime import timedelta
         fixed = refresh.now()

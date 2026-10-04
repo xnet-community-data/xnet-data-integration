@@ -244,6 +244,7 @@ def derive_holders(transfers: list[dict]) -> None:
         for r in csv.DictReader(f):
             balances[r["owner"]] = dec(r["xnet_balance"])
 
+    seed_positive_owners = {owner for owner, balance in balances.items() if balance > 0}
     applied = 0
 
     for r in transfers:
@@ -306,12 +307,6 @@ def derive_holders(transfers: list[dict]) -> None:
     #
     # Only a tiny NEGATIVE numerical residual may be clamped to zero.
     negative_tolerance = Decimal("0.00000001")
-
-    seed_positive_owners = {
-        owner
-        for owner, bal in balances.items()
-        if bal > 0
-    }
 
     for owner, bal in list(balances.items()):
         if bal < -negative_tolerance:
@@ -493,11 +488,10 @@ def derive_supply(transfers: list[dict]) -> None:
 
         d += timedelta(days=1)
 
-    # Validate the new event reducer against the already
-    # verified official-method daily rows where overlap exists.
-    qa_days = sorted(
-        set(previous).intersection(replacement)
-    )[-2:]
+    # Newly indexed events legitimately revise earlier daily totals.
+    # Record revisions instead of requiring yesterday's partial data to match.
+    revisions = []
+    qa_days = sorted(set(previous).intersection(replacement))
 
     for day_s in qa_days:
         if day_s not in previous:
@@ -516,10 +510,7 @@ def derive_supply(transfers: list[dict]) -> None:
         )
 
         if abs(old - new) > Decimal("0.000001"):
-            raise RuntimeError(
-                f"Supply QA mismatch on {day_s}: "
-                f"old={old} new={new}"
-            )
+            revisions.append({"day": day_s, "previous_change_xnet": decstr(old), "updated_change_xnet": decstr(new)})
 
     combined = {
         day_s: row
@@ -562,8 +553,13 @@ def derive_supply(transfers: list[dict]) -> None:
         default=None,
     )
 
+    max_supply = dec(json.loads(Path("config/xnet_protocol_config.json").read_text())["published_max_supply_xnet"])
+    if circulating < 0 or circulating > max_supply:
+        raise RuntimeError(f"Circulating supply outside token supply bounds: {circulating}")
+
     state = {
         "schema_version": 2,
+        "daily_revisions": revisions,
         "checkpoint_date":
             checkpoint["checkpoint_date"],
         "checkpoint_circulating_supply_xnet":

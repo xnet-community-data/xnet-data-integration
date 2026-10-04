@@ -1,6 +1,11 @@
 name: Refresh XNET V3
 
 on:
+  push:
+    paths:
+      - ".github/workflows/refresh-v3-history.yml"
+      - "scripts/v3_refresh_dashboard.py"
+      - "config/v3_refresh.json"
   schedule:
     - cron: "7,22,37,52 * * * *"
   workflow_dispatch:

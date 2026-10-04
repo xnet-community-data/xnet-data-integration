@@ -1,0 +1,679 @@
+#!/usr/bin/env python3
+
+from __future__ import annotations
+
+import calendar
+import json
+from datetime import datetime, timezone
+from decimal import Decimal
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+
+MONTHLY_PATH = (
+    ROOT / "data/xnet_revenue_monthly.json"
+)
+
+DEFI_PATH = (
+    ROOT / "data/xnet_defillama_revenue.json"
+)
+
+OUT = (
+    ROOT / "data/current/xnet_revenue_state.json"
+)
+
+
+def D(v):
+    if v in (None, ""):
+        return Decimal("0")
+    return Decimal(str(v))
+
+
+def dec(v):
+    if v is None:
+        return None
+    return format(D(v), "f")
+
+
+def utc_now():
+    return (
+        datetime.now(timezone.utc)
+        .replace(microsecond=0)
+        .isoformat()
+        .replace("+00:00", "Z")
+    )
+
+
+def month_key(v):
+    return str(v)[:7]
+
+
+def positive(v):
+    return (
+        v is not None
+        and D(v) > 0
+    )
+
+
+monthly = json.loads(
+    MONTHLY_PATH.read_text()
+)
+
+defi = json.loads(
+    DEFI_PATH.read_text()
+)
+
+rows = list(monthly["data"])
+
+today = datetime.now(
+    timezone.utc
+).date()
+
+current_month = (
+    f"{today.year:04d}-"
+    f"{today.month:02d}"
+)
+
+eligible = [
+    r for r in rows
+    if month_key(r["month"]) <= current_month
+]
+
+if not eligible:
+    raise RuntimeError(
+        "No revenue rows at or before current month"
+    )
+
+
+# --------------------------------------------------
+# Latest actual/projected service month
+# --------------------------------------------------
+
+service_rows = [
+    r for r in eligible
+    if r.get("gb_per_month") is not None
+    and r.get(
+        "wifi_revenue_projected_usd"
+    ) is not None
+]
+
+if not service_rows:
+    raise RuntimeError(
+        "No usable service revenue rows"
+    )
+
+latest_service = max(
+    service_rows,
+    key=lambda r: r["month"],
+)
+
+
+# --------------------------------------------------
+# Latest payment
+# --------------------------------------------------
+
+payment_rows = [
+    r for r in eligible
+    if positive(
+        r.get(
+            "wifi_payment_received_usd"
+        )
+    )
+]
+
+latest_payment = (
+    max(
+        payment_rows,
+        key=lambda r: (
+            r.get(
+                "wifi_payment_date"
+            )
+            or r["month"]
+        ),
+    )
+    if payment_rows
+    else None
+)
+
+
+# --------------------------------------------------
+# Latest BBB transfer
+# --------------------------------------------------
+
+bbb_transfer_rows = [
+    r for r in eligible
+    if positive(
+        r.get(
+            "transferred_to_buy_burn_usd"
+        )
+    )
+]
+
+latest_bbb_transfer = (
+    max(
+        bbb_transfer_rows,
+        key=lambda r: r["month"],
+    )
+    if bbb_transfer_rows
+    else None
+)
+
+
+# --------------------------------------------------
+# Latest fiat/operator transfer
+# --------------------------------------------------
+
+fiat_rows = [
+    r for r in eligible
+    if positive(
+        r.get(
+            "transferred_to_fiat_operators_usd"
+        )
+    )
+]
+
+latest_fiat = (
+    max(
+        fiat_rows,
+        key=lambda r: r["month"],
+    )
+    if fiat_rows
+    else None
+)
+
+
+# --------------------------------------------------
+# Current outstanding balance
+# --------------------------------------------------
+
+balance_rows = [
+    r for r in eligible
+    if r.get(
+        "balance_outstanding_to_transfer_usd"
+    ) is not None
+]
+
+latest_balance = max(
+    balance_rows,
+    key=lambda r: r["month"],
+)
+
+
+# --------------------------------------------------
+# Latest source month carrying ANY meaningful value
+# --------------------------------------------------
+
+meaningful_fields = [
+    "gb_per_month",
+    "wifi_revenue_projected_usd",
+    "wifi_payment_received_usd",
+    "wifi_payment_date",
+    "total_emitted_tokens",
+    "projected_buy_burn_usd",
+    "transferred_to_buy_burn_usd",
+    "transferred_to_fiat_operators_usd",
+    "balance_outstanding_to_transfer_usd",
+]
+
+meaningful_rows = [
+    r for r in eligible
+    if any(
+        r.get(k) is not None
+        for k in meaningful_fields
+    )
+]
+
+latest_source = max(
+    meaningful_rows,
+    key=lambda r: r["month"],
+)
+
+
+# --------------------------------------------------
+# Cumulative source-sheet values
+# --------------------------------------------------
+
+def total(field):
+    return sum(
+        (
+            D(r[field])
+            for r in eligible
+            if r.get(field) is not None
+        ),
+        Decimal("0"),
+    )
+
+
+cumulative_projected_revenue = total(
+    "wifi_revenue_projected_usd"
+)
+
+cumulative_payments = total(
+    "wifi_payment_received_usd"
+)
+
+cumulative_projected_bbb = total(
+    "projected_buy_burn_usd"
+)
+
+cumulative_bbb_transfers = total(
+    "transferred_to_buy_burn_usd"
+)
+
+cumulative_fiat_transfers = total(
+    "transferred_to_fiat_operators_usd"
+)
+
+
+# --------------------------------------------------
+# Latest run-rate economics
+# --------------------------------------------------
+
+service_month = datetime.strptime(
+    latest_service["month"][:10],
+    "%Y-%m-%d",
+)
+
+days = calendar.monthrange(
+    service_month.year,
+    service_month.month,
+)[1]
+
+latest_revenue = D(
+    latest_service[
+        "wifi_revenue_projected_usd"
+    ]
+)
+
+latest_gb = D(
+    latest_service["gb_per_month"]
+)
+
+daily_revenue_run_rate = (
+    latest_revenue
+    / Decimal(days)
+)
+
+revenue_30d_run_rate = (
+    daily_revenue_run_rate
+    * Decimal("30")
+)
+
+annualized_revenue_run_rate = (
+    daily_revenue_run_rate
+    * Decimal("365")
+)
+
+revenue_per_gb = (
+    latest_revenue / latest_gb
+    if latest_gb
+    else None
+)
+
+
+# --------------------------------------------------
+# Settled-service-period accounting
+# --------------------------------------------------
+
+totals = defi["totals"]
+
+recognized_service_revenue = D(
+    totals[
+        "recognized_service_revenue_usd"
+    ]
+)
+
+source_payments_received = D(
+    totals[
+        "source_payments_received_usd"
+    ]
+)
+
+unattributed_payments = D(
+    totals[
+        "unattributed_payments_usd"
+    ]
+)
+
+
+# --------------------------------------------------
+# Cross-source QA
+# --------------------------------------------------
+
+payment_difference = (
+    cumulative_payments
+    - source_payments_received
+)
+
+if abs(payment_difference) > Decimal("0.02"):
+    print(
+        "WARNING:",
+        "monthly payment sum differs from",
+        "settled-accounting source by",
+        payment_difference,
+    )
+
+
+state = {
+    "schema_version": 1,
+
+    "generated_at_utc":
+        utc_now(),
+
+    "source": {
+        "name":
+            "XNET Revenue Sheet",
+
+        "mode":
+            "repository_mirror",
+
+        "source_latest_month":
+            latest_source["month"],
+
+        "accounting_basis":
+            defi["accounting_basis"],
+    },
+
+    "latest_service": {
+        "month":
+            latest_service["month"],
+
+        "gb":
+            dec(
+                latest_service[
+                    "gb_per_month"
+                ]
+            ),
+
+        "projected_revenue_usd":
+            dec(latest_revenue),
+
+        "blended_rate_per_gb_projected_usd":
+            dec(
+                latest_service[
+                    "blended_rate_per_gb_projected_usd"
+                ]
+            ),
+
+        "derived_revenue_per_gb_usd":
+            (
+                None
+                if revenue_per_gb is None
+                else dec(revenue_per_gb)
+            ),
+
+        "revenue_30d_run_rate_usd":
+            dec(
+                revenue_30d_run_rate
+            ),
+
+        "annualized_revenue_run_rate_usd":
+            dec(
+                annualized_revenue_run_rate
+            ),
+    },
+
+    "latest_payment": {
+        "source_month":
+            (
+                latest_payment["month"]
+                if latest_payment
+                else None
+            ),
+
+        "payment_date":
+            (
+                latest_payment[
+                    "wifi_payment_date"
+                ]
+                if latest_payment
+                else None
+            ),
+
+        "amount_usd":
+            (
+                dec(
+                    latest_payment[
+                        "wifi_payment_received_usd"
+                    ]
+                )
+                if latest_payment
+                else None
+            ),
+    },
+
+    "latest_bbb_transfer": {
+        "source_month":
+            (
+                latest_bbb_transfer[
+                    "month"
+                ]
+                if latest_bbb_transfer
+                else None
+            ),
+
+        "amount_usd":
+            (
+                dec(
+                    latest_bbb_transfer[
+                        "transferred_to_buy_burn_usd"
+                    ]
+                )
+                if latest_bbb_transfer
+                else None
+            ),
+    },
+
+    "latest_fiat_operator_transfer": {
+        "source_month":
+            (
+                latest_fiat["month"]
+                if latest_fiat
+                else None
+            ),
+
+        "amount_usd":
+            (
+                dec(
+                    latest_fiat[
+                        "transferred_to_fiat_operators_usd"
+                    ]
+                )
+                if latest_fiat
+                else None
+            ),
+    },
+
+    "outstanding": {
+        "source_month":
+            latest_balance["month"],
+
+        "balance_outstanding_to_transfer_usd":
+            dec(
+                latest_balance[
+                    "balance_outstanding_to_transfer_usd"
+                ]
+            ),
+    },
+
+    "cumulative_source_sheet": {
+        "projected_wifi_revenue_usd":
+            dec(
+                cumulative_projected_revenue
+            ),
+
+        "wifi_payments_received_usd":
+            dec(
+                cumulative_payments
+            ),
+
+        "projected_buy_burn_usd":
+            dec(
+                cumulative_projected_bbb
+            ),
+
+        "transferred_to_buy_burn_usd":
+            dec(
+                cumulative_bbb_transfers
+            ),
+
+        "transferred_to_fiat_operators_usd":
+            dec(
+                cumulative_fiat_transfers
+            ),
+    },
+
+    "settled_accounting": {
+        "recognized_service_revenue_usd":
+            dec(
+                recognized_service_revenue
+            ),
+
+        "source_payments_received_usd":
+            dec(
+                source_payments_received
+            ),
+
+        "unattributed_payments_usd":
+            dec(
+                unattributed_payments
+            ),
+
+        "unsettled_service_month_count":
+            len(
+                defi[
+                    "unsettled_service_months"
+                ]
+            ),
+    },
+
+    "freshness": {
+        "source_latest_month":
+            latest_source["month"],
+
+        "latest_service_month":
+            latest_service["month"],
+
+        "latest_payment_date":
+            (
+                latest_payment[
+                    "wifi_payment_date"
+                ]
+                if latest_payment
+                else None
+            ),
+    },
+}
+
+
+tmp = OUT.with_suffix(
+    ".json.tmp"
+)
+
+tmp.write_text(
+    json.dumps(
+        state,
+        indent=2,
+    ) + "\n"
+)
+
+tmp.replace(OUT)
+
+
+print(
+    "=== XNET REVENUE STATE COMPLETE ==="
+)
+
+print(
+    "Source latest month:",
+    state[
+        "source"
+    ][
+        "source_latest_month"
+    ],
+)
+
+print(
+    "Latest service:",
+    state[
+        "latest_service"
+    ][
+        "month"
+    ],
+)
+
+print(
+    "Latest service GB:",
+    state[
+        "latest_service"
+    ][
+        "gb"
+    ],
+)
+
+print(
+    "Latest projected revenue: $",
+    state[
+        "latest_service"
+    ][
+        "projected_revenue_usd"
+    ],
+    sep="",
+)
+
+print(
+    "Annualized run rate: $",
+    state[
+        "latest_service"
+    ][
+        "annualized_revenue_run_rate_usd"
+    ],
+    sep="",
+)
+
+print(
+    "Latest payment: $",
+    state[
+        "latest_payment"
+    ][
+        "amount_usd"
+    ],
+    " on ",
+    state[
+        "latest_payment"
+    ][
+        "payment_date"
+    ],
+    sep="",
+)
+
+print(
+    "Latest BBB transfer: $",
+    state[
+        "latest_bbb_transfer"
+    ][
+        "amount_usd"
+    ],
+    sep="",
+)
+
+print(
+    "Outstanding: $",
+    state[
+        "outstanding"
+    ][
+        "balance_outstanding_to_transfer_usd"
+    ],
+    sep="",
+)
+
+print(
+    "Recognized service revenue: $",
+    state[
+        "settled_accounting"
+    ][
+        "recognized_service_revenue_usd"
+    ],
+    sep="",
+)

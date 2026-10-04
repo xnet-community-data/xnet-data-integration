@@ -83,6 +83,10 @@ cp \
   data/current/
 
 cp \
+  "$SOURCE/data/current/xnet_revenue_state.json" \
+  data/current/
+
+cp \
   "$SOURCE/data/network/device_history.json" \
   data/network/
 

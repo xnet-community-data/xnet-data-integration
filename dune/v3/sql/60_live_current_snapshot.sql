@@ -14,6 +14,20 @@ WITH chain AS (
         ) AS j
 ),
 
+network AS (
+    SELECT
+        json_parse(
+            http_get('https://raw.githubusercontent.com/xnet-community-data/xnet-data-integration/live-state/data/current/xnet_network_state.json')
+        ) AS j
+),
+
+revenue AS (
+    SELECT
+        json_parse(
+            http_get('https://raw.githubusercontent.com/xnet-community-data/xnet-data-integration/live-state/data/current/xnet_revenue_state.json')
+        ) AS j
+),
+
 raw_pairs AS (
     SELECT pair
     FROM UNNEST(
@@ -323,6 +337,218 @@ SELECT
         AS DOUBLE
     ) AS bbb_recent_trade_value_usd,
 
+    -- NETWORK
+
+    json_extract_scalar(
+        n.j,
+        '$.status'
+    ) AS network_status,
+
+    json_extract_scalar(
+        n.j,
+        '$.offload.data_as_of'
+    ) AS offload_data_as_of,
+
+    TRY_CAST(
+        json_extract_scalar(
+            n.j,
+            '$.offload.latest_daily_offload_gb'
+        )
+        AS DOUBLE
+    ) AS latest_daily_offload_gb,
+
+    TRY_CAST(
+        json_extract_scalar(
+            n.j,
+            '$.offload.avg_daily_offload_gb_30d'
+        )
+        AS DOUBLE
+    ) AS avg_daily_offload_gb_30d,
+
+    TRY_CAST(
+        json_extract_scalar(
+            n.j,
+            '$.offload.all_time_network_offload_gb'
+        )
+        AS DOUBLE
+    ) AS all_time_network_offload_gb,
+
+    TRY_CAST(
+        json_extract_scalar(
+            n.j,
+            '$.offload.latest_complete_month_offload_gb'
+        )
+        AS DOUBLE
+    ) AS latest_complete_month_offload_gb,
+
+    TRY_CAST(
+        json_extract_scalar(
+            n.j,
+            '$.offload.latest_month_mom_growth_pct'
+        )
+        AS DOUBLE
+    ) AS latest_month_offload_growth_pct,
+
+    json_extract_scalar(
+        n.j,
+        '$.devices.data_as_of'
+    ) AS device_data_as_of,
+
+    TRY_CAST(
+        json_extract_scalar(
+            n.j,
+            '$.devices.total_devices'
+        )
+        AS BIGINT
+    ) AS total_devices,
+
+    TRY_CAST(
+        json_extract_scalar(
+            n.j,
+            '$.devices.operational_devices'
+        )
+        AS BIGINT
+    ) AS operational_devices,
+
+    TRY_CAST(
+        json_extract_scalar(
+            n.j,
+            '$.devices.operational_ratio_pct'
+        )
+        AS DOUBLE
+    ) AS operational_device_ratio_pct,
+
+    TRY_CAST(
+        json_extract_scalar(
+            n.j,
+            '$.devices.device_growth_30d_pct'
+        )
+        AS DOUBLE
+    ) AS device_growth_30d_pct,
+
+    TRY_CAST(
+        json_extract_scalar(
+            n.j,
+            '$.productivity.latest_offload_gb_per_operational_device'
+        )
+        AS DOUBLE
+    ) AS latest_offload_gb_per_operational_device,
+
+    -- REVENUE
+
+    json_extract_scalar(
+        r.j,
+        '$.source.source_latest_month'
+    ) AS revenue_source_latest_month,
+
+    json_extract_scalar(
+        r.j,
+        '$.latest_service.month'
+    ) AS revenue_service_month,
+
+    TRY_CAST(
+        json_extract_scalar(
+            r.j,
+            '$.latest_service.gb'
+        )
+        AS DOUBLE
+    ) AS latest_revenue_sheet_gb,
+
+    TRY_CAST(
+        json_extract_scalar(
+            r.j,
+            '$.latest_service.projected_revenue_usd'
+        )
+        AS DOUBLE
+    ) AS latest_projected_wifi_revenue_usd,
+
+    TRY_CAST(
+        json_extract_scalar(
+            r.j,
+            '$.latest_service.annualized_revenue_run_rate_usd'
+        )
+        AS DOUBLE
+    ) AS annualized_revenue_run_rate_usd,
+
+    TRY_CAST(
+        json_extract_scalar(
+            r.j,
+            '$.latest_service.derived_revenue_per_gb_usd'
+        )
+        AS DOUBLE
+    ) AS latest_revenue_per_gb_usd,
+
+    json_extract_scalar(
+        r.j,
+        '$.latest_payment.payment_date'
+    ) AS latest_wifi_payment_date,
+
+    TRY_CAST(
+        json_extract_scalar(
+            r.j,
+            '$.latest_payment.amount_usd'
+        )
+        AS DOUBLE
+    ) AS latest_wifi_payment_received_usd,
+
+    TRY_CAST(
+        json_extract_scalar(
+            r.j,
+            '$.outstanding.balance_outstanding_to_transfer_usd'
+        )
+        AS DOUBLE
+    ) AS balance_outstanding_to_transfer_usd,
+
+    TRY_CAST(
+        json_extract_scalar(
+            r.j,
+            '$.cumulative_source_sheet.projected_wifi_revenue_usd'
+        )
+        AS DOUBLE
+    ) AS cumulative_projected_wifi_revenue_usd,
+
+    TRY_CAST(
+        json_extract_scalar(
+            r.j,
+            '$.cumulative_source_sheet.wifi_payments_received_usd'
+        )
+        AS DOUBLE
+    ) AS cumulative_wifi_payments_received_usd,
+
+    TRY_CAST(
+        json_extract_scalar(
+            r.j,
+            '$.cumulative_source_sheet.projected_buy_burn_usd'
+        )
+        AS DOUBLE
+    ) AS cumulative_projected_buy_burn_usd,
+
+    TRY_CAST(
+        json_extract_scalar(
+            r.j,
+            '$.cumulative_source_sheet.transferred_to_buy_burn_usd'
+        )
+        AS DOUBLE
+    ) AS cumulative_bbb_transfers_usd,
+
+    TRY_CAST(
+        json_extract_scalar(
+            r.j,
+            '$.settled_accounting.recognized_service_revenue_usd'
+        )
+        AS DOUBLE
+    ) AS recognized_service_revenue_usd,
+
+    TRY_CAST(
+        json_extract_scalar(
+            r.j,
+            '$.settled_accounting.unattributed_payments_usd'
+        )
+        AS DOUBLE
+    ) AS unattributed_payments_usd,
+
+    -- CHAIN FRESHNESS
+
     json_extract_scalar(
         c.j,
         '$.latest_transfer_event_utc'
@@ -334,6 +560,8 @@ SELECT
     ) AS latest_bbb_trade_utc
 
 FROM chain c
+CROSS JOIN network n
+CROSS JOIN revenue r
 CROSS JOIN price_pool pp
 CROSS JOIN primary_pool p
 CROSS JOIN market m

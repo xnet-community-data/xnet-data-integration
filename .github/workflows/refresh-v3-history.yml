@@ -41,8 +41,11 @@ jobs:
         env:
           DUNE_API_KEY: ${{ secrets.DUNE_API_KEY }}
           RESUME: ${{ inputs.resume }}
+          EVENT: ${{ github.event_name }}
         run: |
-          if [ "$RESUME" = "true" ]; then
+          if [ "$EVENT" = "push" ]; then
+            python scripts/v3_refresh_dashboard.py --benchmark
+          elif [ "$RESUME" = "true" ]; then
             python scripts/v3_refresh_dashboard.py --resume
           else
             python scripts/v3_refresh_dashboard.py
@@ -52,5 +55,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: xnet-v3-refresh-state
-          path: data/current/v3_refresh_state.json
+          path: |
+            data/current/v3_refresh_state.json
+            state/v3_credit_benchmark.json
           retention-days: 14

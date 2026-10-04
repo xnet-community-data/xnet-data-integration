@@ -10,7 +10,7 @@ refresh = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(refresh)
 
 class RefreshTests(unittest.TestCase):
-    def test_small_engine_and_no_results_download_for_chart(self):
+    def test_configured_engine_and_no_results_download_for_chart(self):
         calls = []
         def api(path, payload=None):
             calls.append((path, payload))
@@ -20,7 +20,7 @@ class RefreshTests(unittest.TestCase):
         with patch.object(refresh, "api", api), patch.object(refresh, "usage_guard", return_value={}):
             result = refresh.execute({"query_id": 1, "max_run_credits": 0.35})
         self.assertEqual(result["execution_cost_credits"], 0.1)
-        self.assertEqual(calls[0][1]["performance"], "small")
+        self.assertEqual(calls[0][1]["performance"], refresh.CONFIG["performance"])
         self.assertFalse(any("results" in path for path, _ in calls))
 
     def test_unexpected_cost_stops(self):

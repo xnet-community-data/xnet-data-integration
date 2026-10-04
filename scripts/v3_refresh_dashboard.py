@@ -124,7 +124,17 @@ def publish():
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--resume", action="store_true", help="Explicitly clear a reviewed pause; never used by cron")
+    parser.add_argument("--benchmark", action="store_true", help="Measure query costs without changing canonical state")
     args = parser.parse_args()
+    if args.benchmark:
+        records = []
+        # Start with the smallest presentation query, then each shared query.
+        specs = sorted(CONFIG["presentation"], key=lambda spec: spec["query_id"] != 8895092) + CONFIG["sources"]
+        for spec in specs:
+            records.append({"key": spec["key"], **execute(spec)})
+            save(ROOT / "state/v3_credit_benchmark.json", {"generated_at_utc": stamp(), "performance": CONFIG["performance"], "queries": records})
+            print(spec["key"], records[-1]["execution_cost_credits"], "credits")
+        return 0
     state = load(STATE, {"schema_version": 1, "queries": {}})
     if state.get("paused") and not args.resume:
         raise SystemExit("Refresh paused after previous failure; review state and manually resume.")

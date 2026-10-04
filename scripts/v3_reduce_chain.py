@@ -861,12 +861,6 @@ def main():
         ).read_text()
     )
 
-    print("BBB trade state:")
-    print(
-        Path(
-            "data/current/xnet_bbb_trade_state.json"
-        ).read_text()
-    )
 
 
 if __name__ == "__main__":

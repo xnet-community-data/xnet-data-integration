@@ -428,10 +428,6 @@ snapshot = {
             * Decimal("100")
         ),
 
-    "bbb_wallet_xnet_balance":
-        str(bbb_balance()),
-
-
     "bbb_wallet_usdc_balance":
         str(bbb_usdc),
 

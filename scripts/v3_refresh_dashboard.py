@@ -183,6 +183,9 @@ def main():
     if state.get("paused") and not args.resume:
         raise SystemExit("Refresh paused after previous failure; review state and manually resume.")
     state.update({"paused": False, "started_at_utc": stamp()})
+    for source in CONFIG["sources"]:
+        if not source.get("enabled", True):
+            state["queries"].pop(source["key"], None)
     try:
         usage_guard()
         health = load(HEALTH, {})
@@ -206,8 +209,6 @@ def main():
                 records.append(record)
             paths = {s["key"]: ROOT / s["output"] for s in active_sources}
             reduce_atomically(paths["xnet_transfers"], paths.get("bbb_dex"))
-            for disabled in (s for s in CONFIG["sources"] if not s.get("enabled", True)):
-                state["queries"].pop(disabled["key"], None)
             state["chain_completed_at_utc"] = stamp()
             if repair:
                 state["chain_repaired_at_utc"] = state["chain_completed_at_utc"]

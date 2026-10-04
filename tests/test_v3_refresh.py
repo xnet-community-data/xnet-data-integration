@@ -10,6 +10,22 @@ refresh = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(refresh)
 
 class RefreshTests(unittest.TestCase):
+    def test_disabled_collector_is_not_executed_or_reduced(self):
+        import json
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            state = root / "state.json"
+            state.write_text(json.dumps({"queries": {"bbb_dex": {"query_id": 2}}}))
+            config = {**refresh.CONFIG, "sources": [
+                {"key": "xnet_transfers", "query_id": 1, "output": "transfers"},
+                {"key": "bbb_dex", "query_id": 2, "output": "bbb", "enabled": False}], "presentation": []}
+            with patch.object(refresh, "ROOT", root), patch.object(refresh, "STATE", state), patch.object(refresh, "HEALTH", root / "health.json"), patch.object(refresh, "CONFIG", config), patch("sys.argv", ["refresh"]), patch.object(refresh, "usage_guard", return_value={}), patch.object(refresh, "execute", return_value={}) as execute, patch.object(refresh, "export_source", return_value=100), patch.object(refresh, "reduce_atomically") as reduce, patch.object(refresh, "run"), patch.object(refresh, "publish"):
+                self.assertEqual(refresh.main(), 0)
+            self.assertEqual(execute.call_count, 1)
+            self.assertEqual(execute.call_args.args[0]["key"], "xnet_transfers")
+            reduce.assert_called_once_with(root / "transfers", None)
+            self.assertNotIn("bbb_dex", json.loads(state.read_text())["queries"])
+
     def test_failed_reduction_restores_canonical_and_derived_data(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

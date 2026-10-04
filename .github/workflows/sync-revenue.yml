@@ -52,7 +52,14 @@ jobs:
           python scripts/v3_build_revenue_state.py
 
       - name: Publish current revenue state to live-state
-        run: bash scripts/v3_publish_live_state.sh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          git config --global \
+            url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf \
+            "https://github.com/"
+          bash scripts/v3_publish_live_state.sh
 
       - name: Sync dynamic Dune revenue labels
         env:

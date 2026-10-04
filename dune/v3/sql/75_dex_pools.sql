@@ -1,5 +1,5 @@
 WITH raw AS (
-    SELECT json_parse(http_get('https://raw.githubusercontent.com/xnet-community-data/xnet-data-integration/live-state/data/presentation/market_pools.json')) AS j
+    SELECT json_parse(http_get('https://raw.githubusercontent.com/xnet-community-data/xnet-data-integration/live-state/data/derived/market_pools.json')) AS j
 ),
 items AS (
     SELECT item

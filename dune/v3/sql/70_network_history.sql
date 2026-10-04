@@ -1,5 +1,5 @@
 WITH raw AS (
-    SELECT json_parse(http_get('https://raw.githubusercontent.com/xnet-community-data/xnet-data-integration/live-state/data/presentation/network_history.json')) AS j
+    SELECT json_parse(http_get('https://raw.githubusercontent.com/xnet-community-data/xnet-data-integration/live-state/data/derived/network_history.json')) AS j
 ),
 items AS (
     SELECT item

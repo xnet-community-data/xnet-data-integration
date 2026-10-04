@@ -3,6 +3,12 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+SOURCE="$ROOT"
+python3 "$SOURCE/scripts/v3_record_bbb_usdc_history.py"
+python3 "$SOURCE/scripts/v3_build_presentation_history.py"
+
+
+
 cd "$ROOT"
 
 REMOTE_URL="$(git remote get-url origin)"
@@ -11,6 +17,7 @@ TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
 echo "Publishing XNET live state..."
+
 
 if git ls-remote --exit-code --heads origin live-state >/dev/null 2>&1; then
 
@@ -44,7 +51,6 @@ mkdir -p \
   data/derived \
   data/network
 
-SOURCE="$ROOT"
 
 cp \
   "$SOURCE/data/canonical/xnet_transfers.csv" \
@@ -100,6 +106,13 @@ cp \
 
 cp \
   "$SOURCE/data/derived/bbb_burn_daily.csv" \
+  "$SOURCE/data/history/bbb_wallet_usdc_daily.json" \
+  "$SOURCE/data/presentation/network_history.json" \
+  "$SOURCE/data/presentation/commercial_history.json" \
+  "$SOURCE/data/presentation/burn_history.json" \
+  "$SOURCE/data/presentation/tokenomics_history.json" \
+  "$SOURCE/data/presentation/holder_distribution.json" \
+  "$SOURCE/data/presentation/market_pools.json" \
   data/derived/
 
 cp \

@@ -137,8 +137,8 @@ specs = [
      "Daily XNET market-buy budget from the latest carrier payment under the current BBB execution policy. Policy inputs are stored in config/xnet_bbb_execution_policy.json.",
      2, "$", "/day", None),
 
-    ("bbb_burned", "XNET Burned", "verified_bbb_burned_xnet",
-     "Total XNET burned through Buy & Burn.",
+    ("bbb_burned", "Total XNET Burned", "verified_bbb_burned_xnet",
+     "Total verified XNET burned through Buy & Burn.",
      0, None, " XNET", None),
 
     ("bbb_transfers", "Transferred to Buy & Burn",

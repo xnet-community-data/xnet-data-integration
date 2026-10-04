@@ -11,7 +11,6 @@ TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
 echo "Publishing XNET live state..."
-python3 "$ROOT/scripts/v3_apply_bbb_policy.py"
 
 if git ls-remote --exit-code --heads origin live-state >/dev/null 2>&1; then
 

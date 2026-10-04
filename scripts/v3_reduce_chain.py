@@ -492,7 +492,11 @@ def derive_supply(transfers: list[dict]) -> None:
 
     # Validate the new event reducer against the already
     # verified official-method daily rows where overlap exists.
-    for day_s in ["2026-10-02", "2026-10-03"]:
+    qa_days = sorted(
+        set(previous).intersection(replacement)
+    )[-2:]
+
+    for day_s in qa_days:
         if day_s not in previous:
             continue
 

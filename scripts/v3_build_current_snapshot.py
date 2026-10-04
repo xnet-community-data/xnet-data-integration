@@ -11,7 +11,20 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
-MAX_SUPPLY_XNET = Decimal("1307098713")
+PROTOCOL_CONFIG = json.loads(
+    (
+        ROOT
+        / "config/xnet_protocol_config.json"
+    ).read_text()
+)
+
+MAX_SUPPLY_XNET = Decimal(
+    str(
+        PROTOCOL_CONFIG[
+            "published_max_supply_xnet"
+        ]
+    )
+)
 
 BBB_WALLET = (
     "5QsyByFVJcg7oN76Ma26KEDFQdHt1tsiVExK94zURzfd"

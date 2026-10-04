@@ -504,6 +504,12 @@ SELECT
 
     json_extract_scalar(
         r.j,
+        '$.generated_at_utc'
+    ) AS revenue_generated_at_utc,
+
+
+    json_extract_scalar(
+        r.j,
         '$.latest_service.month'
     ) AS revenue_service_month,
 
@@ -775,12 +781,18 @@ SELECT
         WHEN 'revenue' THEN
             CONCAT(
                 'Last retrieved · ',
-                SUBSTR(
-                    cs.revenue_source_latest_month,
-                    1,
-                    7
-                )
+                REPLACE(
+                    SUBSTR(
+                        cs.revenue_generated_at_utc,
+                        1,
+                        16
+                    ),
+                    'T',
+                    ' '
+                ),
+                ' UTC'
             )
+
 
     END
         AS freshness,

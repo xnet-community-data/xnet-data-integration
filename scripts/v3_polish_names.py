@@ -120,13 +120,13 @@ specs = [
 
     ("latest_projected_revenue", "WiFi Revenue (Projected)",
      "latest_projected_wifi_revenue_usd",
-     "Projected WiFi revenue for Aug 2026, the latest service month in the revenue sheet. Service-month reporting is delayed, so this can lag the current month.",
-     2, "$", None, "Aug 2026"),
+     "Projected WiFi revenue for the latest service month in the revenue sheet.",
+     2, "$", None, None),
 
     ("latest_payment", "WiFi Payment (Received)",
      "latest_wifi_payment_received_usd",
-     "Carrier payment received 25 Sep 2026 for Jul 2026 service. Carrier payments settle after the service month, so cash receipts lag network activity.",
-     2, "$", None, "Jul 2026"),
+     "Latest carrier WiFi payment received.",
+     2, "$", None, None),
 
     ("outstanding", "Balance Outstanding to Transfer",
      "balance_outstanding_to_transfer_usd",
@@ -167,3 +167,24 @@ for spec in specs:
 STATE.write_text(json.dumps(state, indent=2) + "\n")
 print()
 print("Counter naming PASS")
+
+# Apply source-derived month labels/descriptions after generic counter setup.
+sync_script = (
+    ROOT
+    / "scripts/v3_sync_dynamic_counter_labels.py"
+)
+
+if sync_script.exists():
+    p = subprocess.run(
+        [
+            "python3",
+            str(sync_script),
+        ],
+        cwd=ROOT,
+        text=True,
+    )
+
+    if p.returncode != 0:
+        raise RuntimeError(
+            "Dynamic revenue counter-label sync failed"
+        )

@@ -204,10 +204,10 @@ SELECT
     CURRENT_TIMESTAMP
         AS observed_at_utc,
 
-    json_extract_scalar(
+    COALESCE(json_extract_scalar(c.j, '$.chain_collected_at_utc'), json_extract_scalar(
         c.j,
         '$.generated_at_utc'
-    ) AS chain_snapshot_generated_at_utc,
+    )) AS chain_snapshot_generated_at_utc,
 
     pp.price_usd
         AS xnet_price_usd,

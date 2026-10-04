@@ -513,6 +513,11 @@ for row in burn_rows:
     )
 
 supply_rows = load(DATA / "xnet_supply_history.json")
+historical_path = DATA / "history/circulating_supply_seed.json"
+if historical_path.exists():
+    combined = {r["day"]: r for r in load(historical_path)["data"]}
+    combined.update({r["day"]: r for r in supply_rows})
+    supply_rows = [combined[d] for d in sorted(combined)]
 supply_monthly = {}
 supply_change = defaultdict(Decimal)
 
@@ -530,12 +535,18 @@ token_months = sorted(
 token_rows = []
 market_state = load(DATA / "current/xnet_market_state.json")
 current_price = D(market_state.get("xnet_price_usd"))
+previous_circulating = None
 
 for month in token_months:
     src = revenue_by_month.get(month, {})
     emissions = D(src.get("total_emitted_tokens"))
     offload = offload_by_month.get(month)
     efficiency = None
+    circulating = supply_monthly.get(month)
+    circulating_growth = (circulating / previous_circulating - 1
+        if circulating is not None and previous_circulating is not None and previous_circulating > 0 else None)
+    if circulating is not None:
+        previous_circulating = circulating
 
     if (
         emissions is not None
@@ -570,6 +581,7 @@ for month in token_months:
                 float(supply_change[month])
                 if month in supply_change
                 else None,
+            "circulating_supply_growth": float(circulating_growth) if circulating_growth is not None else None,
         }
     )
 

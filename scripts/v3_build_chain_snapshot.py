@@ -387,6 +387,7 @@ policy = bbb_policy()
 snapshot = {
     "schema_version": 1,
 
+    "chain_collected_at_utc": load("xnet_chain_health.json").get("last_refresh_completed_utc"),
     "generated_at_utc":
         datetime.now(timezone.utc)
         .replace(microsecond=0)

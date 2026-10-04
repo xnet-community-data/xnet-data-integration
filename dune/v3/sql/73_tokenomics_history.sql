@@ -21,7 +21,9 @@ SELECT
     TRY_CAST(json_extract_scalar(item, '$.circulating_supply_xnet') AS DOUBLE)
         AS circulating_supply_xnet,
     TRY_CAST(json_extract_scalar(item, '$.circulation_change_xnet') AS DOUBLE)
-        AS circulation_change_xnet
+        AS circulation_change_xnet,
+    TRY_CAST(json_extract_scalar(item, '$.circulating_supply_growth') AS DOUBLE)
+        AS circulating_supply_growth
 FROM items
 WHERE CAST(json_extract_scalar(item, '$.month') AS DATE) <= CURRENT_DATE
 ORDER BY month

@@ -10,6 +10,14 @@ refresh = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(refresh)
 
 class RefreshTests(unittest.TestCase):
+    def test_cadence_skips_early_runs_and_catches_up(self):
+        from datetime import timedelta
+        fixed = refresh.now()
+        with patch.object(refresh, "now", return_value=fixed):
+            self.assertFalse(refresh.due((fixed - timedelta(minutes=15)).isoformat(), 30))
+            self.assertTrue(refresh.due((fixed - timedelta(minutes=31)).isoformat(), 30))
+            self.assertTrue(refresh.due(None, 30))
+
     def test_configured_engine_and_no_results_download_for_chart(self):
         calls = []
         def api(path, payload=None):

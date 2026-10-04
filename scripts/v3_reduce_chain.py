@@ -466,6 +466,9 @@ def derive_supply(transfers: list[dict]) -> None:
 
         elif action == "burn":
             per_day[day]["burn"] += amount
+            # Burning a non-circulating balance also reduces the exclusion.
+            if r["from_owner"] in excluded:
+                per_day[day]["flow"] -= amount
 
     today = datetime.now(timezone.utc).date()
 

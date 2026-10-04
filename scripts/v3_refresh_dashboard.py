@@ -118,6 +118,12 @@ def export_source(record, spec, remaining):
 def run(script, *args):
     subprocess.run([sys.executable, f"scripts/{script}", *args], cwd=ROOT, check=True)
 
+def due(last, cadence_minutes):
+    if not last:
+        return True
+    elapsed = (now() - datetime.fromisoformat(last.replace("Z", "+00:00"))).total_seconds()
+    return elapsed >= cadence_minutes * 60 - 60
+
 def publish():
     subprocess.run(["bash", "scripts/v3_publish_live_state.sh"], cwd=ROOT, check=True)
 
@@ -125,15 +131,18 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--resume", action="store_true", help="Explicitly clear a reviewed pause; never used by cron")
     parser.add_argument("--benchmark", action="store_true", help="Measure query costs without changing canonical state")
+    parser.add_argument("--benchmark-sources", action="store_true", help="Measure bounded sources only")
     args = parser.parse_args()
-    if args.benchmark:
+    if args.benchmark or args.benchmark_sources:
         records = []
         # Start with the smallest presentation query, then each shared query.
         specs = sorted(CONFIG["presentation"], key=lambda spec: spec["query_id"] != 8895092) + CONFIG["sources"]
+        if args.benchmark_sources:
+            specs = CONFIG["sources"]
         for spec in specs:
             records.append({"key": spec["key"], **execute(spec)})
             save(ROOT / "state/v3_credit_benchmark.json", {"generated_at_utc": stamp(), "performance": CONFIG["performance"], "queries": records})
-            print(spec["key"], records[-1]["execution_cost_credits"], "credits")
+            print(spec["key"], records[-1]["execution_cost_credits"], "credits", flush=True)
         return 0
     state = load(STATE, {"schema_version": 1, "queries": {}})
     if state.get("paused") and not args.resume:
@@ -143,31 +152,32 @@ def main():
         usage_guard()
         health = load(HEALTH, {})
         last = state.get("chain_completed_at_utc") or health.get("last_refresh_completed_utc")
-        elapsed = (now() - datetime.fromisoformat(last.replace("Z", "+00:00"))).total_seconds() / 3600 if last else 2
-        lookback = max(2, math.ceil(elapsed + 1))
-        if lookback > CONFIG["max_catchup_hours"]:
-            raise RuntimeError("Canonical collection gap exceeds catch-up limit; reviewed repair required.")
-        remaining = CONFIG["max_export_points_per_run"]
-        records = []
-        for spec in CONFIG["sources"]:
-            record = execute(spec, {"lookback_hours": lookback})
-            remaining = export_source(record, spec, remaining)
-            state["queries"][spec["key"]] = record
-            save(STATE, state)
-            records.append(record)
-        run("v3_reduce_chain.py", "--transfer-result", str(ROOT / CONFIG["sources"][0]["output"]),
-            "--bbb-result", str(ROOT / CONFIG["sources"][1]["output"]))
+        if due(last, CONFIG["chain_cadence_minutes"]):
+            elapsed = (now() - datetime.fromisoformat(last.replace("Z", "+00:00"))).total_seconds() / 3600 if last else 2
+            lookback = max(2, math.ceil(elapsed + 1))
+            if lookback > CONFIG["max_catchup_hours"]:
+                raise RuntimeError("Canonical collection gap exceeds catch-up limit; reviewed repair required.")
+            remaining = CONFIG["max_export_points_per_run"]
+            records = []
+            for spec in CONFIG["sources"]:
+                record = execute(spec, {"lookback_hours": lookback})
+                remaining = export_source(record, spec, remaining)
+                state["queries"][spec["key"]] = record
+                save(STATE, state)
+                records.append(record)
+            run("v3_reduce_chain.py", "--transfer-result", str(ROOT / CONFIG["sources"][0]["output"]),
+                "--bbb-result", str(ROOT / CONFIG["sources"][1]["output"]))
+            state["chain_completed_at_utc"] = stamp()
+            save(HEALTH, {"schema_version": 1, "last_refresh_completed_utc": state["chain_completed_at_utc"],
+                "status": "HEALTHY", "cadence_minutes": CONFIG["chain_cadence_minutes"], "paused_due_to_cost": False,
+                "sources": {s["key"]: r for s, r in zip(CONFIG["sources"], records)}, "automatic_retry": False})
         run("v3_build_chain_snapshot.py")
-        state["chain_completed_at_utc"] = stamp()
-        save(HEALTH, {"schema_version": 1, "last_refresh_completed_utc": state["chain_completed_at_utc"],
-            "status": "HEALTHY", "cadence_minutes": 15, "paused_due_to_cost": False,
-            "sources": {s["key"]: r for s, r in zip(CONFIG["sources"], records)}, "automatic_retry": False})
         run("v3_collect_market.py")
         save(STATE, state)
         publish()
         for spec in CONFIG["presentation"]:
             last = state["queries"].get(spec["key"], {}).get("completed_at_utc")
-            if last and (now() - datetime.fromisoformat(last.replace("Z", "+00:00"))).total_seconds() < spec["cadence_minutes"] * 60 - 60:
+            if not due(last, spec["cadence_minutes"]):
                 continue
             # Do not download presentation rows: charts use Dune's cached executions.
             state["queries"][spec["key"]] = execute(spec)

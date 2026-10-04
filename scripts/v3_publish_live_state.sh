@@ -71,6 +71,9 @@ cp "$SOURCE/data/derived/market_snapshots.csv" data/derived/
 cp "$SOURCE/data/current/xnet_market_state.json" data/current/
 
 cp "$SOURCE/data/history/bbb_wallet_usdc_daily.json" data/history/
+if [ -f "$SOURCE/data/history/circulating_supply_seed.json" ]; then
+  cp "$SOURCE/data/history/circulating_supply_seed.json" data/history/
+fi
 cp "$SOURCE/data/xnet_supply_history.json" data/
 
 if [ -f "$SOURCE/data/current/v3_refresh_state.json" ]; then

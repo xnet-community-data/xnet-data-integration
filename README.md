@@ -2,6 +2,6 @@
 
 Machine-maintained production state for the XNET V3 dashboard.
 
-This branch is intentionally force-updated as a single-commit state branch.
+Updates preserve history and use fast-forward pushes.
 
 Human-readable code and research live on `main`.

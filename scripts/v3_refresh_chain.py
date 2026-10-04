@@ -357,6 +357,20 @@ def main() -> int:
                 "v3_build_chain_snapshot.py failed"
             )
 
+        publish_proc = subprocess.run(
+            [
+                "bash",
+                "scripts/v3_publish_live_state.sh",
+            ],
+            cwd=ROOT,
+            text=True,
+        )
+
+        if publish_proc.returncode != 0:
+            raise RuntimeError(
+                "v3_publish_live_state.sh failed"
+            )
+
         breaches = []
 
         if transfer_cost > transfer_limit:

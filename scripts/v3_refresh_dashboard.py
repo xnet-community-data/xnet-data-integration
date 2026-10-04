@@ -70,7 +70,7 @@ def usage_guard():
         raise RuntimeError(f"Monthly spend guard reached: {used:.3f}/{limit:.0f} credits.")
     return {"credits_used": used, "guard_credits": limit, "period_start": period["start_date"], "period_end": period["end_date"]}
 
-def execute(spec, params=None):
+def execute(spec, params=None, enforce_cap=True):
     usage = usage_guard()
     body = {"performance": CONFIG["performance"]}
     if params:
@@ -96,7 +96,7 @@ def execute(spec, params=None):
         "result_metadata": status.get("result_metadata", {}), "billing": usage}
     if status["state"] != "QUERY_STATE_COMPLETED":
         raise RuntimeError(f"Execution {execution_id}: {status['state']}; no automatic retry.")
-    if float(cost) > spec["max_run_credits"]:
+    if enforce_cap and float(cost) > spec["max_run_credits"]:
         raise RuntimeError(f"Query {spec['query_id']} cost {cost} exceeded {spec['max_run_credits']}; refresh paused.")
     return record
 
@@ -170,9 +170,11 @@ def main():
                     params = {"lookback_hours": 2} if spec in CONFIG["sources"] else None
                     records.append({"batch": batch, "repetition": repetition,
                         "key": spec["key"], "lookback_hours": 2 if params else None,
-                        **execute(spec, params)})
+                        **execute(spec, params, enforce_cap=False)})
                     save(ROOT / "state/v3_credit_benchmark.json", {"generated_at_utc": stamp(), "performance": CONFIG["performance"], "queries": records})
                     print(batch, repetition, spec["key"], records[-1]["execution_cost_credits"], "credits", flush=True)
+                    if records[-1]["execution_cost_credits"] > 2 or sum(r["execution_cost_credits"] for r in records) > 30:
+                        raise RuntimeError("Benchmark safety allowance reached; costs saved for review.")
         return 0
     state = load(STATE, {"schema_version": 1, "queries": {}})
     if state.get("paused") and not args.resume:

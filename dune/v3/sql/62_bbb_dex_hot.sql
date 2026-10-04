@@ -65,8 +65,8 @@ WITH legs AS (
 
     FROM dex_solana.trades
 
-    WHERE block_date >= CAST(date_add('hour', -CAST({{lookback_hours}} AS BIGINT), CURRENT_TIMESTAMP) AS DATE)
-      AND block_time >= date_add('hour', -CAST({{lookback_hours}} AS BIGINT), CURRENT_TIMESTAMP)
+    WHERE block_date >= CURRENT_DATE - INTERVAL '1' DAY
+      AND block_time >= CURRENT_TIMESTAMP - INTERVAL '{{lookback_hours}}' HOUR
 
       AND trader_id =
           '5QsyByFVJcg7oN76Ma26KEDFQdHt1tsiVExK94zURzfd'

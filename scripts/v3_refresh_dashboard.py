@@ -10,7 +10,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -44,10 +44,16 @@ def api(path, payload=None):
         with urllib.request.urlopen(request, timeout=45) as response:
             return json.load(response)
     except urllib.error.HTTPError as error:
-        raise RuntimeError(f"Dune HTTP {error.code}; no automatic execution retry.") from None
+        try:
+            body = json.loads(error.read())
+            message = str(body.get("error") or body.get("message") or "")[:400].replace(key, "[redacted]")
+        except Exception:
+            message = ""
+        raise RuntimeError(f"Dune HTTP {error.code} at {path.split('?')[0]}: {message}; no automatic execution retry.") from None
 
 def usage_guard():
-    usage = api("usage", {})
+    usage = api("usage", {"start_date": now().date().replace(day=1).isoformat(),
+                          "end_date": (now().date() + timedelta(days=1)).isoformat()})
     periods = usage.get("billing_periods", [])
     today = now().date().isoformat()
     active = [p for p in periods if str(p["start_date"])[:10] <= today < str(p["end_date"])[:10]]

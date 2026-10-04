@@ -528,6 +528,8 @@ token_months = sorted(
 )
 
 token_rows = []
+market_state = load(DATA / "current/xnet_market_state.json")
+current_price = D(market_state.get("xnet_price_usd"))
 
 for month in token_months:
     src = revenue_by_month.get(month, {})
@@ -539,6 +541,7 @@ for month in token_months:
         emissions is not None
         and offload is not None
         and offload > 0
+        and date.fromisoformat(month) < datetime.now(timezone.utc).date().replace(day=1)
     ):
         efficiency = emissions / offload
 
@@ -554,6 +557,10 @@ for month in token_months:
             "emissions_per_network_gb":
                 float(efficiency)
                 if efficiency is not None
+                else None,
+            "emissions_usd_per_gb_at_current_price":
+                float(efficiency * current_price)
+                if efficiency is not None and current_price is not None
                 else None,
             "circulating_supply_xnet":
                 float(supply_monthly[month])
@@ -574,6 +581,8 @@ save(
             datetime.now(timezone.utc).isoformat(),
         "emissions_source":
             "XNET revenue sheet total_emitted_tokens schedule",
+        "valuation_price_usd": float(current_price) if current_price is not None else None,
+        "valuation_price_observed_at_utc": market_state.get("fetched_at_utc"),
         "data": token_rows,
     },
 )

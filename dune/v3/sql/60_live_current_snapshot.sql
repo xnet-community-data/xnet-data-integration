@@ -325,6 +325,15 @@ SELECT
     TRY_CAST(
         json_extract_scalar(
             c.j,
+            '$.bbb_wallet_usdc_balance'
+        )
+        AS DOUBLE
+    ) AS bbb_wallet_usdc_balance,
+
+
+    TRY_CAST(
+        json_extract_scalar(
+            c.j,
             '$.bbb_recent_gross_xnet_bought'
         )
         AS DOUBLE
@@ -751,7 +760,7 @@ CROSS JOIN (
         2,
         'Dune Solana',
         'chain',
-        'Circulating Supply · XNET Holders · XNET Burned · BBB Wallet Balance'
+        'Circulating Supply · XNET Holders · XNET Burned · Buy & Burn Wallet Balance'
     ),
 
     (
@@ -772,7 +781,7 @@ CROSS JOIN (
         5,
         'XNET Revenue Sheet',
         'revenue',
-        'Annualized Revenue Run Rate · Wi-Fi Revenue · Payments · Balance Outstanding · Buy & Burn Transfers'
+        'Annualized Revenue Run Rate · P/S Ratio · WiFi Revenue (Projected) · WiFi Payment (Received) · Balance Outstanding to Transfer · Transferred to Buy & Burn'
     )
 
 ) AS f(

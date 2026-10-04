@@ -129,7 +129,7 @@ rename_existing = {
     ),
 
     "latest_payment": (
-        "Latest Wi-Fi Payment",
+        "WiFi Payment (Received)",
         "Latest recorded Wi-Fi cash receipt.",
     ),
 
@@ -244,7 +244,7 @@ specs = {
 
     "market_cap_arr": {
         "name":
-            "Market Cap / ARR",
+            "P/S Ratio",
         "column":
             "market_cap_to_revenue_run_rate",
         "prefix":
@@ -381,7 +381,7 @@ specs = {
 
     "bbb_wallet_balance": {
         "name":
-            "BBB Wallet Balance",
+            "Buy & Burn Wallet Balance",
         "column":
             "bbb_wallet_xnet_balance",
         "prefix":
@@ -872,6 +872,32 @@ def counter_row(keys):
     row += counter_h
 
 
+def two_counter_row(keys):
+
+    global row
+
+    if len(keys) != 2:
+        raise RuntimeError("Two-counter row must contain 2 widgets")
+
+    width = grid_w // 2
+
+    for i, key in enumerate(keys):
+        if key not in visuals:
+            raise RuntimeError(f"Missing visualization: {key}")
+
+        viz_widgets.append({
+            "visualization_id": visuals[key]["id"],
+            "position": {
+                "row": row,
+                "col": i * width,
+                "size_x": width,
+                "size_y": counter_h,
+            },
+        })
+
+    row += counter_h
+
+
 # --------------------------------------------------
 # INTRO
 # --------------------------------------------------
@@ -939,10 +965,9 @@ text_block(
     )
 )
 
-counter_row([
+two_counter_row([
     "revenue_arr",
     "market_cap_arr",
-    "fdv_arr",
 ])
 
 
@@ -1130,7 +1155,6 @@ expected_keys = {
 
     "revenue_arr",
     "market_cap_arr",
-    "fdv_arr",
 
     "latest_offload",
     "avg_offload_30d",

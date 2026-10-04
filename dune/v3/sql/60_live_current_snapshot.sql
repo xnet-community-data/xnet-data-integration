@@ -706,6 +706,8 @@ CROSS JOIN market m
 
 SELECT
     cs.*,
+    CONCAT(SUBSTR(CAST(cs.observed_at_utc AS VARCHAR), 1, 19), ' UTC') AS dashboard_updated_utc,
+    json_extract_scalar(c_clock.j, '$.bbb_wallet_usdc_observed_at_utc') AS bbb_wallet_usdc_observed_at_utc,
     (
         cs.latest_wifi_payment_received_usd
         * cs.bbb_policy_effective_xnet_market_buy_share
@@ -800,6 +802,7 @@ SELECT
     f.freshness_covers
 
 FROM current_state cs
+CROSS JOIN chain c_clock
 
 CROSS JOIN (
     VALUES

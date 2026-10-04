@@ -16,11 +16,16 @@ SELECT
         AS burn_transactions,
     TRY_CAST(json_extract_scalar(item, '$.cumulative_xnet_burned') AS DOUBLE)
         AS cumulative_xnet_burned,
+    TRY_CAST(json_extract_scalar(item, '$.cumulative_xnet_burned') AS DOUBLE)
+        / NULLIF(TRY_CAST(json_extract_scalar(raw.j, '$.summary.published_max_supply_xnet') AS DOUBLE), 0)
+        AS cumulative_burn_share_max,
     TRY_CAST(json_extract_scalar(item, '$.bbb_wallet_usdc_balance') AS DOUBLE)
         AS bbb_wallet_usdc_balance,
 
     CAST(json_extract_scalar(raw.j, '$.summary.latest_burn_day') AS DATE)
         AS latest_burn_day,
+    json_extract_scalar(raw.j, '$.summary.latest_burn_utc') AS latest_burn_utc,
+    TRY_CAST(json_extract_scalar(raw.j, '$.summary.latest_burn_xnet') AS DOUBLE) AS latest_burn_xnet,
     TRY_CAST(json_extract_scalar(raw.j, '$.summary.burn_last_7d_xnet') AS DOUBLE)
         AS burn_last_7d_xnet,
     TRY_CAST(json_extract_scalar(raw.j, '$.summary.burn_last_30d_xnet') AS DOUBLE)

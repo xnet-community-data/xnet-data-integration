@@ -1,10 +1,51 @@
-name: Refresh XNET V3 presentation queries
+name: Refresh XNET V3
 
 on:
+  schedule:
+    - cron: "7,22,37,52 * * * *"
   workflow_dispatch:
+    inputs:
+      resume:
+        description: "Clear a reviewed spend/failure pause"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: xnet-live-state
+  cancel-in-progress: false
 
 jobs:
   refresh:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - run: echo "Recurring refresh intentionally disabled pending cost benchmark."
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Restore production state
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
+          python scripts/v3_hydrate_live_state.py
+      - name: Refresh bounded sources and cached charts
+        env:
+          DUNE_API_KEY: ${{ secrets.DUNE_API_KEY }}
+          RESUME: ${{ inputs.resume }}
+        run: |
+          if [ "$RESUME" = "true" ]; then
+            python scripts/v3_refresh_dashboard.py --resume
+          else
+            python scripts/v3_refresh_dashboard.py
+          fi
+      - name: Preserve diagnostic state
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xnet-v3-refresh-state
+          path: data/current/v3_refresh_state.json
+          retention-days: 14

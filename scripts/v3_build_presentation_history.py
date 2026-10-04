@@ -313,6 +313,7 @@ post_checkpoint = defaultdict(
         "txs": set(),
     }
 )
+burn_transactions = defaultdict(lambda: {"amount": Decimal("0"), "block_time": ""})
 
 transfer_path = DATA / "canonical/xnet_transfers.csv"
 
@@ -335,16 +336,17 @@ with transfer_path.open() as f:
             or row.get("block_time")
             or ""
         )[:10]
+        tx_id = str(row.get("tx_id") or row.get("event_id") or "")
+        amount = (D(row.get("amount_xnet")) or Decimal("0")) * Decimal(str(row.get("event_multiplicity") or 1))
+        if tx_id:
+            burn_transactions[tx_id]["amount"] += amount
+            burn_transactions[tx_id]["block_time"] = max(burn_transactions[tx_id]["block_time"], str(row.get("block_time") or ""))
 
         if (
             not day
             or day <= checkpoint_day
         ):
             continue
-
-        amount = D(
-            row.get("amount_xnet")
-        ) or Decimal("0")
 
         post_checkpoint[day]["amount"] += amount
 
@@ -429,7 +431,7 @@ if burn_rows:
         else None
     )
 
-    end = date.fromisoformat(latest_data_day)
+    end = datetime.now(timezone.utc).date()
     start7 = end - timedelta(days=6)
     start30 = end - timedelta(days=29)
 
@@ -473,6 +475,7 @@ pct_circ = (
     if current_circulating
     else None
 )
+latest_transaction = max(burn_transactions.values(), key=lambda row: row["block_time"], default=None)
 
 save(
     "burn_history.json",
@@ -481,6 +484,9 @@ save(
         "generated_at_utc":
             datetime.now(timezone.utc).isoformat(),
         "summary": {
+            "published_max_supply_xnet": float(max_supply),
+            "latest_burn_utc": latest_transaction["block_time"] if latest_transaction else None,
+            "latest_burn_xnet": float(latest_transaction["amount"]) if latest_transaction else None,
             "latest_data_day": latest_data_day,
             "latest_burn_day": latest_burn_day,
             "burn_last_7d_xnet": float(burn7),

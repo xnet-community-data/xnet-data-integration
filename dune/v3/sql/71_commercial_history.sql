@@ -33,4 +33,5 @@ SELECT
     TRY_CAST(json_extract_scalar(item, '$.unused_series_2') AS DOUBLE)
         AS unused_series_2
 FROM items
+WHERE CAST(json_extract_scalar(item, '$.month') AS DATE) <= CURRENT_DATE
 ORDER BY month

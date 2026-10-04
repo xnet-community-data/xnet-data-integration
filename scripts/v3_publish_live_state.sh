@@ -49,7 +49,8 @@ mkdir -p \
   data/canonical \
   data/current \
   data/derived \
-  data/network
+  data/network \
+  data/history
 
 
 cp \
@@ -59,6 +60,22 @@ cp \
 cp \
   "$SOURCE/data/canonical/bbb_trades.csv" \
   data/canonical/
+
+for file in market_pair_snapshots.csv; do
+  if [ -f "$SOURCE/data/canonical/$file" ]; then
+    cp "$SOURCE/data/canonical/$file" data/canonical/
+  fi
+done
+
+cp "$SOURCE/data/derived/market_snapshots.csv" data/derived/
+cp "$SOURCE/data/current/xnet_market_state.json" data/current/
+
+cp "$SOURCE/data/history/bbb_wallet_usdc_daily.json" data/history/
+cp "$SOURCE/data/xnet_supply_history.json" data/
+
+if [ -f "$SOURCE/data/current/v3_refresh_state.json" ]; then
+  cp "$SOURCE/data/current/v3_refresh_state.json" data/current/
+fi
 
 cp \
   "$SOURCE/data/current/xnet_chain_snapshot.json" \
@@ -128,7 +145,7 @@ cat > README.md <<'EOF'
 
 Machine-maintained production state for the XNET V3 dashboard.
 
-This branch is intentionally force-updated as a single-commit state branch.
+Updates preserve history and use fast-forward pushes.
 
 Human-readable code and research live on `main`.
 EOF
@@ -141,24 +158,15 @@ git config user.name \
 git config user.email \
   "xnet-community-data-bot@users.noreply.github.com"
 
-if git rev-parse --verify HEAD >/dev/null 2>&1; then
-
-    git commit \
-      --amend \
-      --no-edit \
-      --quiet
-
-else
-
-    git commit \
-      -m "XNET live production state" \
-      --quiet
+if git diff --cached --quiet; then
+  echo "Live state unchanged."
+  exit 0
 fi
+git commit -m "Refresh XNET live state" --quiet
 
 git push \
   origin \
   live-state \
-  --force \
   --quiet
 
 echo "Published live-state branch."

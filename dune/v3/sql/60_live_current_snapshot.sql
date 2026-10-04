@@ -547,6 +547,75 @@ SELECT
         AS DOUBLE
     ) AS unattributed_payments_usd,
 
+    -- VALUATION
+
+    (
+        pp.price_usd
+        * TRY_CAST(
+            json_extract_scalar(
+                c.j,
+                '$.circulating_supply_xnet'
+            )
+            AS DOUBLE
+        )
+    )
+    /
+    NULLIF(
+        TRY_CAST(
+            json_extract_scalar(
+                r.j,
+                '$.latest_service.annualized_revenue_run_rate_usd'
+            )
+            AS DOUBLE
+        ),
+        0
+    )
+        AS market_cap_to_revenue_run_rate,
+
+    (
+        pp.price_usd
+        * TRY_CAST(
+            json_extract_scalar(
+                c.j,
+                '$.published_max_supply_xnet'
+            )
+            AS DOUBLE
+        )
+    )
+    /
+    NULLIF(
+        TRY_CAST(
+            json_extract_scalar(
+                r.j,
+                '$.latest_service.annualized_revenue_run_rate_usd'
+            )
+            AS DOUBLE
+        ),
+        0
+    )
+        AS fdv_to_revenue_run_rate,
+
+    100.0
+    * TRY_CAST(
+        json_extract_scalar(
+            c.j,
+            '$.circulating_supply_xnet'
+        )
+        AS DOUBLE
+    )
+    /
+    NULLIF(
+        TRY_CAST(
+            json_extract_scalar(
+                c.j,
+                '$.published_max_supply_xnet'
+            )
+            AS DOUBLE
+        ),
+        0
+    )
+        AS circulating_supply_pct_max,
+
     -- CHAIN FRESHNESS
 
     json_extract_scalar(

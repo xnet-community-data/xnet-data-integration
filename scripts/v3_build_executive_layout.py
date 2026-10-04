@@ -379,6 +379,26 @@ specs = {
             ),
     },
 
+    "bbb_daily_rate": {
+        "name":
+            "BBB Daily Rate",
+        "column":
+            "bbb_daily_rate_usd",
+        "prefix":
+            "$",
+        "suffix":
+            "/day",
+        "decimals":
+            2,
+        "label":
+            "BBB Daily Rate",
+        "description":
+            (
+                "Daily XNET market-buy budget from the latest "
+                "carrier payment under the current BBB execution policy."
+            ),
+    },
+
     "bbb_wallet_balance": {
         "name":
             "Buy & Burn Wallet Balance",
@@ -1033,10 +1053,14 @@ text_block(
     )
 )
 
-counter_row([
-    "bbb_burned",
-    "bbb_transfers",
+two_counter_row([
+    "bbb_daily_rate",
     "bbb_wallet_balance",
+])
+
+two_counter_row([
+    "bbb_transfers",
+    "bbb_burned",
 ])
 
 
@@ -1168,6 +1192,7 @@ expected_keys = {
     "latest_payment",
     "outstanding",
 
+    "bbb_daily_rate",
     "bbb_burned",
     "bbb_transfers",
     "bbb_wallet_balance",

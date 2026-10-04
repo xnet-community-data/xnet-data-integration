@@ -133,6 +133,10 @@ specs = [
      "Balance outstanding to transfer from the XNET revenue sheet. The sheet is updated manually, so this figure can lag actual transfers.",
      2, "$", None, None),
 
+    ("bbb_daily_rate", "BBB Daily Rate", "bbb_daily_rate_usd",
+     "Daily XNET market-buy budget from the latest carrier payment under the current BBB execution policy. Policy inputs are stored in config/xnet_bbb_execution_policy.json.",
+     2, "$", "/day", None),
+
     ("bbb_burned", "XNET Burned", "verified_bbb_burned_xnet",
      "Total XNET burned through Buy & Burn.",
      0, None, " XNET", None),

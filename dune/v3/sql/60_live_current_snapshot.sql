@@ -330,6 +330,46 @@ SELECT
         AS DOUBLE
     ) AS bbb_wallet_usdc_balance,
 
+    TRY_CAST(
+        json_extract_scalar(
+            c.j,
+            '$.bbb_execution_policy.direct_bbb_share_of_received_revenue'
+        )
+        AS DOUBLE
+    ) AS bbb_policy_direct_share,
+
+    TRY_CAST(
+        json_extract_scalar(
+            c.j,
+            '$.bbb_execution_policy.liquidity_share_of_received_revenue'
+        )
+        AS DOUBLE
+    ) AS bbb_policy_liquidity_share,
+
+    TRY_CAST(
+        json_extract_scalar(
+            c.j,
+            '$.bbb_execution_policy.liquidity_xnet_market_buy_fraction'
+        )
+        AS DOUBLE
+    ) AS bbb_policy_liquidity_xnet_market_buy_fraction,
+
+    TRY_CAST(
+        json_extract_scalar(
+            c.j,
+            '$.bbb_execution_policy.effective_xnet_market_buy_share'
+        )
+        AS DOUBLE
+    ) AS bbb_policy_effective_xnet_market_buy_share,
+
+    TRY_CAST(
+        json_extract_scalar(
+            c.j,
+            '$.bbb_execution_policy.execution_days'
+        )
+        AS DOUBLE
+    ) AS bbb_policy_execution_days,
+
 
     TRY_CAST(
         json_extract_scalar(
@@ -660,6 +700,15 @@ CROSS JOIN market m
 
 SELECT
     cs.*,
+    (
+        cs.latest_wifi_payment_received_usd
+        * cs.bbb_policy_effective_xnet_market_buy_share
+        / NULLIF(
+            cs.bbb_policy_execution_days,
+            0
+        )
+    ) AS bbb_daily_rate_usd,
+
 
     f.freshness_source,
 
@@ -668,7 +717,7 @@ SELECT
 
         WHEN 'market' THEN
             CONCAT(
-                'Live · ',
+                'Last retrieved · ',
                 SUBSTR(
                     CAST(
                         cs.observed_at_utc
@@ -682,7 +731,7 @@ SELECT
 
         WHEN 'chain' THEN
             CONCAT(
-                'Snapshot · ',
+                'Last retrieved · ',
                 REPLACE(
                     SUBSTR(
                         cs.chain_snapshot_generated_at_utc,
@@ -702,8 +751,8 @@ SELECT
                         cs.offload_status,
                         cs.network_status
                     ) = 'stale_fallback'
-                    THEN 'Last known good'
-                    ELSE 'Current'
+                    THEN 'Last retrieved'
+                    ELSE 'Last retrieved'
                 END,
                 ' · ',
                 cs.offload_data_as_of
@@ -716,8 +765,8 @@ SELECT
                         cs.device_status,
                         cs.network_status
                     ) = 'stale_fallback'
-                    THEN 'Last known good'
-                    ELSE 'Current'
+                    THEN 'Last retrieved'
+                    ELSE 'Last retrieved'
                 END,
                 ' · ',
                 cs.device_data_as_of
@@ -725,15 +774,9 @@ SELECT
 
         WHEN 'revenue' THEN
             CONCAT(
-                'Source ',
+                'Last retrieved · ',
                 SUBSTR(
                     cs.revenue_source_latest_month,
-                    1,
-                    7
-                ),
-                ' · Service ',
-                SUBSTR(
-                    cs.revenue_service_month,
                     1,
                     7
                 )
@@ -781,7 +824,7 @@ CROSS JOIN (
         5,
         'XNET Revenue Sheet',
         'revenue',
-        'Annualized Revenue Run Rate · P/S Ratio · WiFi Revenue (Projected) · WiFi Payment (Received) · Balance Outstanding to Transfer · Transferred to Buy & Burn'
+        'Annualized Revenue Run Rate · P/S Ratio · WiFi Revenue (Projected) · WiFi Payment (Received) · Balance Outstanding to Transfer · BBB Daily Rate · Transferred to Buy & Burn'
     )
 
 ) AS f(

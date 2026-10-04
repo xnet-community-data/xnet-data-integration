@@ -87,10 +87,10 @@ rename_existing = {
     ),
 
     "market_cap": (
-        "Circulating Market Cap",
+        "Market Cap",
         (
             "Live XNET price multiplied by "
-            "verified reconstructed circulating supply."
+            "circulating supply."
         ),
     ),
 
@@ -104,7 +104,7 @@ rename_existing = {
 
     "latest_offload": (
         "Latest Daily Offload",
-        "Latest verified daily network offload.",
+        "Latest daily network offload.",
     ),
 
     "avg_offload_30d": (
@@ -117,11 +117,11 @@ rename_existing = {
 
     "operational_devices": (
         "Operational Devices",
-        "Latest verified operational-device count.",
+        "Latest operational-device count.",
     ),
 
     "revenue_arr": (
-        "Annualized Wi-Fi Revenue Run Rate",
+        "Annualized Revenue Run Rate",
         (
             "Annualized from the latest "
             "projected Wi-Fi service-revenue month."
@@ -134,7 +134,7 @@ rename_existing = {
     ),
 
     "outstanding": (
-        "Outstanding Transfer Balance",
+        "Balance Outstanding to Transfer",
         (
             "Latest source-reported balance "
             "outstanding to transfer."
@@ -150,12 +150,12 @@ rename_existing = {
     ),
 
     "holders": (
-        "Positive-Balance Holders",
+        "XNET Holders",
         "Owners with a positive XNET balance.",
     ),
 
     "bbb_burned": (
-        "Verified XNET Burned",
+        "XNET Burned",
         (
             "Cumulative verified burns attributable "
             "to the primary BBB wallet flow."
@@ -163,7 +163,7 @@ rename_existing = {
     ),
 
     "freshness": (
-        "Data Freshness & Source Status",
+        "Data Freshness",
         (
             "Observation dates for market, chain, "
             "network and commercial sources."
@@ -204,7 +204,7 @@ for key, (
 specs = {
     "fdv": {
         "name":
-            "Fully Diluted Valuation",
+            "FDV",
         "column":
             "fdv_usd",
         "prefix":
@@ -214,7 +214,7 @@ specs = {
         "decimals":
             0,
         "label":
-            "Published max supply × live price",
+            "Max supply × price",
         "description":
             (
                 "Published maximum XNET supply "
@@ -244,7 +244,7 @@ specs = {
 
     "market_cap_arr": {
         "name":
-            "Market Cap / Revenue Run Rate",
+            "Market Cap / ARR",
         "column":
             "market_cap_to_revenue_run_rate",
         "prefix":
@@ -265,7 +265,7 @@ specs = {
 
     "fdv_arr": {
         "name":
-            "FDV / Revenue Run Rate",
+            "FDV / ARR",
         "column":
             "fdv_to_revenue_run_rate",
         "prefix":
@@ -340,7 +340,7 @@ specs = {
 
     "latest_projected_revenue": {
         "name":
-            "Latest Projected Service Revenue",
+            "Wi-Fi Revenue",
         "column":
             "latest_projected_wifi_revenue_usd",
         "prefix":
@@ -360,7 +360,7 @@ specs = {
 
     "bbb_transfers": {
         "name":
-            "Recorded BBB Transfers",
+            "Transferred to Buy & Burn",
         "column":
             "cumulative_bbb_transfers_usd",
         "prefix":
@@ -391,7 +391,7 @@ specs = {
         "decimals":
             0,
         "label":
-            "Primary verified BBB wallet",
+            "Buy & Burn wallet",
         "description":
             (
                 "Current XNET balance of the "
@@ -648,11 +648,14 @@ fresh_pos = (
     or {}
 )
 
-fresh_h = int(
-    fresh_pos.get(
-        "size_y",
-        counter_h + 2,
-    )
+fresh_h = max(
+    int(
+        fresh_pos.get(
+            "size_y",
+            counter_h + 3,
+        )
+    ),
+    counter_h + 3,
 )
 
 
@@ -878,7 +881,7 @@ text_block(
         "# XNET — Network, Revenue & Buy/Burn\n\n"
         "A live view of XNET's token market, "
         "network usage, commercial performance "
-        "and verified Buy & Burn activity. "
+        "and Buy & Burn activity. "
         "Market and on-chain state update independently "
         "from network and commercial reporting, so "
         "source-specific freshness is shown explicitly."
@@ -905,7 +908,7 @@ text_block(
     (
         "## XNET Market Snapshot\n\n"
         "Current token valuation, trading activity, "
-        "liquidity and verified circulating supply."
+        "liquidity and circulating supply."
     )
 )
 
@@ -997,7 +1000,7 @@ counter_row([
 text_block(
     (
         "## Buy & Burn\n\n"
-        "Verified primary BBB-wallet activity and "
+        "Primary BBB-wallet activity and "
         "commercial-source transfers. "
         "Transfers, market purchases and burns occur "
         "on different clocks and are not assumed to "
@@ -1019,7 +1022,7 @@ counter_row([
 text_block(
     (
         "## Supply & Ownership\n\n"
-        "Current positive-balance holder distribution "
+        "Current XNET holder distribution "
         "derived from the canonical XNET transfer state."
     )
 )
@@ -1048,7 +1051,7 @@ text_block(
         "**Buy & Burn** counts verified burns attributable to the "
         "primary BBB wallet flow.  \n"
         "**Freshness** is source-specific; unavailable upstream "
-        "feeds retain their last verified values rather than "
+        "feeds retain their last known values rather than "
         "silently becoming zero."
     ),
     section_h * 3,

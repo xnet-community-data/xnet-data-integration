@@ -197,8 +197,9 @@ market AS (
         COUNT(*) AS liquidity_pool_count
 
     FROM pairs
-)
+),
 
+current_state AS (
 SELECT
     CURRENT_TIMESTAMP
         AS observed_at_utc,
@@ -343,6 +344,17 @@ SELECT
         n.j,
         '$.status'
     ) AS network_status,
+
+    json_extract_scalar(
+        n.j,
+        '$.offload.status'
+    ) AS offload_status,
+
+    json_extract_scalar(
+        n.j,
+        '$.devices.status'
+    ) AS device_status,
+
 
     json_extract_scalar(
         n.j,
@@ -634,3 +646,141 @@ CROSS JOIN revenue r
 CROSS JOIN price_pool pp
 CROSS JOIN primary_pool p
 CROSS JOIN market m
+)
+
+
+SELECT
+    cs.*,
+
+    f.freshness_source,
+
+    CASE
+        f.freshness_key
+
+        WHEN 'market' THEN
+            CONCAT(
+                'Live · ',
+                SUBSTR(
+                    CAST(
+                        cs.observed_at_utc
+                        AS VARCHAR
+                    ),
+                    1,
+                    16
+                ),
+                ' UTC'
+            )
+
+        WHEN 'chain' THEN
+            CONCAT(
+                'Snapshot · ',
+                REPLACE(
+                    SUBSTR(
+                        cs.chain_snapshot_generated_at_utc,
+                        1,
+                        16
+                    ),
+                    'T',
+                    ' '
+                ),
+                ' UTC'
+            )
+
+        WHEN 'offload' THEN
+            CONCAT(
+                CASE
+                    WHEN COALESCE(
+                        cs.offload_status,
+                        cs.network_status
+                    ) = 'stale_fallback'
+                    THEN 'Last known good'
+                    ELSE 'Current'
+                END,
+                ' · ',
+                cs.offload_data_as_of
+            )
+
+        WHEN 'devices' THEN
+            CONCAT(
+                CASE
+                    WHEN COALESCE(
+                        cs.device_status,
+                        cs.network_status
+                    ) = 'stale_fallback'
+                    THEN 'Last known good'
+                    ELSE 'Current'
+                END,
+                ' · ',
+                cs.device_data_as_of
+            )
+
+        WHEN 'revenue' THEN
+            CONCAT(
+                'Source ',
+                SUBSTR(
+                    cs.revenue_source_latest_month,
+                    1,
+                    7
+                ),
+                ' · Service ',
+                SUBSTR(
+                    cs.revenue_service_month,
+                    1,
+                    7
+                )
+            )
+
+    END
+        AS freshness,
+
+    f.freshness_covers
+
+FROM current_state cs
+
+CROSS JOIN (
+    VALUES
+
+    (
+        1,
+        'DexScreener + Dune Solana',
+        'market',
+        'XNET Price · Market Cap · FDV · 24h DEX Volume · DEX Liquidity'
+    ),
+
+    (
+        2,
+        'Dune Solana',
+        'chain',
+        'Circulating Supply · XNET Holders · XNET Burned · BBB Wallet Balance'
+    ),
+
+    (
+        3,
+        'XNET Offload API',
+        'offload',
+        'Latest Daily Offload · 30-Day Avg Daily Offload · All-Time Network Offload'
+    ),
+
+    (
+        4,
+        'XNET Devices API',
+        'devices',
+        'Total Devices · Operational Devices · 30-Day Device Growth'
+    ),
+
+    (
+        5,
+        'XNET Revenue Sheet',
+        'revenue',
+        'Annualized Revenue Run Rate · Wi-Fi Revenue · Payments · Balance Outstanding · Buy & Burn Transfers'
+    )
+
+) AS f(
+    freshness_order,
+    freshness_source,
+    freshness_key,
+    freshness_covers
+)
+
+ORDER BY
+    f.freshness_order

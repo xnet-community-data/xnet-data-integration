@@ -136,7 +136,7 @@ SPECS = [
     # --------------------------------------------------
     {
         "key": "revenue_arr",
-        "name": "Wi-Fi Revenue Run Rate",
+        "name": "Annualized Revenue Run Rate",
         "type": "counter",
         "description":
             "Annualized revenue run rate derived "
@@ -172,7 +172,7 @@ SPECS = [
 
     {
         "key": "outstanding",
-        "name": "Outstanding Transfer Balance",
+        "name": "Balance Outstanding to Transfer",
         "type": "counter",
         "description":
             "Latest reported balance outstanding "
@@ -206,7 +206,7 @@ SPECS = [
             "stringDecimal": 0,
             "stringSuffix": " XNET",
             "counterLabel":
-                "Verified reconstructed circulation",
+                "XNET in circulation",
         },
     },
 
@@ -222,7 +222,7 @@ SPECS = [
             "rowNumber": 1,
             "stringDecimal": 0,
             "counterLabel":
-                "Positive-balance owners",
+                "XNET holders",
         },
     },
 

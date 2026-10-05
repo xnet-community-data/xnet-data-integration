@@ -94,6 +94,7 @@ def execute(spec, params=None, enforce_cap=True):
         "execution_started_at": status.get("execution_started_at"),
         "execution_ended_at": status.get("execution_ended_at"),
         "result_metadata": status.get("result_metadata", {}), "billing": usage}
+    print(f"Query {spec['query_id']} execution {execution_id}: {status['state']}, {float(cost):.6f} credits (limit {spec['max_run_credits']})", flush=True)
     if status["state"] != "QUERY_STATE_COMPLETED":
         raise RuntimeError(f"Execution {execution_id}: {status['state']}; no automatic retry.")
     if enforce_cap and float(cost) > spec["max_run_credits"]:
@@ -181,6 +182,16 @@ def main():
         return 0
     state = load(STATE, {"schema_version": 1, "queries": {}})
     if state.get("paused") and not args.resume:
+        message = "Refresh remains paused after a previous failure; no queries submitted."
+        if os.environ.get("EVENT") == "schedule":
+            print(f"::warning::{message}")
+            summary = os.environ.get("GITHUB_STEP_SUMMARY")
+            if summary:
+                with open(summary, "a") as report:
+                    report.write("## XNET refresh paused\n\n")
+                    report.write(message + "\n\n")
+                    report.write("Last error: " + str(state.get("last_error", "unknown")) + "\n")
+            return 0
         raise SystemExit("Refresh paused after previous failure; review state and manually resume.")
     state.update({"paused": False, "started_at_utc": stamp()})
     for source in CONFIG["sources"]:

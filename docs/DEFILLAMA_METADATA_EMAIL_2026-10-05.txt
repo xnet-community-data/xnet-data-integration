@@ -1,0 +1,49 @@
+To: metadata@defillama.com
+Subject: XNET metadata update, Solana token association and Dune dashboard
+
+Hi team,
+
+I'm maintaining the XNET community data integration. Thanks for merging the fees adapter in PR #9872. Could you help complete the metadata on the existing XNET listing and connect its revenue history to the current XNET token?
+
+The record is https://defillama.com/protocol/xnet (protocol ID 8867; fees adapter: xnet). Its public API already has the correct mint, but the website, CoinGecko ID and CoinMarketCap ID are empty.
+
+Here are the details:
+
+• Name / symbol: XNET / XNET
+• Category: DePIN
+• Website: https://xnetmobile.com/
+• Description: XNET is a decentralized wireless network that uses carrier-grade Wi-Fi infrastructure to offload mobile data traffic. Network contributors are rewarded in XNET, its Solana token.
+• X: https://x.com/XNET_Mobile
+• Documentation: https://docs.xnetmobile.com/
+• Foundation: https://xnet.foundation/
+• Token chain: Solana
+• Token address: solana:xNETbUB7cRb3AAu2pNG2pUwQcJ2BHcktfvSB8x1Pq6L
+• CoinGecko ID: xnet-mobile-2 — https://www.coingecko.com/en/coins/xnet-mobile-2
+• CoinMarketCap ID: 32753 — https://coinmarketcap.com/currencies/xnet-mobile/
+• Community Dune dashboard: https://dune.com/xnet_community_data/xnet-network-revenue-buy-burn
+
+The logo is the original SVG from XNET's official website: https://www.xnetmobile.com/xnet-icon.svg. I've included that original and a 2048 × 2048 transparent PNG rendered from it.
+
+For verification, the official token documentation confirms the mint:
+https://docs.xnetmobile.com/foundation/xnet-token/overview
+The former website, https://xnet.company/, redirects to the current website, and CoinGecko notes the migration from the old Polygon token. Please use the current Solana identity above.
+
+Please keep carrier-service fees/revenue classified as Off Chain, while associating those metrics and holder-revenue history with this same XNET token wherever supported. We'd like the existing protocol and token information connected, with each revenue flow counted once.
+
+The feed refreshes daily from the public revenue sheet. The tested dataset contains 20 recognized service months totaling $119,816.08, with a latest recognized service date of July 31, 2026. The fees/revenue summary APIs still report XNET as not found. Could the ingestion team activate the existing adapter and refill September 30, 2024 through July 31, 2026, including the late settlements attributed to their earlier service months?
+
+Merged adapter:
+https://github.com/DefiLlama/dimension-adapters/pull/9872
+
+History request and token-association clarification:
+https://github.com/DefiLlama/dimension-adapters/pull/9872#issuecomment-5990513239
+https://github.com/DefiLlama/dimension-adapters/pull/9872#issuecomment-5990991603
+
+Public data feed:
+https://raw.githubusercontent.com/xnet-community-data/xnet-data-integration/main/data/xnet_defillama_revenue.json
+
+The Dune dashboard is maintained by the community. If you need confirmation directly from XNET's team to apply any of these changes, please let me know what you'd like them to verify.
+
+Thanks for your help,
+XNET community data maintainer
+xnet-community-data

@@ -8,6 +8,7 @@ ROOT = Path(__file__).resolve().parent.parent
 
 for script in (
     "scripts/sync_revenue.py",
+    "scripts/sync_offload.py",
     "scripts/build_defillama_revenue.py",
 ):
     print(f"\n=== Running {script} ===")
@@ -17,4 +18,4 @@ for script in (
         check=True,
     )
 
-print("\nAll XNET revenue datasets refreshed successfully.")
+print("\nAll XNET public revenue/offload datasets refreshed successfully.")

@@ -19,7 +19,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: xnet-community-data/dimension-adapters
-          ref: xnet-fiat-supply-side-20261005
+          ref: xnet-defillama-final-20261005
           fetch-depth: 0
 
       - uses: pnpm/action-setup@v4
@@ -41,7 +41,9 @@ jobs:
           # reproduces the previous calendar day's daily accrual.
           npm test fees xnet 2025-03-01
           npm test fees xnet 2026-05-16
-          npm test fees xnet 2026-08-01
+          # Exercises XIP-13.1 fiat accounting on 2026-08-31.
+          npm test fees xnet 2026-09-01
+          # Exercises official projected September accrual.
           npm test fees xnet 2026-09-29
           npm test fees xnet 2026-10-05
 

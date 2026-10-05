@@ -183,7 +183,7 @@ def main():
     state = load(STATE, {"schema_version": 1, "queries": {}})
     if state.get("paused") and not args.resume:
         message = "Refresh remains paused after a previous failure; no queries submitted."
-        if os.environ.get("EVENT") == "schedule":
+        if os.environ.get("EVENT") in {"schedule", "push"}:
             print(f"::warning::{message}")
             summary = os.environ.get("GITHUB_STEP_SUMMARY")
             if summary:

@@ -102,6 +102,22 @@ Relevant spreadsheet rows include:
 
 `WiFi Payment (Received)` is the separate payment-received series.
 
+Carrier service **Fees** are the gross amount paid for XNET WiFi offload. Where deployers choose token compensation, the normal XNET allocation policy applies. Where a deployer chooses **fiat compensation**, that fiat-option slice is treated differently:
+
+- 75% is paid to the deployer and is **Supply-Side Revenue**
+- 5% is allocated to **BBB / Holders Revenue**
+- 20% is allocated to **XNET operations / Protocol Revenue**
+- the corresponding token emissions are burned
+
+The revenue sheet currently reports the fiat-operator payout in USD but does not identify the underlying service period or token quantity. The derived DeFiLlama feed therefore does not infer a token burn amount. Until the service period is known, the fiat split is provisionally attributed to the source month and distributed across that month's daily offload. If a service-period attribution is later published, the same reconciliation process backfills the historical daily split.
+
+For DeFiLlama terminology:
+
+- **Fees** = gross carrier WiFi offload fees
+- **Supply-Side Revenue** = fiat payments to deployers
+- **Revenue** = Fees minus Supply-Side Revenue
+- **Holders Revenue** = BBB allocation
+- **Protocol Revenue** = operations and protocol-owned-liquidity allocation
 
 ### Reconciled DeFiLlama revenue feed
 
@@ -146,7 +162,7 @@ The current calibration and recent previous-month-rate backtest are published in
 
 Payment receipt dates remain separate from service accrual dates. Projected values must not be described as cash received. Partial receipts confirm part of an already-accrued service month and are never added on top of that month's provisional revenue. When the source sheet is revised with a newer payment amount or date, the next rebuild follows the latest source and recalculates confirmation status automatically.
 
-The adapter should consume `daily_data` from the feed and should not impose a hard-coded final service date. October 2026 fiat-operator transfers still need service-period attribution before they can affect retained-revenue accounting.
+The adapter should consume `daily_data` from the feed and should not impose a hard-coded final service date. Fiat-operator payouts affect Supply-Side Revenue immediately under the source-month fallback described above, while their service-period attribution remains explicitly provisional until the source provides a more precise period.
 
 Run both normalization stages with:
 
@@ -161,8 +177,10 @@ The practical flow is:
 `GB per month`
 → `WiFi Revenue (Projected)`
 → `WiFi Payment (Received)`
-→ `Transferred to Buy & Burn`
+→ allocation between BBB / protocol uses / fiat deployers
 → on-chain BBB, liquidity and burn activity
+
+For deployers who choose fiat, the corresponding gross fiat allocation is split 75% to the deployer, 5% to BBB and 20% to operations. The deployer's associated token emissions are burned.
 
 There is a settlement delay between projected WiFi revenue and cash being received. Historically, payments have commonly arrived roughly two months after the underlying revenue period, although the exact delay varies.
 
@@ -178,8 +196,10 @@ For this reason:
 - once an official monthly projection or settlement is available, replace the provisional live estimate for that month rather than adding the two together
 - preserve `WiFi Payment (Received)` as a separate settlement-stage metric
 - preserve `Transferred to Buy & Burn` as a separate downstream cash-flow metric
-- preserve `Transferred to Fiat Operators` separately as that route becomes used
-- treat `Balance Outstanding to Transfer` as the source spreadsheet's outstanding-transfer accounting field
+- preserve `Payment Sent to Fiat Operators` / `Transferred to Fiat Operators` as a distinct supply-side payout and do not double-count the duplicate source route
+- derive the fiat-option gross allocation from the operator payout using the documented 75% operator / 5% BBB / 20% operations split
+- do not infer the fiat-option token burn quantity unless a source publishes the token amount or enough information to derive it safely
+- treat `Balance Outstanding to Transfer` / `Balance Due to Buy/Burn` as the source spreadsheet's outstanding-transfer accounting field
 
 Blank spreadsheet cells should be treated as **null / not reported**, not automatically converted to zero.
 
@@ -220,6 +240,9 @@ The following distinctions are deliberate and should be preserved:
 | `WiFi Revenue (Projected)` | Official provisional service-month revenue |
 | DeFiLlama live daily projection | Daily API GB × latest conservative effective API-GB revenue rate, until superseded |
 | `WiFi Payment (Received)` | Recorded payments received and reconciliation evidence |
+| Fiat operator payout | 75% supply-side component for deployers choosing fiat |
+| Fiat BBB allocation | 5% of the fiat-option gross allocation |
+| Fiat operations allocation | 20% of the fiat-option gross allocation |
 | `totalDevices` | Total devices from the device feed |
 | `totalOperational` | Operational devices from the device feed |
 | Solana transactions | On-chain token, burn, treasury and liquidity analytics |

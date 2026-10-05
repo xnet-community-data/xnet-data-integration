@@ -104,5 +104,33 @@ class RefreshTests(unittest.TestCase):
                     refresh.main()
                 api.assert_not_called()
 
+
+    def test_scheduled_pause_is_reported_without_execution_or_state_change(self):
+        import json
+        with tempfile.TemporaryDirectory() as directory:
+            state = Path(directory) / "state.json"
+            original = json.dumps({"paused": True, "last_error": "cost anomaly", "queries": {}})
+            state.write_text(original)
+            summary = Path(directory) / "summary.md"
+            with patch.object(refresh, "STATE", state), patch("sys.argv", ["refresh"]), patch.dict("os.environ", {"EVENT": "schedule", "GITHUB_STEP_SUMMARY": str(summary)}), patch.object(refresh, "api") as api, patch.object(refresh, "publish") as publish:
+                self.assertEqual(refresh.main(), 0)
+            api.assert_not_called()
+            publish.assert_not_called()
+            self.assertEqual(state.read_text(), original)
+            self.assertIn("paused", summary.read_text())
+            self.assertIn("cost anomaly", summary.read_text())
+
+    def test_observed_completed_cost_variation_is_within_presentation_guard(self):
+        observed_cost = 0.57805981
+        tokenomics = next(s for s in refresh.CONFIG["presentation"] if s["key"] == "tokenomics")
+        def api(path, payload=None):
+            return {"execution_id": "observed"} if path.endswith("/execute") else {
+                "state": "QUERY_STATE_COMPLETED", "execution_cost_credits": observed_cost}
+        with patch.object(refresh, "api", api), patch.object(refresh, "usage_guard", return_value={}):
+            record = refresh.execute(tokenomics)
+        self.assertEqual(record["execution_cost_credits"], observed_cost)
+        self.assertEqual(refresh.CONFIG["monthly_spend_guard_credits"], 3800)
+        self.assertEqual(refresh.CONFIG["minimum_credit_reserve"], 15)
+
 if __name__ == "__main__":
     unittest.main()

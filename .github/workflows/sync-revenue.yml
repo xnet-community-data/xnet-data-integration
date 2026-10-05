@@ -7,9 +7,6 @@ on:
       - ".github/workflows/sync-revenue.yml"
       - "scripts/sync_revenue.py"
       - "scripts/build_defillama_revenue.py"
-      - "scripts/v3_build_revenue_state.py"
-      - "scripts/v3_sync_dynamic_counter_labels.py"
-      - "config/v3_headline_visual_ids.json"
   schedule:
     - cron: "17 9 * * *"
   workflow_dispatch:
@@ -18,7 +15,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: xnet-live-state
+  group: xnet-revenue-feed
   cancel-in-progress: false
 
 jobs:
@@ -42,30 +39,11 @@ jobs:
           git config user.name "xnet-data-bot"
           git config user.email "xnet-data-bot@users.noreply.github.com"
 
-      - name: Restore production state
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
-          python scripts/v3_hydrate_live_state.py
-
       - name: Fetch and normalize revenue sheet
         run: python scripts/sync_revenue.py
 
-      - name: Build derived revenue state
-        run: |
-          python scripts/build_defillama_revenue.py
-          python scripts/v3_build_revenue_state.py
-
-      - name: Publish current revenue state to live-state
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          git config --global \
-            url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf \
-            "https://github.com/"
-          bash scripts/v3_publish_live_state.sh
+      - name: Build DeFiLlama revenue feed
+        run: python scripts/build_defillama_revenue.py
 
       - name: Commit changed revenue source and derived state
         shell: bash
@@ -84,8 +62,7 @@ jobs:
           git add \
             data/xnet_revenue_sheet_raw.csv \
             data/xnet_revenue_monthly.json \
-            data/xnet_defillama_revenue.json \
-            data/current/xnet_revenue_state.json
+            data/xnet_defillama_revenue.json
 
           git diff --cached --check
 
@@ -94,23 +71,4 @@ jobs:
 
       - name: Check published feed and DeFiLlama ingestion
         run: python scripts/check_defillama_feed.py
-
-      - name: Sync dynamic Dune revenue labels
-        env:
-          DUNE_API_KEY: ${{ secrets.DUNE_API_KEY }}
-        shell: bash
-        run: |
-          if [ -z "${DUNE_API_KEY:-}" ]; then
-            echo "DUNE_API_KEY GitHub secret is not configured."
-            echo "Skipping Dune label sync."
-            exit 0
-          fi
-
-          curl -sSfL \
-            https://github.com/duneanalytics/cli/raw/main/install.sh \
-            | bash
-
-          export PATH="$HOME/.local/bin:$PATH"
-
-          python scripts/v3_sync_dynamic_counter_labels.py
 

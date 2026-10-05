@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Validate the published feed and report DeFiLlama ingestion independently."""
 import json
+import urllib.error
 import urllib.request
 from decimal import Decimal
 
@@ -23,6 +24,10 @@ def main():
                     "totalAllTime": data.get("totalAllTime"), "total24h": data.get("total24h"), "total30d": data.get("total30d")}))
             except urllib.error.HTTPError as error:
                 print(json.dumps({"slug": slug, "metric": metric, "http_status": error.code, "response": error.read().decode()[:400]}))
+            except (urllib.error.URLError, TimeoutError) as error:
+                # External ingestion availability must not fail a valid published feed.
+                print(json.dumps({"slug": slug, "metric": metric, "ingestion_status": "unavailable", "error": str(error)[:400]}))
+                print(f"::warning::DeFiLlama ingestion check unavailable for {slug}/{metric}; published feed validation passed.")
 
 if __name__ == "__main__":
     main()

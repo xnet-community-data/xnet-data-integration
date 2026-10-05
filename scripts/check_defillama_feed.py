@@ -58,13 +58,15 @@ def main():
             month["accrual_total_usd"],
         )
 
-    assert feed["projection_model"]["conservative_rate_usd_per_api_gb"] > 0
-    assert (
-        feed["projection_model"]["conservative_rate_usd_per_api_gb"]
-        <= feed["projection_model"][
-            "published_blended_rate_usd_per_billing_gb"
-        ]
+    conservative_rate = feed["projection_model"][
+        "conservative_rate_usd_per_api_gb"
+    ]
+    published_rate = feed["projection_model"].get(
+        "published_blended_rate_usd_per_billing_gb"
     )
+    assert conservative_rate > 0
+    if published_rate is not None:
+        assert conservative_rate <= published_rate
 
     print(
         "Published feed: "

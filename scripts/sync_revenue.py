@@ -59,6 +59,10 @@ METRICS = {
 }
 
 METRIC_ALIASES = {
+    "transferred_to_fiat_operators_usd": (
+        "Payment Sent to Fiat Operators",
+        "Transferred to Fiat Operators",
+    ),
     "balance_outstanding_to_transfer_usd": (
         "Balance Outstanding to Transfer",
         "Balance Due to Buy/Burn",
@@ -252,6 +256,12 @@ def main():
             "token_clearing_price": (
                 "Token Clearing Price is intentionally excluded "
                 "from the normalized public feed."
+            ),
+            "transferred_to_fiat_operators_usd": (
+                "Normalized from the current 'Payment Sent to Fiat Operators' "
+                "row or the equivalent 'Transferred to Fiat Operators' row. "
+                "If both are present, the first matching source row is used; "
+                "the duplicate route is not double-counted."
             ),
             "balance_outstanding_to_transfer_usd": (
                 "Normalized from the current 'Balance Due to Buy/Burn' "

@@ -28,6 +28,14 @@ SELECT
         AS projected_buy_burn_usd,
     TRY_CAST(json_extract_scalar(item, '$.transferred_to_buy_burn_usd') AS DOUBLE)
         AS transferred_to_buy_burn_usd,
+    TRY_CAST(json_extract_scalar(item, '$.fiat_operator_payout_usd') AS DOUBLE)
+        AS fiat_operator_payout_usd,
+    TRY_CAST(json_extract_scalar(item, '$.fiat_gross_allocation_usd') AS DOUBLE)
+        AS fiat_gross_allocation_usd,
+    TRY_CAST(json_extract_scalar(item, '$.fiat_bbb_allocation_usd') AS DOUBLE)
+        AS fiat_bbb_allocation_usd,
+    TRY_CAST(json_extract_scalar(item, '$.fiat_operations_allocation_usd') AS DOUBLE)
+        AS fiat_operations_allocation_usd,
     TRY_CAST(json_extract_scalar(item, '$.unused_series_1') AS DOUBLE)
         AS unused_series_1,
     TRY_CAST(json_extract_scalar(item, '$.unused_series_2') AS DOUBLE)

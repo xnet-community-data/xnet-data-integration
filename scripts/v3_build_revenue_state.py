@@ -182,6 +182,38 @@ latest_fiat = (
     else None
 )
 
+latest_fiat_operator_payout = (
+    D(
+        latest_fiat[
+            "transferred_to_fiat_operators_usd"
+        ]
+    )
+    if latest_fiat
+    else None
+)
+
+latest_fiat_gross_allocation = None
+latest_fiat_bbb_allocation = None
+latest_fiat_operations_allocation = None
+
+if (
+    latest_fiat_operator_payout is not None
+    and latest_fiat_operator_payout > 0
+):
+    latest_fiat_gross_allocation = (
+        latest_fiat_operator_payout
+        / Decimal("0.75")
+    ).quantize(Decimal("0.01"))
+    latest_fiat_bbb_allocation = (
+        latest_fiat_gross_allocation
+        * Decimal("0.05")
+    ).quantize(Decimal("0.01"))
+    latest_fiat_operations_allocation = (
+        latest_fiat_gross_allocation
+        - latest_fiat_operator_payout
+        - latest_fiat_bbb_allocation
+    )
+
 
 # --------------------------------------------------
 # Current outstanding balance
@@ -336,6 +368,30 @@ unattributed_payments = D(
     ]
 )
 
+fiat_operator_payout = D(
+    totals.get(
+        "fiat_operator_payout_usd"
+    )
+) or Decimal("0")
+
+fiat_gross_allocation = D(
+    totals.get(
+        "fiat_gross_allocation_usd"
+    )
+) or Decimal("0")
+
+fiat_bbb_allocation = D(
+    totals.get(
+        "fiat_bbb_allocation_usd"
+    )
+) or Decimal("0")
+
+fiat_operations_allocation = D(
+    totals.get(
+        "fiat_operations_allocation_usd"
+    )
+) or Decimal("0")
+
 
 # --------------------------------------------------
 # Rolling daily fee accrual
@@ -361,7 +417,7 @@ accrual_as_of = date.fromisoformat(
 )
 
 
-def rolling_fee_total(days):
+def rolling_total(field, days):
     start = (
         accrual_as_of
         - timedelta(days=days - 1)
@@ -369,7 +425,7 @@ def rolling_fee_total(days):
 
     return sum(
         (
-            D(row.get("fees_usd"))
+            D(row.get(field)) or Decimal("0")
             for row in daily_rows
             if start
             <= date.fromisoformat(row["date"])
@@ -379,9 +435,17 @@ def rolling_fee_total(days):
     )
 
 
-fees_24h = rolling_fee_total(1)
-fees_7d = rolling_fee_total(7)
-fees_30d = rolling_fee_total(30)
+fees_24h = rolling_total("fees_usd", 1)
+fees_7d = rolling_total("fees_usd", 7)
+fees_30d = rolling_total("fees_usd", 30)
+
+revenue_24h = rolling_total("revenue_usd", 1)
+revenue_7d = rolling_total("revenue_usd", 7)
+revenue_30d = rolling_total("revenue_usd", 30)
+
+supply_side_24h = rolling_total("supply_side_revenue_usd", 1)
+supply_side_7d = rolling_total("supply_side_revenue_usd", 7)
+supply_side_30d = rolling_total("supply_side_revenue_usd", 30)
 
 recent_30d = [
     row
@@ -431,7 +495,7 @@ if abs(payment_difference) > Decimal("0.02"):
 
 
 state = {
-    "schema_version": 1,
+    "schema_version": 2,
 
     "generated_at_utc":
         utc_now(),
@@ -548,15 +612,50 @@ state = {
                 else None
             ),
 
-        "amount_usd":
+        "operator_payout_usd":
             (
-                dec(
-                    latest_fiat[
-                        "transferred_to_fiat_operators_usd"
-                    ]
-                )
+                dec(latest_fiat_operator_payout)
                 if latest_fiat
                 else None
+            ),
+
+        "gross_fiat_allocation_usd":
+            (
+                dec(latest_fiat_gross_allocation)
+                if latest_fiat
+                else None
+            ),
+
+        "bbb_allocation_usd":
+            (
+                dec(latest_fiat_bbb_allocation)
+                if latest_fiat
+                else None
+            ),
+
+        "operations_allocation_usd":
+            (
+                dec(latest_fiat_operations_allocation)
+                if latest_fiat
+                else None
+            ),
+
+        "operator_share_pct":
+            75.0,
+
+        "bbb_share_pct":
+            5.0,
+
+        "operations_share_pct":
+            20.0,
+
+        "service_period_attribution":
+            "source_month_provisional",
+
+        "token_emissions_treatment":
+            (
+                "Corresponding fiat-option emissions are burned; "
+                "token quantity is not inferred from the USD sheet."
             ),
     },
 
@@ -597,6 +696,21 @@ state = {
             dec(
                 cumulative_fiat_transfers
             ),
+
+        "fiat_gross_allocation_usd":
+            dec(
+                fiat_gross_allocation
+            ),
+
+        "fiat_bbb_allocation_usd":
+            dec(
+                fiat_bbb_allocation
+            ),
+
+        "fiat_operations_allocation_usd":
+            dec(
+                fiat_operations_allocation
+            ),
     },
 
     "settled_accounting": {
@@ -635,6 +749,24 @@ state = {
 
         "fees_30d_usd":
             dec(fees_30d),
+
+        "revenue_24h_usd":
+            dec(revenue_24h),
+
+        "revenue_7d_usd":
+            dec(revenue_7d),
+
+        "revenue_30d_usd":
+            dec(revenue_30d),
+
+        "supply_side_revenue_24h_usd":
+            dec(supply_side_24h),
+
+        "supply_side_revenue_7d_usd":
+            dec(supply_side_7d),
+
+        "supply_side_revenue_30d_usd":
+            dec(supply_side_30d),
 
         "avg_daily_fees_7d_usd":
             dec(
@@ -676,12 +808,13 @@ state = {
 
         "methodology":
             (
-                "Rolling fee totals use the same daily "
-                "offload-shaped accrual series prepared "
-                "for DeFiLlama. Provisional days are "
-                "replaced or rescaled when official "
-                "monthly projections and carrier "
-                "settlements arrive."
+                "Rolling Fees use the daily offload-shaped accrual "
+                "series prepared for DeFiLlama. Revenue excludes "
+                "payments to fiat-option deployers. For the fiat "
+                "option, 75% of the gross allocation is Supply-Side "
+                "Revenue, 5% goes to BBB and 20% to operations. "
+                "Provisional source-month attribution is backfilled "
+                "if a service period is later published."
             ),
     },
 

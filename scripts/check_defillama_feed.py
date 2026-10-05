@@ -38,6 +38,48 @@ def main():
         feed["totals"]["defillama_daily_accrual_usd"]
     )
 
+    revenue_total = sum(
+        (dec(row["revenue_usd"]) for row in daily),
+        Decimal("0"),
+    )
+    supply_total = sum(
+        (dec(row["supply_side_revenue_usd"]) for row in daily),
+        Decimal("0"),
+    )
+    holders_total = sum(
+        (dec(row["holders_revenue_usd"]) for row in daily),
+        Decimal("0"),
+    )
+    protocol_total = sum(
+        (dec(row["protocol_revenue_usd"]) for row in daily),
+        Decimal("0"),
+    )
+
+    assert daily_total == revenue_total + supply_total
+    assert revenue_total == holders_total + protocol_total
+    assert revenue_total == dec(
+        feed["totals"]["defillama_daily_revenue_usd"]
+    )
+    assert supply_total == dec(
+        feed["totals"]["defillama_daily_supply_side_revenue_usd"]
+    )
+    assert holders_total == dec(
+        feed["totals"]["defillama_daily_holders_revenue_usd"]
+    )
+    assert protocol_total == dec(
+        feed["totals"]["defillama_daily_protocol_revenue_usd"]
+    )
+
+    for row in daily:
+        assert dec(row["fees_usd"]) == (
+            dec(row["revenue_usd"])
+            + dec(row["supply_side_revenue_usd"])
+        )
+        assert dec(row["revenue_usd"]) == (
+            dec(row["holders_revenue_usd"])
+            + dec(row["protocol_revenue_usd"])
+        )
+
     for month in feed["monthly_accrual"]:
         if month["basis"] == "provisional_live_offload":
             continue
@@ -64,6 +106,32 @@ def main():
     assert conservative_rate > 0
     if published_rate is not None:
         assert conservative_rate <= published_rate
+
+    fiat = feed.get("fiat_operator_transfers", [])
+    operator_total = sum(
+        (dec(row["operator_payout_usd"]) for row in fiat),
+        Decimal("0"),
+    )
+    gross_total = sum(
+        (dec(row["gross_fiat_allocation_usd"]) for row in fiat),
+        Decimal("0"),
+    )
+    bbb_total = sum(
+        (dec(row["bbb_allocation_usd"]) for row in fiat),
+        Decimal("0"),
+    )
+    operations_total = sum(
+        (dec(row["operations_allocation_usd"]) for row in fiat),
+        Decimal("0"),
+    )
+
+    assert gross_total == operator_total + bbb_total + operations_total
+    assert operator_total == dec(feed["totals"]["fiat_operator_payout_usd"])
+    assert gross_total == dec(feed["totals"]["fiat_gross_allocation_usd"])
+    assert bbb_total == dec(feed["totals"]["fiat_bbb_allocation_usd"])
+    assert operations_total == dec(
+        feed["totals"]["fiat_operations_allocation_usd"]
+    )
 
     print(
         "Validated local feed: "

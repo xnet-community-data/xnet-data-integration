@@ -409,6 +409,38 @@ SELECT
     TRY_CAST(
         json_extract_scalar(
             r.j,
+            '$.latest_fiat_operator_transfer.operator_payout_usd'
+        )
+        AS DOUBLE
+    ) AS latest_fiat_operator_payout_usd,
+
+    TRY_CAST(
+        json_extract_scalar(
+            r.j,
+            '$.latest_fiat_operator_transfer.gross_fiat_allocation_usd'
+        )
+        AS DOUBLE
+    ) AS latest_fiat_gross_allocation_usd,
+
+    TRY_CAST(
+        json_extract_scalar(
+            r.j,
+            '$.latest_fiat_operator_transfer.bbb_allocation_usd'
+        )
+        AS DOUBLE
+    ) AS latest_fiat_bbb_allocation_usd,
+
+    TRY_CAST(
+        json_extract_scalar(
+            r.j,
+            '$.latest_fiat_operator_transfer.operations_allocation_usd'
+        )
+        AS DOUBLE
+    ) AS latest_fiat_operations_allocation_usd,
+
+    TRY_CAST(
+        json_extract_scalar(
+            r.j,
             '$.outstanding.balance_outstanding_to_transfer_usd'
         )
         AS DOUBLE
@@ -490,6 +522,54 @@ SELECT
         )
         AS DOUBLE
     ) AS estimated_fees_30d_usd,
+
+    TRY_CAST(
+        json_extract_scalar(
+            r.j,
+            '$.live_fee_accrual.revenue_24h_usd'
+        )
+        AS DOUBLE
+    ) AS estimated_revenue_24h_usd,
+
+    TRY_CAST(
+        json_extract_scalar(
+            r.j,
+            '$.live_fee_accrual.revenue_7d_usd'
+        )
+        AS DOUBLE
+    ) AS estimated_revenue_7d_usd,
+
+    TRY_CAST(
+        json_extract_scalar(
+            r.j,
+            '$.live_fee_accrual.revenue_30d_usd'
+        )
+        AS DOUBLE
+    ) AS estimated_revenue_30d_usd,
+
+    TRY_CAST(
+        json_extract_scalar(
+            r.j,
+            '$.live_fee_accrual.supply_side_revenue_24h_usd'
+        )
+        AS DOUBLE
+    ) AS supply_side_revenue_24h_usd,
+
+    TRY_CAST(
+        json_extract_scalar(
+            r.j,
+            '$.live_fee_accrual.supply_side_revenue_7d_usd'
+        )
+        AS DOUBLE
+    ) AS supply_side_revenue_7d_usd,
+
+    TRY_CAST(
+        json_extract_scalar(
+            r.j,
+            '$.live_fee_accrual.supply_side_revenue_30d_usd'
+        )
+        AS DOUBLE
+    ) AS supply_side_revenue_30d_usd,
 
     TRY_CAST(
         json_extract_scalar(
@@ -738,7 +818,7 @@ CROSS JOIN (
         5,
         'XNET Revenue Sheet',
         'revenue',
-        'Annualized Revenue Run Rate · P/S Ratio · WiFi Revenue (Projected) · WiFi Payment (Received) · Estimated Fees 7D · Estimated Fees 30D · Balance Due to Buy/Burn · BBB Daily Rate · Transferred to Buy & Burn'
+        'Annualized Revenue Run Rate · P/S Ratio · WiFi Revenue (Projected) · WiFi Payment (Received) · Estimated Fees 7D · Estimated Fees 30D · Revenue 7D · Revenue 30D · Fiat Operator Payout · Fiat BBB Allocation · Fiat Operations Allocation · Balance Due to Buy/Burn · BBB Daily Rate · Transferred to Buy & Burn'
     )
 
 ) AS f(

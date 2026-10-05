@@ -30,6 +30,14 @@ MAX_OUTAGE_FALLBACK_DAYS = 14
 OUTAGE_FALLBACK_LOOKBACK_DAYS = 7
 MAX_LAG_FALLBACK_VARIANCE_PCT = Decimal("15")
 
+# Fiat-deployer option. The fiat payout itself is 75% of the gross allocation.
+# The remaining 25% is split 5% to BBB and 20% to XNET operations. The
+# corresponding token emissions are burned, but the USD revenue sheet does not
+# provide enough information to derive a token amount safely.
+FIAT_OPERATOR_SHARE = Decimal("0.75")
+FIAT_BBB_SHARE = Decimal("0.05")
+FIAT_OPERATIONS_SHARE = Decimal("0.20")
+
 
 def D(value):
     return None if value is None else Decimal(str(value))
@@ -274,26 +282,52 @@ def main():
     )
     rows = source["data"]
 
-    fiat_operator_rows = []
+    fiat_operator_transfers = []
     for row in rows:
-        amount = D(row.get("transferred_to_fiat_operators_usd"))
-        if amount is not None and abs(amount) > TOLERANCE:
-            fiat_operator_rows.append(
-                {
-                    "source_month": row["month"],
-                    "amount_usd": money(amount),
-                }
+        payout = D(row.get("transferred_to_fiat_operators_usd"))
+        if payout is None or payout <= TOLERANCE:
+            continue
+
+        gross = (
+            payout / FIAT_OPERATOR_SHARE
+        ).quantize(CENT, rounding=ROUND_HALF_UP)
+        bbb = (
+            gross * FIAT_BBB_SHARE
+        ).quantize(CENT, rounding=ROUND_HALF_UP)
+
+        # Derive operations as the exact cent-level residual so that:
+        # gross = operator payout + BBB + operations.
+        operations = gross - payout - bbb
+
+        if operations < 0:
+            raise RuntimeError(
+                "Invalid fiat-deployer allocation: negative operations share"
             )
 
-    fiat_operator_transfers = [
-        {
-            "source_month": row["source_month"][:7],
-            "amount_usd": row["amount_usd"],
-            "transfer_date": None,
-            "status": "reported_month_only",
-        }
-        for row in fiat_operator_rows
-    ]
+        fiat_operator_transfers.append(
+            {
+                "source_month": row["month"][:7],
+                "service_month": None,
+                "operator_payout_usd": money(payout),
+                "amount_usd": money(payout),
+                "gross_fiat_allocation_usd": money(gross),
+                "bbb_allocation_usd": money(bbb),
+                "operations_allocation_usd": money(operations),
+                "operator_share_pct": 75.0,
+                "bbb_share_pct": 5.0,
+                "operations_share_pct": 20.0,
+                "transfer_date": None,
+                "attribution_basis": (
+                    "source_month_pending_service_period_attribution"
+                ),
+                "status": "reported_source_month_only",
+                "token_emissions_treatment": (
+                    "Corresponding fiat-option token emissions are burned; "
+                    "the USD source does not identify a token amount, so no "
+                    "token quantity is inferred here."
+                ),
+            }
+        )
 
     services = [
         {
@@ -846,6 +880,200 @@ def main():
     monthly_accrual.sort(key=lambda row: row["service_month"])
     daily_data.sort(key=lambda row: row["date"])
 
+    # --------------------------------------------------
+    # Revenue split and fiat-deployer accounting
+    # --------------------------------------------------
+    #
+    # Fees are the gross carrier service fees. Most fees follow XNET's normal
+    # policy allocation. A fiat-deployer allocation is different: 75% is paid
+    # to the deployer (supply-side revenue), 5% goes to BBB, and 20% goes to
+    # XNET operations. Because the current public sheet reports the fiat payout
+    # by source month but not by underlying service period, the split is booked
+    # provisionally to that source month and will be backfilled if a service
+    # period is later supplied.
+
+    for row in daily_data:
+        fee = Decimal(str(row["fees_usd"]))
+        holder_share = (
+            Decimal("0.60")
+            if row["date"] >= "2025-05-22"
+            else Decimal("0.80")
+        )
+
+        holders = (
+            fee * holder_share
+        ).quantize(CENT, rounding=ROUND_HALF_UP)
+        protocol = fee - holders
+
+        row["fiat_gross_allocation_usd"] = 0.0
+        row["supply_side_revenue_usd"] = 0.0
+        row["holders_revenue_usd"] = money(holders)
+        row["protocol_revenue_usd"] = money(protocol)
+        row["revenue_usd"] = money(fee)
+        row["fiat_allocation_basis"] = None
+
+    fiat_by_month = {}
+    for transfer in fiat_operator_transfers:
+        source_month = transfer["source_month"]
+        bucket = fiat_by_month.setdefault(
+            source_month,
+            {
+                "operator_payout": Decimal("0"),
+                "bbb": Decimal("0"),
+                "operations": Decimal("0"),
+            },
+        )
+        bucket["operator_payout"] += Decimal(
+            str(transfer["operator_payout_usd"])
+        )
+        bucket["bbb"] += Decimal(
+            str(transfer["bbb_allocation_usd"])
+        )
+        bucket["operations"] += Decimal(
+            str(transfer["operations_allocation_usd"])
+        )
+
+    for source_month, bucket in sorted(fiat_by_month.items()):
+        matching = [
+            row
+            for row in daily_data
+            if row["service_month"] == source_month
+        ]
+
+        if not matching:
+            for transfer in fiat_operator_transfers:
+                if transfer["source_month"] == source_month:
+                    transfer["daily_allocation_status"] = (
+                        "pending_no_daily_rows"
+                    )
+            continue
+
+        weights = [
+            {
+                "date": row["date"],
+                "gigabytes": row["offload_gb"],
+            }
+            for row in matching
+        ]
+
+        operator_daily = allocate_cents(
+            bucket["operator_payout"],
+            weights,
+        )
+        bbb_daily = allocate_cents(
+            bucket["bbb"],
+            weights,
+        )
+        operations_daily = allocate_cents(
+            bucket["operations"],
+            weights,
+        )
+
+        month_fee_total = sum(
+            (Decimal(str(row["fees_usd"])) for row in matching),
+            Decimal("0"),
+        )
+        month_gross_fiat = (
+            bucket["operator_payout"]
+            + bucket["bbb"]
+            + bucket["operations"]
+        )
+
+        if month_gross_fiat > month_fee_total + TOLERANCE:
+            raise RuntimeError(
+                "Fiat-deployer gross allocation exceeds fees for "
+                f"{source_month}: gross={month_gross_fiat}, "
+                f"fees={month_fee_total}"
+            )
+
+        for row, operator, bbb, operations in zip(
+            matching,
+            operator_daily,
+            bbb_daily,
+            operations_daily,
+        ):
+            fee = Decimal(str(row["fees_usd"]))
+            fiat_gross = operator + bbb + operations
+            non_fiat_fee = fee - fiat_gross
+
+            if non_fiat_fee < -TOLERANCE:
+                raise RuntimeError(
+                    "Daily fiat allocation exceeds daily fees on "
+                    f"{row['date']}"
+                )
+            if non_fiat_fee < 0:
+                non_fiat_fee = Decimal("0")
+
+            holder_share = (
+                Decimal("0.60")
+                if row["date"] >= "2025-05-22"
+                else Decimal("0.80")
+            )
+            holders_non_fiat = (
+                non_fiat_fee * holder_share
+            ).quantize(CENT, rounding=ROUND_HALF_UP)
+            protocol_non_fiat = non_fiat_fee - holders_non_fiat
+
+            holders = holders_non_fiat + bbb
+            protocol = protocol_non_fiat + operations
+            supply = operator
+            revenue = holders + protocol
+
+            if abs(fee - revenue - supply) > TOLERANCE:
+                raise RuntimeError(
+                    "Daily Fees != Revenue + SupplySideRevenue on "
+                    f"{row['date']}"
+                )
+
+            row["fiat_gross_allocation_usd"] = money(fiat_gross)
+            row["supply_side_revenue_usd"] = money(supply)
+            row["holders_revenue_usd"] = money(holders)
+            row["protocol_revenue_usd"] = money(protocol)
+            row["revenue_usd"] = money(revenue)
+            row["fiat_allocation_basis"] = (
+                "source_month_pending_service_period_attribution"
+            )
+
+        for transfer in fiat_operator_transfers:
+            if transfer["source_month"] == source_month:
+                transfer["daily_allocation_status"] = (
+                    "provisionally_distributed_over_source_month_offload"
+                )
+                transfer["daily_allocation_first_date"] = matching[0]["date"]
+                transfer["daily_allocation_last_date"] = matching[-1]["date"]
+
+    for month in monthly_accrual:
+        rows_for_month = [
+            row
+            for row in daily_data
+            if row["service_month"] == month["service_month"]
+        ]
+        if not rows_for_month:
+            continue
+
+        for field in (
+            "fiat_gross_allocation_usd",
+            "supply_side_revenue_usd",
+            "revenue_usd",
+            "holders_revenue_usd",
+            "protocol_revenue_usd",
+        ):
+            month[field] = money(
+                sum(
+                    (
+                        Decimal(str(row[field]))
+                        for row in rows_for_month
+                    ),
+                    Decimal("0"),
+                )
+            )
+
+        month["fiat_allocation_basis"] = (
+            "source_month_pending_service_period_attribution"
+            if month["fiat_gross_allocation_usd"] > 0
+            else None
+        )
+
     if len({row["date"] for row in daily_data}) != len(daily_data):
         raise RuntimeError("Duplicate dates found in daily DeFiLlama accrual")
 
@@ -895,6 +1123,68 @@ def main():
         (Decimal(str(row["fees_usd"])) for row in daily_data),
         Decimal("0"),
     )
+    daily_revenue_total = sum(
+        (Decimal(str(row["revenue_usd"])) for row in daily_data),
+        Decimal("0"),
+    )
+    daily_supply_side_total = sum(
+        (
+            Decimal(str(row["supply_side_revenue_usd"]))
+            for row in daily_data
+        ),
+        Decimal("0"),
+    )
+    daily_holders_total = sum(
+        (
+            Decimal(str(row["holders_revenue_usd"]))
+            for row in daily_data
+        ),
+        Decimal("0"),
+    )
+    daily_protocol_total = sum(
+        (
+            Decimal(str(row["protocol_revenue_usd"]))
+            for row in daily_data
+        ),
+        Decimal("0"),
+    )
+    fiat_operator_payout_total = sum(
+        (
+            Decimal(str(row["operator_payout_usd"]))
+            for row in fiat_operator_transfers
+        ),
+        Decimal("0"),
+    )
+    fiat_gross_total = sum(
+        (
+            Decimal(str(row["gross_fiat_allocation_usd"]))
+            for row in fiat_operator_transfers
+        ),
+        Decimal("0"),
+    )
+    fiat_bbb_total = sum(
+        (
+            Decimal(str(row["bbb_allocation_usd"]))
+            for row in fiat_operator_transfers
+        ),
+        Decimal("0"),
+    )
+    fiat_operations_total = sum(
+        (
+            Decimal(str(row["operations_allocation_usd"]))
+            for row in fiat_operator_transfers
+        ),
+        Decimal("0"),
+    )
+
+    if abs(daily_total - daily_revenue_total - daily_supply_side_total) > TOLERANCE:
+        raise RuntimeError(
+            "Daily aggregate Fees != Revenue + SupplySideRevenue"
+        )
+    if abs(daily_revenue_total - daily_holders_total - daily_protocol_total) > TOLERANCE:
+        raise RuntimeError(
+            "Daily aggregate Revenue != HoldersRevenue + ProtocolRevenue"
+        )
     fully_settled_daily_total = sum(
         (
             Decimal(str(row["fees_usd"]))
@@ -936,7 +1226,7 @@ def main():
     )
 
     output = {
-        "schema_version": 2,
+        "schema_version": 3,
         "accounting_basis": "hybrid_accrual_reconciled",
         "source": source["source"],
         "offload_source": {
@@ -949,15 +1239,11 @@ def main():
         },
         "methodology": {
             "fees": (
-                "Carrier WiFi offload service fees are reported on an accrual "
-                "basis. Daily values follow measured XNET network offload. "
-                "Settlement-confirmed service months are scaled so their daily "
-                "values sum exactly to confirmed carrier revenue. Closed "
-                "unsettled months use XNET's official monthly projected WiFi "
-                "revenue, distributed across days in proportion to measured "
-                "offload. Newer days without an official monthly projection "
-                "use measured daily offload multiplied by the latest "
-                "conservative effective revenue-per-API-GB rate."
+                "Carriers pay XNET for mobile data offloaded onto WiFi. Until "
+                "carrier payment arrives, Fees are conservatively estimated "
+                "from daily offload. Payments typically arrive about two "
+                "months later, and historical estimates are then reconciled "
+                "to the amount actually paid."
             ),
             "live_projection": (
                 "The live rate is calibrated as official projected service "
@@ -1001,13 +1287,37 @@ def main():
                 "exceeds 14 days, the model fails closed and stops extending "
                 "the synthetic series."
             ),
-            "revenue": "Same as Fees.",
-            "policy_allocation": (
-                "Before 2025-05-22, 80% of carrier service revenue is "
-                "attributed to Holders Revenue and 20% to Protocol Revenue. "
-                "From 2025-05-22 under XIP-12, 60% is attributed to Holders "
-                "Revenue and 40% to Protocol Revenue, comprising 20% "
-                "protocol-owned liquidity and 20% operations."
+            "revenue": (
+                "Fees minus payments to deployers who choose fiat "
+                "compensation. When no fiat-deployer payout applies, Revenue "
+                "equals Fees."
+            ),
+            "supply_side_revenue": (
+                "Payments to deployers who choose fiat compensation for "
+                "carrying mobile traffic. For the fiat option, 75% of the "
+                "gross fiat allocation is paid to the deployer."
+            ),
+            "fiat_deployer_option": (
+                "For deployers who choose fiat, the corresponding token "
+                "emissions are burned and the gross fiat allocation is split "
+                "75% to the deployer, 5% to BBB, and 20% to XNET operations. "
+                "The public sheet currently reports the fiat payout by source "
+                "month but not the underlying service period, so the daily "
+                "split is provisionally shaped across that source month's "
+                "offload and will be backfilled if service-period attribution "
+                "is later provided."
+            ),
+            "holders_revenue": (
+                "For ordinary carrier revenue, the holder allocation is 80% "
+                "before 2025-05-22 and 60% from XIP-12 onward. For the "
+                "fiat-deployer slice, 5% of the gross fiat allocation goes "
+                "to BBB."
+            ),
+            "protocol_revenue": (
+                "For ordinary carrier revenue, Protocol Revenue is 20% before "
+                "2025-05-22 and 40% from XIP-12 onward. For the fiat-deployer "
+                "slice, 20% of the gross fiat allocation goes to XNET "
+                "operations."
             ),
         },
         "projection_model": {
@@ -1050,6 +1360,28 @@ def main():
             "recognized_service_revenue_usd": money(recognized_total),
             "unattributed_payments_usd": money(unattributed_total),
             "defillama_daily_accrual_usd": money(daily_total),
+            "defillama_daily_revenue_usd": money(daily_revenue_total),
+            "defillama_daily_supply_side_revenue_usd": money(
+                daily_supply_side_total
+            ),
+            "defillama_daily_holders_revenue_usd": money(
+                daily_holders_total
+            ),
+            "defillama_daily_protocol_revenue_usd": money(
+                daily_protocol_total
+            ),
+            "fiat_operator_payout_usd": money(
+                fiat_operator_payout_total
+            ),
+            "fiat_gross_allocation_usd": money(
+                fiat_gross_total
+            ),
+            "fiat_bbb_allocation_usd": money(
+                fiat_bbb_total
+            ),
+            "fiat_operations_allocation_usd": money(
+                fiat_operations_total
+            ),
             "fully_settled_daily_accrual_usd": money(
                 fully_settled_daily_total
             ),

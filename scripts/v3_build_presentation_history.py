@@ -214,6 +214,35 @@ for month in commercial_months:
     cash = dated_cash_by_month.get(month)
     projected_bbb = D(src.get("projected_buy_burn_usd"))
     transferred_bbb = D(src.get("transferred_to_buy_burn_usd"))
+    fiat_operator_payout = D(
+        src.get("transferred_to_fiat_operators_usd")
+    )
+
+    fiat_gross_allocation = None
+    fiat_bbb_allocation = None
+    fiat_operations_allocation = None
+
+    if (
+        fiat_operator_payout is not None
+        and fiat_operator_payout > 0
+    ):
+        fiat_gross_allocation = (
+            fiat_operator_payout
+            / Decimal("0.75")
+        ).quantize(
+            Decimal("0.01")
+        )
+        fiat_bbb_allocation = (
+            fiat_gross_allocation
+            * Decimal("0.05")
+        ).quantize(
+            Decimal("0.01")
+        )
+        fiat_operations_allocation = (
+            fiat_gross_allocation
+            - fiat_operator_payout
+            - fiat_bbb_allocation
+        )
 
     if projected is not None:
         cum_projected += projected
@@ -258,6 +287,22 @@ for month in commercial_months:
                 float(transferred_bbb)
                 if transferred_bbb is not None
                 else None,
+            "fiat_operator_payout_usd":
+                float(fiat_operator_payout)
+                if fiat_operator_payout is not None
+                else None,
+            "fiat_gross_allocation_usd":
+                float(fiat_gross_allocation)
+                if fiat_gross_allocation is not None
+                else None,
+            "fiat_bbb_allocation_usd":
+                float(fiat_bbb_allocation)
+                if fiat_bbb_allocation is not None
+                else None,
+            "fiat_operations_allocation_usd":
+                float(fiat_operations_allocation)
+                if fiat_operations_allocation is not None
+                else None,
             "unused_series_1": None,
             "unused_series_2": None,
         }
@@ -266,7 +311,7 @@ for month in commercial_months:
 save(
     "commercial_history.json",
     {
-        "schema_version": 1,
+        "schema_version": 2,
         "generated_at_utc":
             datetime.now(timezone.utc).isoformat(),
         "data": commercial_rows,

@@ -179,6 +179,43 @@ def payment_service_months(
     )
 
 
+def latest_fiat_transfer(defi):
+    rows = [
+        row
+        for row in defi.get(
+            "fiat_operator_transfers",
+            [],
+        )
+        if row.get(
+            "operator_payout_usd"
+        ) is not None
+        and row.get(
+            "service_month"
+        )
+    ]
+
+    if not rows:
+        return None
+
+    return max(
+        rows,
+        key=lambda row: (
+            str(
+                row.get(
+                    "source_month"
+                )
+                or ""
+            ),
+            str(
+                row.get(
+                    "service_month"
+                )
+                or ""
+            ),
+        ),
+    )
+
+
 def compact_months(months):
     labels = [
         month_label(
@@ -423,6 +460,90 @@ def main():
             payment_label,
             payment_description,
             vis["latest_payment"]["column"],
+        )
+
+    fiat = latest_fiat_transfer(
+        defi
+    )
+
+    if fiat:
+        fiat_service_label = month_label(
+            fiat.get(
+                "service_month"
+            )
+        )
+        fiat_source_label = month_label(
+            fiat.get(
+                "source_month"
+            )
+        )
+
+        if not fiat_service_label:
+            raise RuntimeError(
+                "Latest fiat payout has no "
+                "valid service month."
+            )
+
+        fiat_label = (
+            f"{fiat_service_label} service"
+        )
+
+        payout_description = (
+            "Cash paid to operators that "
+            "chose the XIP-13.1 fiat option "
+            f"for {fiat_service_label} service. "
+            + (
+                f"Reported in {fiat_source_label} "
+                "after the carrier settlement cycle."
+                if fiat_source_label
+                else
+                "Reported after the carrier settlement cycle."
+            )
+        )
+
+        share_description = (
+            "Share of "
+            f"{fiat_service_label} service revenue "
+            "routed through the fiat option. "
+            "Uses the full fiat allocation before "
+            "the 75% operator / 5% BBB / "
+            "20% operations split."
+        )
+
+        update_counter(
+            vis[
+                "latest_fiat_operator_payout"
+            ][
+                "id"
+            ],
+            fiat_label,
+            payout_description,
+            vis[
+                "latest_fiat_operator_payout"
+            ][
+                "column"
+            ],
+        )
+
+        update_counter(
+            vis[
+                "fiat_routed_share"
+            ][
+                "id"
+            ],
+            fiat_label,
+            share_description,
+            vis[
+                "fiat_routed_share"
+            ][
+                "column"
+            ],
+        )
+
+    else:
+        print(
+            "WARNING: no fiat operator payout "
+            "found; preserving existing fiat labels."
         )
 
     print(

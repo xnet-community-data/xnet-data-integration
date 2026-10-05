@@ -179,9 +179,16 @@ def main():
         for batch in range(1, args.benchmark_batches + 1):
             for repetition in range(1, args.benchmark_repetitions + 1):
                 for spec in specs:
-                    params = {"lookback_hours": 2} if spec in CONFIG["sources"] else None
+                    lookback = int(
+                        spec.get("lookback_hours", 2)
+                    ) if spec in CONFIG["sources"] else None
+                    params = (
+                        {"lookback_hours": lookback}
+                        if lookback is not None
+                        else None
+                    )
                     records.append({"batch": batch, "repetition": repetition,
-                        "key": spec["key"], "lookback_hours": 2 if params else None,
+                        "key": spec["key"], "lookback_hours": lookback,
                         **execute(spec, params, enforce_cap=False)})
                     save(ROOT / "state/v3_credit_benchmark.json", {"generated_at_utc": stamp(), "performance": CONFIG["performance"], "queries": records})
                     print(batch, repetition, spec["key"], records[-1]["execution_cost_credits"], "credits", flush=True)
@@ -211,29 +218,188 @@ def main():
         last = state.get("chain_completed_at_utc") or health.get("last_refresh_completed_utc")
         repair = due(state.get("chain_repaired_at_utc"), CONFIG["repair_cadence_minutes"])
         if due(last, CONFIG["chain_cadence_minutes"]):
-            elapsed = (now() - datetime.fromisoformat(last.replace("Z", "+00:00"))).total_seconds() / 3600 if last else 2
-            lookback = max(2, math.ceil(elapsed + 1))
-            if lookback > CONFIG["max_catchup_hours"]:
-                raise RuntimeError("Canonical collection gap exceeds catch-up limit; reviewed repair required.")
-            if repair:
-                lookback = CONFIG["repair_lookback_hours"]
-            remaining = CONFIG["max_repair_export_points"] if repair else CONFIG["max_export_points_per_run"]
-            records = []
-            active_sources = [s for s in CONFIG["sources"] if s.get("enabled", True)]
+            remaining = (
+                CONFIG["max_repair_export_points"]
+                if repair
+                else CONFIG["max_export_points_per_run"]
+            )
+            active_sources = [
+                s
+                for s in CONFIG["sources"]
+                if s.get("enabled", True)
+            ]
+
+            due_sources = []
+
             for spec in active_sources:
-                record = execute(spec, {"lookback_hours": lookback})
-                remaining = export_source(record, spec, remaining)
-                state["queries"][spec["key"]] = record
-                save(STATE, state)
-                records.append(record)
-            paths = {s["key"]: ROOT / s["output"] for s in active_sources}
-            reduce_atomically(paths["xnet_transfers"], paths.get("bbb_dex"))
-            state["chain_completed_at_utc"] = stamp()
-            if repair:
-                state["chain_repaired_at_utc"] = state["chain_completed_at_utc"]
-            save(HEALTH, {"schema_version": 1, "last_refresh_completed_utc": state["chain_completed_at_utc"],
-                "status": "HEALTHY", "cadence_minutes": CONFIG["chain_cadence_minutes"], "paused_due_to_cost": False,
-                "sources": {s["key"]: r for s, r in zip(active_sources, records)}, "automatic_retry": False})
+                previous = (
+                    state.get("queries", {})
+                    .get(spec["key"], {})
+                )
+                previous_completed = previous.get(
+                    "completed_at_utc"
+                )
+                cadence = int(
+                    spec.get(
+                        "cadence_minutes",
+                        CONFIG["chain_cadence_minutes"],
+                    )
+                )
+
+                if repair or due(
+                    previous_completed,
+                    cadence,
+                ):
+                    due_sources.append(
+                        spec
+                    )
+
+            paths = {}
+
+            for spec in due_sources:
+                previous = (
+                    state.get("queries", {})
+                    .get(spec["key"], {})
+                )
+                previous_completed = previous.get(
+                    "completed_at_utc"
+                )
+
+                if repair:
+                    lookback = int(
+                        spec.get(
+                            "repair_lookback_hours",
+                            CONFIG["repair_lookback_hours"],
+                        )
+                    )
+                elif previous_completed:
+                    elapsed_hours = (
+                        now()
+                        - datetime.fromisoformat(
+                            previous_completed.replace(
+                                "Z",
+                                "+00:00",
+                            )
+                        )
+                    ).total_seconds() / 3600
+
+                    lookback = max(
+                        int(
+                            spec.get(
+                                "lookback_hours",
+                                2,
+                            )
+                        ),
+                        math.ceil(
+                            elapsed_hours + 1
+                        ),
+                    )
+
+                    if (
+                        lookback
+                        > int(
+                            spec.get(
+                                "max_catchup_hours",
+                                CONFIG["max_catchup_hours"],
+                            )
+                        )
+                    ):
+                        raise RuntimeError(
+                            f"{spec['key']} canonical collection gap "
+                            "exceeds catch-up limit; reviewed repair required."
+                        )
+                else:
+                    lookback = int(
+                        spec.get(
+                            "lookback_hours",
+                            2,
+                        )
+                    )
+
+                record = execute(
+                    spec,
+                    {
+                        "lookback_hours":
+                            lookback,
+                    },
+                )
+
+                remaining = export_source(
+                    record,
+                    spec,
+                    remaining,
+                )
+
+                state["queries"][
+                    spec["key"]
+                ] = record
+
+                paths[
+                    spec["key"]
+                ] = (
+                    ROOT
+                    / spec["output"]
+                )
+
+                save(
+                    STATE,
+                    state,
+                )
+
+            # The transfer source is the canonical reducer clock and remains
+            # on the 30-minute cadence. BBB DEX is deliberately daily; when
+            # it is not due, its canonical CSV and derived state are preserved.
+            if "xnet_transfers" in paths:
+                reduce_atomically(
+                    paths["xnet_transfers"],
+                    paths.get("bbb_dex"),
+                )
+                state["chain_completed_at_utc"] = stamp()
+
+                if repair:
+                    state["chain_repaired_at_utc"] = (
+                        state[
+                            "chain_completed_at_utc"
+                        ]
+                    )
+
+            health_sources = {
+                spec["key"]:
+                    state.get(
+                        "queries",
+                        {},
+                    ).get(
+                        spec["key"],
+                        {},
+                    )
+                for spec in active_sources
+                if state.get(
+                    "queries",
+                    {},
+                ).get(
+                    spec["key"]
+                )
+            }
+
+            save(
+                HEALTH,
+                {
+                    "schema_version": 2,
+                    "last_refresh_completed_utc":
+                        state.get(
+                            "chain_completed_at_utc"
+                        ),
+                    "status": "HEALTHY",
+                    "cadence_minutes":
+                        CONFIG[
+                            "chain_cadence_minutes"
+                        ],
+                    "paused_due_to_cost": False,
+                    "sources":
+                        health_sources,
+                    "automatic_retry": False,
+                },
+            )
         run("v3_build_chain_snapshot.py")
         run("v3_collect_market.py")
         save(STATE, state)

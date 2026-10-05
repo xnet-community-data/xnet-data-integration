@@ -10,6 +10,24 @@ OUTPUT_PATH = "data/xnet_defillama_revenue.json"
 
 TOLERANCE = Decimal("0.02")
 
+# Explicit source-accounting attribution for a confirmed partial receipt.
+# The July 2026 source-sheet column reports a $12,000 WiFi payment received
+# without a payment date. The surrounding 2026 settlement sequence maps
+# receipts to service periods roughly two months earlier, so this receipt is
+# conservatively recognized as a partial May 2026 settlement. Only the
+# confirmed $12,000 is recognized; the remaining May balance stays unsettled.
+PARTIAL_SETTLEMENT_OVERRIDES = {
+    ("2026-07", Decimal("12000.00")): {
+        "service_month": "2026-05",
+        "reason": (
+            "Confirmed partial WiFi payment reported in the July 2026 "
+            "source-sheet column and attributed to May 2026 using the "
+            "established settlement-month sequence. The unconfirmed "
+            "remainder is left unsettled."
+        ),
+    },
+}
+
 
 def D(value):
     return None if value is None else Decimal(str(value))
@@ -30,11 +48,15 @@ def month_end(month):
     return date(year, month_num, last_day)
 
 
-def find_candidates(services, amount, payment_date, assigned):
+def find_candidates(services, amount, payment_date, recognized_by_service):
     candidates = []
 
     for i, service in enumerate(services):
-        if service["month"] in assigned:
+        remaining = service["amount"] - recognized_by_service.get(
+            service["month"], Decimal("0")
+        )
+
+        if remaining <= TOLERANCE:
             continue
 
         if month_end(service["month"]) > payment_date:
@@ -47,10 +69,14 @@ def find_candidates(services, amount, payment_date, assigned):
         for j in range(i, len(services)):
             candidate = services[j]
 
-            if candidate["month"] in assigned:
+            if month_end(candidate["month"]) > payment_date:
                 break
 
-            if month_end(candidate["month"]) > payment_date:
+            candidate_remaining = candidate["amount"] - recognized_by_service.get(
+                candidate["month"], Decimal("0")
+            )
+
+            if candidate_remaining <= TOLERANCE:
                 break
 
             current_index = month_index(candidate["month"])
@@ -61,8 +87,13 @@ def find_candidates(services, amount, payment_date, assigned):
             ):
                 break
 
-            total += candidate["amount"]
-            months.append(candidate)
+            total += candidate_remaining
+            months.append(
+                {
+                    "month": candidate["month"],
+                    "amount": candidate_remaining,
+                }
+            )
             previous_index = current_index
 
             if abs(total - amount) <= TOLERANCE:
@@ -139,19 +170,101 @@ def main():
         )
     )
 
-    assigned = set()
+    recognized_by_service = {}
     settlements = []
     unattributed = []
     recognized = []
 
     for payment in payments:
         if payment["payment_date"] is None:
-            unattributed.append(
+            source_month = payment["source_month"][:7]
+            override_key = (
+                source_month,
+                payment["amount"].quantize(Decimal("0.01")),
+            )
+            override = PARTIAL_SETTLEMENT_OVERRIDES.get(override_key)
+
+            if override is None:
+                unattributed.append(
+                    {
+                        "source_month": source_month,
+                        "payment_received_usd": money(payment["amount"]),
+                        "payment_received_date": None,
+                        "reason": "Source reports an amount but no payment date.",
+                    }
+                )
+                continue
+
+            target_month = override["service_month"] + "-01"
+            target_service = next(
+                (
+                    service
+                    for service in services
+                    if service["month"] == target_month
+                ),
+                None,
+            )
+
+            if target_service is None:
+                raise RuntimeError(
+                    "Partial settlement override references an unknown "
+                    f"service month: {override['service_month']}"
+                )
+
+            already_recognized = recognized_by_service.get(
+                target_month, Decimal("0")
+            )
+            remaining = target_service["amount"] - already_recognized
+
+            if payment["amount"] > remaining + TOLERANCE:
+                raise RuntimeError(
+                    "Partial settlement override exceeds the remaining "
+                    f"service amount for {override['service_month']}: "
+                    f"payment={payment['amount']}, remaining={remaining}"
+                )
+
+            recognized_by_service[target_month] = (
+                already_recognized + payment["amount"]
+            )
+
+            settlement_id = (
+                f"undated-{source_month}-"
+                f"{money(payment['amount']):.2f}"
+            )
+            recognition_date = month_end(target_month).isoformat()
+            service_month = override["service_month"]
+
+            settlements.append(
                 {
-                    "source_month": payment["source_month"][:7],
-                    "payment_received_usd": money(payment["amount"]),
+                    "settlement_id": settlement_id,
                     "payment_received_date": None,
-                    "reason": "Source reports an amount but no payment date.",
+                    "payment_received_usd": money(payment["amount"]),
+                    "source_sheet_column": source_month,
+                    "service_months": [
+                        {
+                            "service_month": service_month,
+                            "service_revenue_usd": money(payment["amount"]),
+                        }
+                    ],
+                    "reconciliation_method": (
+                        "explicit_partial_source_month_lag"
+                    ),
+                    "difference_usd": 0.0,
+                    "attribution_note": override["reason"],
+                }
+            )
+
+            recognized.append(
+                {
+                    "date": recognition_date,
+                    "service_month": service_month,
+                    "fees_usd": money(payment["amount"]),
+                    "user_fees_usd": money(payment["amount"]),
+                    "settlement_id": settlement_id,
+                    "payment_received_date": None,
+                    "recognition_basis": (
+                        "confirmed_partial_payment_attributed_to_service_month"
+                    ),
                 }
             )
             continue
@@ -162,7 +275,7 @@ def main():
             services,
             payment["amount"],
             payment_date,
-            assigned,
+            recognized_by_service,
         )
 
         if len(candidates) != 1:
@@ -199,7 +312,10 @@ def main():
         matched_total = Decimal("0")
 
         for service in matched:
-            assigned.add(service["month"])
+            recognized_by_service[service["month"]] = (
+                recognized_by_service.get(service["month"], Decimal("0"))
+                + service["amount"]
+            )
             matched_total += service["amount"]
 
             service_month = service["month"][:7]
@@ -234,15 +350,30 @@ def main():
 
     recognized.sort(key=lambda row: row["date"])
 
-    unsettled_services = [
-        {
-            "service_month": service["month"][:7],
-            "projected_service_revenue_usd": money(service["amount"]),
-            "status": "not_recognized",
-        }
-        for service in services
-        if service["month"] not in assigned
-    ]
+    unsettled_services = []
+
+    for service in services:
+        recognized_amount = recognized_by_service.get(
+            service["month"], Decimal("0")
+        )
+        remaining = service["amount"] - recognized_amount
+
+        if remaining <= TOLERANCE:
+            continue
+
+        unsettled_services.append(
+            {
+                "service_month": service["month"][:7],
+                "projected_service_revenue_usd": money(service["amount"]),
+                "recognized_service_revenue_usd": money(recognized_amount),
+                "remaining_service_revenue_usd": money(remaining),
+                "status": (
+                    "partially_recognized"
+                    if recognized_amount > TOLERANCE
+                    else "not_recognized"
+                ),
+            }
+        )
 
     source_received_total = sum(
         (
@@ -277,10 +408,8 @@ def main():
             f"unattributed={unattributed_total}"
         )
 
-    if len({row["date"] for row in recognized}) != len(recognized):
-        raise RuntimeError(
-            "More than one recognized service row uses the same date."
-        )
+    # Multiple settlements may reconcile to the same service month. The
+    # DeFiLlama adapter sums all rows sharing the same recognition date.
 
     output = {
         "schema_version": 1,
@@ -336,6 +465,14 @@ def main():
             "unattributed_payments": (
                 "Payments without sufficient date or service-period "
                 "evidence remain unattributed and are excluded."
+            ),
+            "partial_settlements": (
+                "A confirmed received payment may be recognized as a partial "
+                "service-period settlement when the source-sheet month maps "
+                "to an established settlement sequence. The July 2026 "
+                "$12,000 receipt is attributed to May 2026; only that "
+                "confirmed amount is recognized and the remaining May "
+                "balance stays unsettled."
             ),
             "policy_allocation": (
                 "For DeFiLlama policy-based allocation, recognized service "

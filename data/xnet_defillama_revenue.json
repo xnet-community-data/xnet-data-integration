@@ -40,14 +40,15 @@
     "policy_allocation": "For DeFiLlama policy-based allocation, recognized service periods before 2025-05-22 use the historical 80% Holders Revenue / 20% Protocol Revenue split. Recognized service periods from 2025-05-22 use the XIP-12 60% Holders Revenue / 40% Protocol Revenue split, with the 40% Protocol Revenue comprising 20% protocol-owned liquidity and 20% operations.",
     "protocol_revenue": "Policy-derived Protocol Revenue is 20% of carrier service revenue under the historical allocation. From 2025-05-22 under XIP-12 it is 40%: 20% for operations and 20% for protocol-owned liquidity. The liquidity allocation remains Protocol Revenue even when part of it is used to acquire XNET for the XNET side of the protocol-owned liquidity position.",
     "supply_side_revenue": "No Supply-side Revenue is estimated from the policy allocation used by the covered adapter history. Reported fiat-operator transfers are preserved separately and are not assigned to service periods until their timing and service attribution can be independently established.",
-    "holders_revenue": "Policy-derived Holders Revenue is historically 80% of carrier service revenue allocated to XNET market buyback-and-burn. From 2025-05-22 under XIP-12, 60% continues to fund XNET buyback-and-burn while 20 percentage points were redirected to protocol-owned liquidity to bolster XNET liquidity. These percentages represent policy allocation rather than measured on-chain execution amounts."
+    "holders_revenue": "Policy-derived Holders Revenue is historically 80% of carrier service revenue allocated to XNET market buyback-and-burn. From 2025-05-22 under XIP-12, 60% continues to fund XNET buyback-and-burn while 20 percentage points were redirected to protocol-owned liquidity to bolster XNET liquidity. These percentages represent policy allocation rather than measured on-chain execution amounts.",
+    "partial_settlements": "A confirmed received payment may be recognized as a partial service-period settlement when the source-sheet month maps to an established settlement sequence. The July 2026 $12,000 receipt is attributed to May 2026; only that confirmed amount is recognized and the remaining May balance stays unsettled."
   },
   "totals": {
     "source_payments_received_usd": 131816.09,
-    "recognized_service_revenue_usd": 119816.08,
-    "unattributed_payments_usd": 12000.01
+    "recognized_service_revenue_usd": 131816.08,
+    "unattributed_payments_usd": 0.01
   },
-  "count": 20,
+  "count": 21,
   "data": [
     {
       "date": "2024-09-30",
@@ -214,11 +215,20 @@
     {
       "date": "2026-03-31",
       "service_month": "2026-03",
-      "fees_usd": 14957.0,
-      "user_fees_usd": 14957.0,
+      "fees_usd": 14957,
+      "user_fees_usd": 14957,
       "settlement_id": "2026-05-27-14957.00",
       "payment_received_date": "2026-05-27",
       "recognition_basis": "confirmed_payment_reconciled_to_service_month"
+    },
+    {
+      "date": "2026-05-31",
+      "service_month": "2026-05",
+      "fees_usd": 12000,
+      "user_fees_usd": 12000,
+      "settlement_id": "undated-2026-07-12000.00",
+      "payment_received_date": null,
+      "recognition_basis": "confirmed_partial_payment_attributed_to_service_month"
     },
     {
       "date": "2026-07-31",
@@ -251,7 +261,7 @@
         }
       ],
       "reconciliation_method": "exact_contiguous_sum",
-      "difference_usd": 0.0
+      "difference_usd": 0
     },
     {
       "settlement_id": "2025-02-20-1085.16",
@@ -265,7 +275,7 @@
         }
       ],
       "reconciliation_method": "exact_contiguous_sum",
-      "difference_usd": 0.0
+      "difference_usd": 0
     },
     {
       "settlement_id": "2025-03-25-1396.92",
@@ -279,7 +289,7 @@
         }
       ],
       "reconciliation_method": "exact_contiguous_sum",
-      "difference_usd": 0.0
+      "difference_usd": 0
     },
     {
       "settlement_id": "2025-04-21-1704.18",
@@ -293,7 +303,7 @@
         }
       ],
       "reconciliation_method": "exact_contiguous_sum",
-      "difference_usd": 0.0
+      "difference_usd": 0
     },
     {
       "settlement_id": "2025-05-20-2118.10",
@@ -307,7 +317,7 @@
         }
       ],
       "reconciliation_method": "exact_contiguous_sum",
-      "difference_usd": 0.0
+      "difference_usd": 0
     },
     {
       "settlement_id": "2025-06-25-2539.17",
@@ -321,7 +331,7 @@
         }
       ],
       "reconciliation_method": "exact_contiguous_sum",
-      "difference_usd": 0.0
+      "difference_usd": 0
     },
     {
       "settlement_id": "2025-07-22-2333.24",
@@ -335,7 +345,7 @@
         }
       ],
       "reconciliation_method": "exact_contiguous_sum",
-      "difference_usd": 0.0
+      "difference_usd": 0
     },
     {
       "settlement_id": "2025-09-30-6804.16",
@@ -353,7 +363,7 @@
         }
       ],
       "reconciliation_method": "exact_contiguous_sum",
-      "difference_usd": 0.0
+      "difference_usd": 0
     },
     {
       "settlement_id": "2025-10-24-3747.07",
@@ -367,7 +377,7 @@
         }
       ],
       "reconciliation_method": "exact_contiguous_sum",
-      "difference_usd": 0.0
+      "difference_usd": 0
     },
     {
       "settlement_id": "2025-11-30-5370.97",
@@ -381,7 +391,7 @@
         }
       ],
       "reconciliation_method": "exact_contiguous_sum",
-      "difference_usd": 0.0
+      "difference_usd": 0
     },
     {
       "settlement_id": "2025-12-31-7472.60",
@@ -395,7 +405,7 @@
         }
       ],
       "reconciliation_method": "exact_contiguous_sum",
-      "difference_usd": 0.0
+      "difference_usd": 0
     },
     {
       "settlement_id": "2026-01-22-5028.81",
@@ -409,7 +419,7 @@
         }
       ],
       "reconciliation_method": "exact_contiguous_sum",
-      "difference_usd": 0.0
+      "difference_usd": 0
     },
     {
       "settlement_id": "2026-02-24-7865.43",
@@ -423,7 +433,7 @@
         }
       ],
       "reconciliation_method": "exact_contiguous_sum",
-      "difference_usd": 0.0
+      "difference_usd": 0
     },
     {
       "settlement_id": "2026-03-20-9707.31",
@@ -437,7 +447,7 @@
         }
       ],
       "reconciliation_method": "exact_contiguous_sum",
-      "difference_usd": 0.0
+      "difference_usd": 0
     },
     {
       "settlement_id": "2026-04-21-11915.76",
@@ -451,21 +461,21 @@
         }
       ],
       "reconciliation_method": "exact_contiguous_sum",
-      "difference_usd": 0.0
+      "difference_usd": 0
     },
     {
       "settlement_id": "2026-05-27-14957.00",
       "payment_received_date": "2026-05-27",
-      "payment_received_usd": 14957.0,
+      "payment_received_usd": 14957,
       "source_sheet_column": "2026-05",
       "service_months": [
         {
           "service_month": "2026-03",
-          "service_revenue_usd": 14957.0
+          "service_revenue_usd": 14957
         }
       ],
       "reconciliation_method": "exact_contiguous_sum",
-      "difference_usd": 0.0
+      "difference_usd": 0
     },
     {
       "settlement_id": "2026-09-25-33688.91",
@@ -479,19 +489,28 @@
         }
       ],
       "reconciliation_method": "exact_contiguous_sum",
-      "difference_usd": 0.0
+      "difference_usd": 0
+    },
+    {
+      "settlement_id": "undated-2026-07-12000.00",
+      "payment_received_date": null,
+      "payment_received_usd": 12000,
+      "source_sheet_column": "2026-07",
+      "service_months": [
+        {
+          "service_month": "2026-05",
+          "service_revenue_usd": 12000
+        }
+      ],
+      "reconciliation_method": "explicit_partial_source_month_lag",
+      "difference_usd": 0,
+      "attribution_note": "Confirmed partial WiFi payment reported in the July 2026 source-sheet column and attributed to May 2026 using the established settlement-month sequence. The unconfirmed remainder is left unsettled."
     }
   ],
   "unattributed_settlements": [
     {
       "source_month": "2025-08",
       "payment_received_usd": 0.01,
-      "payment_received_date": null,
-      "reason": "Source reports an amount but no payment date."
-    },
-    {
-      "source_month": "2026-07",
-      "payment_received_usd": 12000.0,
       "payment_received_date": null,
       "reason": "Source reports an amount but no payment date."
     }
@@ -508,22 +527,30 @@
     {
       "service_month": "2026-04",
       "projected_service_revenue_usd": 24248.53,
-      "status": "not_recognized"
+      "status": "not_recognized",
+      "recognized_service_revenue_usd": 0,
+      "remaining_service_revenue_usd": 24248.53
     },
     {
       "service_month": "2026-05",
       "projected_service_revenue_usd": 32758.38,
-      "status": "not_recognized"
+      "status": "partially_recognized",
+      "recognized_service_revenue_usd": 12000,
+      "remaining_service_revenue_usd": 20758.38
     },
     {
       "service_month": "2026-06",
       "projected_service_revenue_usd": 32314.15,
-      "status": "not_recognized"
+      "status": "not_recognized",
+      "recognized_service_revenue_usd": 0,
+      "remaining_service_revenue_usd": 32314.15
     },
     {
       "service_month": "2026-08",
       "projected_service_revenue_usd": 32643.19,
-      "status": "not_recognized"
+      "status": "not_recognized",
+      "recognized_service_revenue_usd": 0,
+      "remaining_service_revenue_usd": 32643.19
     }
   ]
 }

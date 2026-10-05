@@ -455,12 +455,16 @@ def main():
                 "underlying service month or contiguous service months."
             ),
             "recognition_date": (
-                "Recognized revenue is booked on the final calendar day "
-                "of its underlying service month."
+                "The feed stores each recognized service amount with a "
+                "month-end service-period anchor. The DeFiLlama adapter "
+                "prorates the settlement-confirmed service-month total "
+                "evenly across that month's calendar days for daily, 7d, "
+                "and 30d comparability."
             ),
             "projected_revenue": (
-                "Unsettled projected WiFi revenue is excluded from "
-                "DeFiLlama metrics."
+                "Unsettled projected WiFi revenue is excluded from core "
+                "DeFiLlama Fees and Revenue. Projections remain separate "
+                "until a carrier settlement confirms the service amount."
             ),
             "unattributed_payments": (
                 "Payments without sufficient date or service-period "

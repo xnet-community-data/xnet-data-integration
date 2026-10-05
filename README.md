@@ -46,7 +46,7 @@ The API does not expose timezone metadata. Preserve the returned `day` value rat
 
 ### Fail-safe offload cache
 
-`data/xnet_offload_api.json` is a normalized completed-day mirror used by the accrual builder. The sync job merges newly returned completed observations into the cache rather than replacing history wholesale. If the upstream API is temporarily unavailable, the job preserves the last valid cache and the revenue builder continues from those trustworthy observations. Missing days are never invented or filled with zero. When the API resumes, new observations are incorporated and affected provisional revenue is rebuilt automatically.
+`data/xnet_offload_api.json` is a normalized completed-day mirror used by the accrual builder. The sync job merges newly returned completed observations into the cache rather than replacing history wholesale. If the upstream API is temporarily unavailable, the job preserves the last valid measured cache. The revenue builder may then use the bounded short-outage fallback described above for the trailing gap only; the cache itself remains measured-source data and is not polluted with imputed observations. When the API resumes, new measured observations are incorporated and affected provisional revenue is rebuilt automatically.
 
 ## 2. Total and operational devices
 
@@ -137,6 +137,8 @@ The daily series follows this hierarchy:
 This last step is intentionally conservative. Daily network-offload GB and revenue-sheet billing GB are related but not identical. In the recent complete May-August 2026 comparison, summed daily API offload exceeded the revenue-sheet billing GB by roughly 6-8%. Using the raw billing `$/GB` directly on network-offload GB would therefore overstate the live projection. The effective API-GB rate absorbs that difference.
 
 The model is designed to revise historical provisional values, not to preserve a forecast after better information arrives. When an official monthly projection is published, the live daily estimate for that service month is replaced and rescaled to the official projection. When a carrier settlement can be reconciled to the service month, the daily values are rescaled again to the settlement-confirmed amount. In each case the relative day-to-day shape comes from measured offload rather than a blind equal-per-day average.
+
+If the daily offload API itself is temporarily stale, the model can bridge a **short outage only**. For a trailing gap of at most 14 completed days, missing trailing days are provisionally assigned the average offload of the latest seven measured days. These rows are explicitly flagged as imputed and are replaced as soon as measured observations return. This keeps current 24-hour/7-day comparisons from collapsing to zero during a brief source outage without pretending the imputed GB are measured data. If the source remains stale for more than 14 completed days, the model fails closed and stops extending the synthetic series.
 
 The current calibration and recent previous-month-rate backtest are published inside `data/xnet_defillama_revenue.json` under `projection_model`, so third parties can audit both the rate and the forecast error.
 

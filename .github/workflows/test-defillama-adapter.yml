@@ -1,38 +1,52 @@
 name: Test XNET DeFiLlama adapter
+
 on:
   workflow_dispatch:
   push:
     paths:
       - ".github/workflows/test-defillama-adapter.yml"
+
 permissions:
   contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out proposed XNET adapter
+        uses: actions/checkout@v4
         with:
-          repository: DefiLlama/dimension-adapters
-          ref: 65bb7c860ece07096d170f34c58c213cb393d784
+          repository: xnet-community-data/dimension-adapters
+          ref: xnet-live-accrual-20261005
           fetch-depth: 0
+
       - uses: pnpm/action-setup@v4
         with:
           version: "10"
+
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "24"
+
       - name: Install upstream dependencies
         run: pnpm install --frozen-lockfile
-      - name: Test historical service months and a day without recognition
+
+      - name: Test historical, projected and live daily accrual
         env:
           DEBUG_BREAKDOWN_FEES: "true"
         run: |
+          # The CLI date is the end of the requested window, so each command
+          # reproduces the previous calendar day's daily accrual.
           npm test fees xnet 2025-03-01
-          npm test fees xnet 2026-03-01
+          npm test fees xnet 2026-05-16
           npm test fees xnet 2026-08-01
-          npm test fees xnet 2026-07-16
-      - name: Check upstream adapter types
+          npm test fees xnet 2026-09-29
+          npm test fees xnet 2026-10-05
+
+      - name: Check adapter types
         run: npm run ts-check
-      - name: Check upstream CLI types
+
+      - name: Check CLI types
         run: npm run ts-check-cli

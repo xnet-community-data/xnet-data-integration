@@ -38,6 +38,29 @@ FIAT_OPERATOR_SHARE = Decimal("0.75")
 FIAT_BBB_SHARE = Decimal("0.05")
 FIAT_OPERATIONS_SHARE = Decimal("0.20")
 
+# XIP-13.1 is listed Passed in the official XIP index. It specifies monthly
+# fiat settlement in arrears on the existing NET60+ carrier timeline, an 80%
+# BuyBack Revenue Percentage, a 5% facilitation fee, and therefore a 75%
+# operator cash share. We use the observed two-month carrier cadence as the
+# deterministic service-period lag for fiat payouts.
+FIAT_SERVICE_LAG_MONTHS = 2
+XIP_12_EFFECTIVE_DATE = "2025-05-22"
+XIP_INDEX_URL = "https://github.com/XNET-Foundation/XIP"
+XIP_12_URL = "https://github.com/XNET-Foundation/XIP/blob/main/XIP-12.md"
+XIP_13_1_URL = (
+    "https://github.com/XNET-Foundation/XIP/blob/main/xip-13-1.md"
+)
+
+# Project accounting guidance identifies these three $15k receipts as final
+# carrier settlements under the historical payment cap, not partial payments.
+# Scope the override narrowly to the affected service months; do not extrapolate
+# the old cap after June 2026 because July settled at its full projected amount.
+HISTORICAL_FINAL_CAPPED_SETTLEMENTS = {
+    "2026-04": Decimal("15000.00"),
+    "2026-05": Decimal("15000.00"),
+    "2026-06": Decimal("15000.00"),
+}
+
 
 def D(value):
     return None if value is None else Decimal(str(value))
@@ -66,6 +89,35 @@ def shift_month(month, delta):
     absolute = year * 12 + (month_num - 1) + delta
     shifted_year, shifted_zero_month = divmod(absolute, 12)
     return f"{shifted_year:04d}-{shifted_zero_month + 1:02d}"
+
+
+def ordinary_policy_split(amount, day):
+    """Split ordinary retained revenue exactly to cents under XIP policy."""
+    amount = Decimal(amount).quantize(CENT, rounding=ROUND_HALF_UP)
+    operations = (
+        amount * Decimal("0.20")
+    ).quantize(CENT, rounding=ROUND_HALF_UP)
+
+    if day >= XIP_12_EFFECTIVE_DATE:
+        liquidity = (
+            amount * Decimal("0.20")
+        ).quantize(CENT, rounding=ROUND_HALF_UP)
+        holders = amount - operations - liquidity
+    else:
+        liquidity = Decimal("0")
+        holders = amount - operations
+
+    if min(holders, operations, liquidity) < 0:
+        raise RuntimeError(
+            f"Invalid ordinary policy split for {day}: {amount}"
+        )
+
+    if holders + operations + liquidity != amount:
+        raise RuntimeError(
+            f"Ordinary policy split does not reconcile for {day}"
+        )
+
+    return holders, operations, liquidity
 
 
 def expected_days(month):
@@ -288,15 +340,18 @@ def main():
         if payout is None or payout <= TOLERANCE:
             continue
 
+        source_month = row["month"][:7]
+        service_month = shift_month(
+            source_month,
+            -FIAT_SERVICE_LAG_MONTHS,
+        )
+
         gross = (
             payout / FIAT_OPERATOR_SHARE
         ).quantize(CENT, rounding=ROUND_HALF_UP)
         bbb = (
             gross * FIAT_BBB_SHARE
         ).quantize(CENT, rounding=ROUND_HALF_UP)
-
-        # Derive operations as the exact cent-level residual so that:
-        # gross = operator payout + BBB + operations.
         operations = gross - payout - bbb
 
         if operations < 0:
@@ -306,8 +361,8 @@ def main():
 
         fiat_operator_transfers.append(
             {
-                "source_month": row["month"][:7],
-                "service_month": None,
+                "source_month": source_month,
+                "service_month": service_month,
                 "operator_payout_usd": money(payout),
                 "amount_usd": money(payout),
                 "gross_fiat_allocation_usd": money(gross),
@@ -318,13 +373,20 @@ def main():
                 "operations_share_pct": 20.0,
                 "transfer_date": None,
                 "attribution_basis": (
-                    "source_month_pending_service_period_attribution"
+                    "xip_13_1_net60_two_month_service_lag"
                 ),
-                "status": "reported_source_month_only",
+                "status": "service_month_attributed_two_month_lag",
+                "policy_source": {
+                    "xip": "XIP-13.1",
+                    "status": "Passed in official XIP index",
+                    "url": XIP_13_1_URL,
+                    "index_url": XIP_INDEX_URL,
+                },
                 "token_emissions_treatment": (
-                    "Corresponding fiat-option token emissions are burned; "
-                    "the USD source does not identify a token amount, so no "
-                    "token quantity is inferred here."
+                    "XIP-13.1 assigns the corresponding fiat-option token "
+                    "emissions to the Burn facility. The USD revenue sheet "
+                    "does not identify a token amount, so no token quantity "
+                    "is inferred in this feed."
                 ),
             }
         )
@@ -357,6 +419,7 @@ def main():
     )
 
     recognized_by_service = {}
+    final_settled_by_service = {}
     settlements = []
     unattributed = []
     recognized = []
@@ -411,11 +474,35 @@ def main():
                     expected_remaining > TOLERANCE
                     and payment["amount"] > TOLERANCE
                 ):
-                    # A payment below the remaining projection is a valid
-                    # partial settlement under the established two-month lag.
-                    # Do not reject it merely because the projection has not
-                    # yet been paid in full.
-                    if payment["amount"] <= expected_remaining + TOLERANCE:
+                    historical_cap = (
+                        HISTORICAL_FINAL_CAPPED_SETTLEMENTS.get(
+                            target_service_month
+                        )
+                    )
+
+                    if (
+                        historical_cap is not None
+                        and abs(payment["amount"] - historical_cap)
+                        <= TOLERANCE
+                    ):
+                        # These three receipts were final settlements under
+                        # the old carrier payment cap. The earlier higher
+                        # projections are superseded, not left receivable.
+                        lag_fallback = {
+                            "month": target_key,
+                            "amount": payment["amount"],
+                            "expected_remaining": expected_remaining,
+                            "remaining_after": Decimal("0"),
+                            "method": (
+                                "two_month_lag_final_historical_cap"
+                            ),
+                            "overage_pct": Decimal("0"),
+                            "projection_write_down": max(
+                                Decimal("0"),
+                                expected_remaining - payment["amount"],
+                            ),
+                        }
+                    elif payment["amount"] <= expected_remaining + TOLERANCE:
                         remaining_after = max(
                             Decimal("0"),
                             expected_remaining - payment["amount"],
@@ -429,9 +516,6 @@ def main():
                             "overage_pct": Decimal("0"),
                         }
                     else:
-                        # A final settlement is allowed to exceed the earlier
-                        # projection only within a conservative bound. Larger
-                        # overages remain unattributed for manual review.
                         overage_pct = (
                             (payment["amount"] - expected_remaining)
                             / expected_remaining
@@ -489,13 +573,26 @@ def main():
         }
 
         if lag_fallback is not None:
-            if lag_fallback["method"] == "two_month_lag_partial":
+            method = lag_fallback["method"]
+
+            if method == "two_month_lag_partial":
                 settlement["attribution_note"] = (
                     "No unique exact amount match was available. The payment "
                     "is treated as a partial settlement of the service month "
                     "two calendar months before the source/payment month. "
                     "Only the amount actually received is marked confirmed; "
                     "the remaining projected balance stays unsettled."
+                )
+            elif method == "two_month_lag_final_historical_cap":
+                settlement["attribution_note"] = (
+                    "This is a final $15,000 carrier settlement under the "
+                    "historical carrier payment cap. It reconciles the service "
+                    "month two calendar months earlier and supersedes the "
+                    "higher provisional projection; the projection difference "
+                    "is written down rather than left outstanding."
+                )
+                settlement["projection_reconciled_down_usd"] = money(
+                    lag_fallback["projection_write_down"]
                 )
             else:
                 settlement["attribution_note"] = (
@@ -549,6 +646,15 @@ def main():
                     ),
                 }
             )
+
+        if (
+            lag_fallback is not None
+            and lag_fallback["method"]
+            == "two_month_lag_final_historical_cap"
+        ):
+            final_settled_by_service[
+                lag_fallback["month"]
+            ] = payment["amount"]
 
         settlement["difference_usd"] = (
             0.0
@@ -679,7 +785,14 @@ def main():
         target = None
         basis = None
 
-        if projected is not None and recognized_amount >= projected - TOLERANCE:
+        final_settlement = final_settled_by_service.get(
+            row["month"]
+        )
+
+        if final_settlement is not None:
+            target = final_settlement
+            basis = "confirmed_settlement"
+        elif projected is not None and recognized_amount >= projected - TOLERANCE:
             target = recognized_amount
             basis = "confirmed_settlement"
         elif projected is not None and full_offload_month:
@@ -884,39 +997,46 @@ def main():
     # Revenue split and fiat-deployer accounting
     # --------------------------------------------------
     #
-    # Fees are the gross carrier service fees. Most fees follow XNET's normal
-    # policy allocation. A fiat-deployer allocation is different: 75% is paid
-    # to the deployer (supply-side revenue), 5% goes to BBB, and 20% goes to
-    # XNET operations. Because the current public sheet reports the fiat payout
-    # by source month but not by underlying service period, the split is booked
-    # provisionally to that source month and will be backfilled if a service
-    # period is later supplied.
+    # Fees are gross carrier WiFi offload fees. Ordinary fees follow the
+    # applicable XNET allocation policy. XIP-13.1 creates a fiat-operator
+    # exception: 75% to the operator, 5% facilitation/BBB, and 20% operations.
+    # XIP-13.1 states monthly payment in arrears on the NET60+ carrier timeline,
+    # so a source-month fiat payout maps to service two calendar months earlier.
 
     for row in daily_data:
         fee = Decimal(str(row["fees_usd"]))
-        holder_share = (
-            Decimal("0.60")
-            if row["date"] >= "2025-05-22"
-            else Decimal("0.80")
+        (
+            ordinary_holders,
+            ordinary_operations,
+            ordinary_liquidity,
+        ) = ordinary_policy_split(fee, row["date"])
+        ordinary_protocol = (
+            ordinary_operations + ordinary_liquidity
         )
 
-        holders = (
-            fee * holder_share
-        ).quantize(CENT, rounding=ROUND_HALF_UP)
-        protocol = fee - holders
-
         row["fiat_gross_allocation_usd"] = 0.0
+        row["fiat_operator_payout_usd"] = 0.0
+        row["fiat_bbb_allocation_usd"] = 0.0
+        row["fiat_operations_allocation_usd"] = 0.0
+        row["ordinary_holders_revenue_usd"] = money(ordinary_holders)
+        row["ordinary_operations_revenue_usd"] = money(
+            ordinary_operations
+        )
+        row["ordinary_protocol_owned_liquidity_usd"] = money(
+            ordinary_liquidity
+        )
+        row["ordinary_protocol_revenue_usd"] = money(ordinary_protocol)
         row["supply_side_revenue_usd"] = 0.0
-        row["holders_revenue_usd"] = money(holders)
-        row["protocol_revenue_usd"] = money(protocol)
+        row["holders_revenue_usd"] = money(ordinary_holders)
+        row["protocol_revenue_usd"] = money(ordinary_protocol)
         row["revenue_usd"] = money(fee)
         row["fiat_allocation_basis"] = None
 
-    fiat_by_month = {}
+    fiat_by_service_month = {}
     for transfer in fiat_operator_transfers:
-        source_month = transfer["source_month"]
-        bucket = fiat_by_month.setdefault(
-            source_month,
+        service_month = transfer["service_month"]
+        bucket = fiat_by_service_month.setdefault(
+            service_month,
             {
                 "operator_payout": Decimal("0"),
                 "bbb": Decimal("0"),
@@ -933,41 +1053,28 @@ def main():
             str(transfer["operations_allocation_usd"])
         )
 
-    for source_month, bucket in sorted(fiat_by_month.items()):
+    for service_month, bucket in sorted(fiat_by_service_month.items()):
         matching = [
             row
             for row in daily_data
-            if row["service_month"] == source_month
+            if row["service_month"] == service_month
         ]
 
         if not matching:
             for transfer in fiat_operator_transfers:
-                if transfer["source_month"] == source_month:
+                if transfer["service_month"] == service_month:
                     transfer["daily_allocation_status"] = (
                         "pending_no_daily_rows"
                     )
             continue
 
         weights = [
-            {
-                "date": row["date"],
-                "gigabytes": row["offload_gb"],
-            }
+            {"date": row["date"], "gigabytes": row["offload_gb"]}
             for row in matching
         ]
-
-        operator_daily = allocate_cents(
-            bucket["operator_payout"],
-            weights,
-        )
-        bbb_daily = allocate_cents(
-            bucket["bbb"],
-            weights,
-        )
-        operations_daily = allocate_cents(
-            bucket["operations"],
-            weights,
-        )
+        operator_daily = allocate_cents(bucket["operator_payout"], weights)
+        bbb_daily = allocate_cents(bucket["bbb"], weights)
+        operations_daily = allocate_cents(bucket["operations"], weights)
 
         month_fee_total = sum(
             (Decimal(str(row["fees_usd"])) for row in matching),
@@ -978,11 +1085,10 @@ def main():
             + bucket["bbb"]
             + bucket["operations"]
         )
-
         if month_gross_fiat > month_fee_total + TOLERANCE:
             raise RuntimeError(
                 "Fiat-deployer gross allocation exceeds fees for "
-                f"{source_month}: gross={month_gross_fiat}, "
+                f"{service_month}: gross={month_gross_fiat}, "
                 f"fees={month_fee_total}"
             )
 
@@ -1004,40 +1110,58 @@ def main():
             if non_fiat_fee < 0:
                 non_fiat_fee = Decimal("0")
 
-            holder_share = (
-                Decimal("0.60")
-                if row["date"] >= "2025-05-22"
-                else Decimal("0.80")
+            (
+                ordinary_holders,
+                ordinary_operations,
+                ordinary_liquidity,
+            ) = ordinary_policy_split(
+                non_fiat_fee,
+                row["date"],
             )
-            holders_non_fiat = (
-                non_fiat_fee * holder_share
-            ).quantize(CENT, rounding=ROUND_HALF_UP)
-            protocol_non_fiat = non_fiat_fee - holders_non_fiat
+            ordinary_protocol = (
+                ordinary_operations + ordinary_liquidity
+            )
 
-            holders = holders_non_fiat + bbb
-            protocol = protocol_non_fiat + operations
+            holders = ordinary_holders + bbb
+            protocol = ordinary_protocol + operations
             supply = operator
-            revenue = holders + protocol
+            revenue = fee - supply
 
             if abs(fee - revenue - supply) > TOLERANCE:
                 raise RuntimeError(
                     "Daily Fees != Revenue + SupplySideRevenue on "
                     f"{row['date']}"
                 )
+            if abs(revenue - holders - protocol) > TOLERANCE:
+                raise RuntimeError(
+                    "Daily Revenue != HoldersRevenue + ProtocolRevenue on "
+                    f"{row['date']}"
+                )
 
             row["fiat_gross_allocation_usd"] = money(fiat_gross)
+            row["fiat_operator_payout_usd"] = money(operator)
+            row["fiat_bbb_allocation_usd"] = money(bbb)
+            row["fiat_operations_allocation_usd"] = money(operations)
+            row["ordinary_holders_revenue_usd"] = money(ordinary_holders)
+            row["ordinary_operations_revenue_usd"] = money(
+                ordinary_operations
+            )
+            row["ordinary_protocol_owned_liquidity_usd"] = money(
+                ordinary_liquidity
+            )
+            row["ordinary_protocol_revenue_usd"] = money(ordinary_protocol)
             row["supply_side_revenue_usd"] = money(supply)
             row["holders_revenue_usd"] = money(holders)
             row["protocol_revenue_usd"] = money(protocol)
             row["revenue_usd"] = money(revenue)
             row["fiat_allocation_basis"] = (
-                "source_month_pending_service_period_attribution"
+                "xip_13_1_net60_two_month_service_lag"
             )
 
         for transfer in fiat_operator_transfers:
-            if transfer["source_month"] == source_month:
+            if transfer["service_month"] == service_month:
                 transfer["daily_allocation_status"] = (
-                    "provisionally_distributed_over_source_month_offload"
+                    "distributed_over_two_month_lag_service_offload"
                 )
                 transfer["daily_allocation_first_date"] = matching[0]["date"]
                 transfer["daily_allocation_last_date"] = matching[-1]["date"]
@@ -1053,6 +1177,13 @@ def main():
 
         for field in (
             "fiat_gross_allocation_usd",
+            "fiat_operator_payout_usd",
+            "fiat_bbb_allocation_usd",
+            "fiat_operations_allocation_usd",
+            "ordinary_holders_revenue_usd",
+            "ordinary_operations_revenue_usd",
+            "ordinary_protocol_owned_liquidity_usd",
+            "ordinary_protocol_revenue_usd",
             "supply_side_revenue_usd",
             "revenue_usd",
             "holders_revenue_usd",
@@ -1069,7 +1200,7 @@ def main():
             )
 
         month["fiat_allocation_basis"] = (
-            "source_month_pending_service_period_attribution"
+            "xip_13_1_net60_two_month_service_lag"
             if month["fiat_gross_allocation_usd"] > 0
             else None
         )
@@ -1097,11 +1228,13 @@ def main():
 
     unsettled_services = []
     for service in services:
+        if service["month"] in final_settled_by_service:
+            continue
+
         recognized_amount = recognized_by_service.get(
             service["month"], Decimal("0")
         )
         remaining = service["amount"] - recognized_amount
-
         if remaining <= TOLERANCE:
             continue
 
@@ -1226,9 +1359,42 @@ def main():
     )
 
     output = {
-        "schema_version": 3,
+        "schema_version": 4,
         "accounting_basis": "hybrid_accrual_reconciled",
         "source": source["source"],
+        "policy_sources": {
+            "xip_index": XIP_INDEX_URL,
+            "xip_12": {
+                "status": "Passed in official XIP index",
+                "url": XIP_12_URL,
+                "allocation": (
+                    "60% Buy & Burn, 20% protocol-owned liquidity, "
+                    "20% operations"
+                ),
+            },
+            "xip_13_1": {
+                "status": "Passed in official XIP index",
+                "url": XIP_13_1_URL,
+                "fiat_operator_share_pct": 75.0,
+                "facilitation_bbb_share_pct": 5.0,
+                "operations_share_pct": 20.0,
+                "settlement_timing": "monthly in arrears on NET60+ timeline",
+            },
+        },
+        "historical_settlement_policy": {
+            "source": "project accounting guidance",
+            "final_carrier_cap_usd": 15000.0,
+            "service_months": sorted(
+                HISTORICAL_FINAL_CAPPED_SETTLEMENTS
+            ),
+            "treatment": (
+                "The April-June 2026 $15,000 carrier settlements are final "
+                "under the historical carrier cap. Their earlier higher "
+                "projections are reconciled down to actual settlement rather "
+                "than left as outstanding receivables. The cap is not "
+                "extrapolated beyond those explicitly scoped months."
+            ),
+        },
         "offload_source": {
             "name": offload_source["source"]["name"],
             "url": offload_source["source"]["url"],
@@ -1258,24 +1424,25 @@ def main():
                 "When an official monthly projection or later carrier "
                 "settlement becomes available, the affected historical daily "
                 "values are recomputed. Exact amount reconciliation is "
-                "preferred. If no unique exact match exists, the established "
-                "two-month payment cadence may be used: payments below the "
-                "remaining official projection are recorded as partial "
-                "settlements, while a final payment above the projection is "
-                "accepted automatically only when the overage is within 15%. "
-                "Anything outside those rules remains unattributed for review. "
-                "Confirmed amounts never get added on top of provisional "
-                "revenue; they replace confirmation status and, once a service "
-                "month is fully settled, its daily series is rescaled to the "
-                "actual confirmed total in proportion to daily offload."
+                "preferred. If no unique exact match exists, the observed "
+                "two-month payment cadence may be used. April-June 2026 are "
+                "a narrowly scoped historical exception: each later $15,000 "
+                "receipt was the final settlement under the old carrier cap, "
+                "so the earlier higher projection is written down to the "
+                "actual $15,000 rather than left as an outstanding balance. "
+                "Outside that explicit cap period, a below-projection receipt "
+                "remains partial; a final payment above projection is accepted "
+                "automatically only within the 15% bounded-variance rule. "
+                "Confirmed amounts replace provisional accrual; they are never "
+                "added on top."
             ),
             "partial_settlements": (
-                "A partial carrier payment confirms only the amount actually "
+                "Outside the explicitly scoped historical $15,000 cap, a "
+                "partial carrier payment confirms only the amount actually "
                 "received for its reconciled service month and is not added "
                 "on top of that month's provisional accrual. The remaining "
                 "official projected balance stays unsettled. Source revisions "
-                "are respected on each rebuild, so a later dated payment can "
-                "supersede an earlier provisional or ambiguous source entry."
+                "are respected on each rebuild."
             ),
             "missing_offload": (
                 "Missing offload observations are never filled with zero. If "
@@ -1298,26 +1465,36 @@ def main():
                 "gross fiat allocation is paid to the deployer."
             ),
             "fiat_deployer_option": (
-                "For deployers who choose fiat, the corresponding token "
-                "emissions are burned and the gross fiat allocation is split "
-                "75% to the deployer, 5% to BBB, and 20% to XNET operations. "
-                "The public sheet currently reports the fiat payout by source "
-                "month but not the underlying service period, so the daily "
-                "split is provisionally shaped across that source month's "
-                "offload and will be backfilled if service-period attribution "
-                "is later provided."
+                "The official XIP index lists XIP-13.1 as Passed. The "
+                "ratified mechanism lets designated operators choose fiat in "
+                "lieu of token distributions. Its 80% BuyBack Revenue "
+                "Percentage less a 5% facilitation fee produces a 75% "
+                "operator cash share; for DeFiLlama accounting that fiat "
+                "slice is 75% Supply-Side Revenue, 5% BBB/Holders Revenue and "
+                "20% operations/Protocol Revenue. XIP-13.1 states that fiat "
+                "operators are paid monthly in arrears on the NET60+ timeline, "
+                "so payouts are attributed to service two calendar months "
+                "earlier and shaped across that month's offload. Assigned "
+                "fiat-option token emissions go to the Burn facility, but no "
+                "token quantity is inferred from the USD sheet."
             ),
             "holders_revenue": (
-                "For ordinary carrier revenue, the holder allocation is 80% "
-                "before 2025-05-22 and 60% from XIP-12 onward. For the "
-                "fiat-deployer slice, 5% of the gross fiat allocation goes "
-                "to BBB."
+                "Holder Revenue is accrued in the same service period as Fees "
+                "so 24h/7d/30d comparisons remain economically comparable. "
+                "Before XIP-12, the ordinary holder allocation is 80%; from "
+                "XIP-12 onward it is 60%. For the XIP-13.1 fiat slice, 5% is "
+                "the BBB/facilitation allocation. Values remain provisional "
+                "where underlying Fees are provisional and are reconciled "
+                "with those Fees when settlement arrives. This is accrual "
+                "attribution, not a claim that the on-chain buyback or burn "
+                "executed on the same calendar day."
             ),
             "protocol_revenue": (
-                "For ordinary carrier revenue, Protocol Revenue is 20% before "
-                "2025-05-22 and 40% from XIP-12 onward. For the fiat-deployer "
-                "slice, 20% of the gross fiat allocation goes to XNET "
-                "operations."
+                "Protocol Revenue is the portion retained within XNET after "
+                "Supply-Side Revenue. Before XIP-12 the ordinary retained "
+                "share is 20%; from XIP-12 onward it is 40%, comprising 20% "
+                "operations and 20% protocol-owned liquidity. For the "
+                "XIP-13.1 fiat slice, 20% is retained for XNET operations."
             ),
         },
         "projection_model": {

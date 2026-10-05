@@ -18,6 +18,8 @@ def main():
     with open(FEED_PATH, encoding="utf-8") as f:
         feed = json.load(f)
 
+    assert feed["schema_version"] >= 4
+
     recognized = sum(
         (dec(row["fees_usd"]) for row in feed["data"]),
         Decimal("0"),
@@ -80,6 +82,34 @@ def main():
             + dec(row["protocol_revenue_usd"])
         )
 
+        fiat_gross = dec(row.get("fiat_gross_allocation_usd", 0))
+        ordinary_protocol = (
+            dec(row["ordinary_operations_revenue_usd"])
+            + dec(row["ordinary_protocol_owned_liquidity_usd"])
+        )
+        assert ordinary_protocol == dec(
+            row["ordinary_protocol_revenue_usd"]
+        )
+
+        assert dec(row["holders_revenue_usd"]) == (
+            dec(row["ordinary_holders_revenue_usd"])
+            + dec(row["fiat_bbb_allocation_usd"])
+        )
+        assert dec(row["protocol_revenue_usd"]) == (
+            dec(row["ordinary_protocol_revenue_usd"])
+            + dec(row["fiat_operations_allocation_usd"])
+        )
+
+        if fiat_gross:
+            assert row["fiat_allocation_basis"] == (
+                "xip_13_1_net60_two_month_service_lag"
+            )
+            assert fiat_gross == (
+                dec(row["fiat_operator_payout_usd"])
+                + dec(row["fiat_bbb_allocation_usd"])
+                + dec(row["fiat_operations_allocation_usd"])
+            )
+
     for month in feed["monthly_accrual"]:
         if month["basis"] == "provisional_live_offload":
             continue
@@ -131,6 +161,52 @@ def main():
     assert bbb_total == dec(feed["totals"]["fiat_bbb_allocation_usd"])
     assert operations_total == dec(
         feed["totals"]["fiat_operations_allocation_usd"]
+    )
+
+    capped_months = {"2026-04", "2026-05", "2026-06"}
+    monthly_by_key = {
+        row["service_month"]: row
+        for row in feed["monthly_accrual"]
+    }
+    unsettled_keys = {
+        row["service_month"]
+        for row in feed["unsettled_service_months"]
+    }
+
+    for service_month in capped_months:
+        row = monthly_by_key[service_month]
+        assert row["basis"] == "confirmed_settlement"
+        assert dec(row["accrual_total_usd"]) == Decimal("15000.00")
+        assert dec(row["settlement_confirmed_usd"]) == Decimal("15000.00")
+        assert service_month not in unsettled_keys
+
+    capped_settlements = [
+        row
+        for row in feed["settlements"]
+        if row["reconciliation_method"]
+        == "two_month_lag_final_historical_cap"
+    ]
+    assert {
+        item["service_month"]
+        for row in capped_settlements
+        for item in row["service_months"]
+    } == capped_months
+
+    for transfer in fiat:
+        source_y, source_m = map(int, transfer["source_month"].split("-"))
+        absolute = source_y * 12 + (source_m - 1) - 2
+        service_y, service_zero_m = divmod(absolute, 12)
+        expected_service_month = (
+            f"{service_y:04d}-{service_zero_m + 1:02d}"
+        )
+        assert transfer["service_month"] == expected_service_month
+        assert transfer["attribution_basis"] == (
+            "xip_13_1_net60_two_month_service_lag"
+        )
+
+    assert daily_total == (
+        recognized
+        + dec(feed["totals"]["unconfirmed_accrual_component_usd"])
     )
 
     print(

@@ -28,6 +28,7 @@ TOLERANCE = Decimal("0.02")
 CENT = Decimal("0.01")
 MAX_OUTAGE_FALLBACK_DAYS = 14
 OUTAGE_FALLBACK_LOOKBACK_DAYS = 7
+MAX_LAG_FALLBACK_VARIANCE_PCT = Decimal("15")
 
 PARTIAL_SETTLEMENT_OVERRIDES = {
     ("2026-07", Decimal("12000.00")): {
@@ -62,6 +63,13 @@ def month_start(month):
 def month_end(month):
     year, month_num = map(int, month[:7].split("-"))
     return date(year, month_num, monthrange(year, month_num)[1])
+
+
+def shift_month(month, delta):
+    year, month_num = map(int, month[:7].split("-"))
+    absolute = year * 12 + (month_num - 1) + delta
+    shifted_year, shifted_zero_month = divmod(absolute, 12)
+    return f"{shifted_year:04d}-{shifted_zero_month + 1:02d}"
 
 
 def expected_days(month):
@@ -429,19 +437,64 @@ def main():
             recognized_by_service,
         )
 
+        lag_fallback = None
         if len(candidates) != 1:
-            unattributed.append(
-                {
-                    "source_month": payment["source_month"][:7],
-                    "payment_received_usd": money(payment["amount"]),
-                    "payment_received_date": payment["payment_date"],
-                    "reason": (
-                        "No unique exact contiguous service-period "
-                        f"reconciliation. Candidate count: {len(candidates)}."
-                    ),
-                }
+            source_month = payment["source_month"][:7]
+            target_service_month = shift_month(source_month, -2)
+            target_key = month_start(target_service_month)
+            target_service = next(
+                (
+                    service
+                    for service in services
+                    if service["month"] == target_key
+                ),
+                None,
             )
-            continue
+
+            if target_service is not None:
+                already_recognized = recognized_by_service.get(
+                    target_key, Decimal("0")
+                )
+                expected_remaining = (
+                    target_service["amount"] - already_recognized
+                )
+
+                if expected_remaining > TOLERANCE:
+                    variance_pct = (
+                        abs(payment["amount"] - expected_remaining)
+                        / expected_remaining
+                        * Decimal("100")
+                    )
+
+                    if variance_pct <= MAX_LAG_FALLBACK_VARIANCE_PCT:
+                        lag_fallback = {
+                            "month": target_key,
+                            "amount": payment["amount"],
+                            "expected_remaining": expected_remaining,
+                            "variance_pct": variance_pct,
+                        }
+
+            if lag_fallback is None:
+                unattributed.append(
+                    {
+                        "source_month": payment["source_month"][:7],
+                        "payment_received_usd": money(payment["amount"]),
+                        "payment_received_date": payment["payment_date"],
+                        "reason": (
+                            "No unique exact contiguous service-period "
+                            f"reconciliation and no bounded two-month-lag "
+                            f"fallback. Candidate count: {len(candidates)}."
+                        ),
+                    }
+                )
+                continue
+
+            candidates = [[
+                {
+                    "month": lag_fallback["month"],
+                    "amount": lag_fallback["amount"],
+                }
+            ]]
 
         matched = candidates[0]
         settlement_id = (
@@ -453,9 +506,28 @@ def main():
             "payment_received_usd": money(payment["amount"]),
             "source_sheet_column": payment["source_month"][:7],
             "service_months": [],
-            "reconciliation_method": "exact_contiguous_sum",
+            "reconciliation_method": (
+                "two_month_lag_bounded_variance"
+                if lag_fallback is not None
+                else "exact_contiguous_sum"
+            ),
             "difference_usd": 0.0,
         }
+
+        if lag_fallback is not None:
+            settlement["attribution_note"] = (
+                "No unique exact amount match was available. The payment was "
+                "attributed to the service month two calendar months before "
+                "the source/payment month because the payment differed from "
+                "the remaining official projection by no more than "
+                f"{MAX_LAG_FALLBACK_VARIANCE_PCT}%."
+            )
+            settlement["projection_variance_pct"] = float(
+                lag_fallback["variance_pct"].quantize(
+                    Decimal("0.001"),
+                    rounding=ROUND_HALF_UP,
+                )
+            )
         matched_total = Decimal("0")
 
         for service in matched:
@@ -487,7 +559,14 @@ def main():
                 }
             )
 
-        settlement["difference_usd"] = money(matched_total - payment["amount"])
+        settlement["difference_usd"] = (
+            money(
+                payment["amount"]
+                - lag_fallback["expected_remaining"]
+            )
+            if lag_fallback is not None
+            else money(matched_total - payment["amount"])
+        )
         settlements.append(settlement)
 
     recognized.sort(key=lambda row: (row["date"], row["settlement_id"]))
@@ -938,10 +1017,15 @@ def main():
             "reconciliation": (
                 "When an official monthly projection or later carrier "
                 "settlement becomes available, the affected historical daily "
-                "values are recomputed. The confirmed monthly amount is "
-                "distributed in proportion to actual daily offload, preserving "
-                "the observed traffic shape while forcing the daily values to "
-                "sum exactly to the reconciled service-month revenue."
+                "values are recomputed. Exact amount reconciliation is "
+                "preferred. If no unique exact match exists, a payment may be "
+                "mapped to the service month two months earlier only when its "
+                "variance from that month's remaining official projection is "
+                "within 15%; otherwise it remains unattributed for review. "
+                "The confirmed monthly amount is then distributed in "
+                "proportion to actual daily offload, preserving the observed "
+                "traffic shape while forcing the daily values to sum exactly "
+                "to reconciled service-month revenue."
             ),
             "partial_settlements": (
                 "A partial payment confirms part of a service month but is not "

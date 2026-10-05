@@ -118,9 +118,9 @@ Both timelines are retained:
 
 For example, the $33,688.91 payment received on 25 September 2026 reconciles exactly to July 2026 WiFi service revenue.
 
-Payments that cannot be uniquely reconciled remain explicitly unattributed and are not silently assigned to a service period. Projected but unsettled WiFi revenue is excluded.
+Payments that cannot be uniquely reconciled remain explicitly unattributed and are not silently assigned to a service period. One explicit exception is the confirmed $12,000 receipt reported in the July 2026 source-sheet column: the surrounding 2026 settlement sequence consistently maps receipts to service periods roughly two months earlier, so only that $12,000 is conservatively recognized as a partial May 2026 settlement. The remaining May balance stays unsettled. Projected but unsettled WiFi revenue is excluded.
 
-The DeFiLlama adapter recognizes reconciled revenue on the final calendar day of its service month. Payment receipt dates remain separate. A later carrier settlement can add revenue to an earlier service month, so DeFiLlama must refill those historical dates after the feed changes. The current adapter covers service periods through July 2026; projected but unsettled months are excluded. October 2026 fiat-operator transfers need service-period attribution before extending retained-revenue accounting to that activity.
+The DeFiLlama adapter recognizes reconciled revenue on the final calendar day of its service month. Payment receipt dates remain separate. A later carrier settlement can add revenue to an earlier service month, so DeFiLlama must refill those historical dates after the feed changes. The adapter should consume every recognized service date present in the feed rather than use a hard-coded final service date; later months appear automatically once a settlement can be attributed. Projected but unsettled months remain excluded. October 2026 fiat-operator transfers still need service-period attribution before they can affect retained-revenue accounting.
 
 Run both normalization stages with:
 

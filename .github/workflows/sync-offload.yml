@@ -7,10 +7,9 @@ on:
       - ".github/workflows/sync-offload.yml"
       - "scripts/sync_offload.py"
       - "scripts/build_defillama_revenue.py"
-  schedule:
-    # The source is daily, so four-hour polling keeps the completed-day cache
-    # fresh without hammering an endpoint that publishes no public SLA.
-    - cron: "23 */4 * * *"
+  # Daily production refresh is handled by sync-revenue.yml, which refreshes
+  # both the revenue sheet and offload cache before rebuilding this feed.
+  # Keep this workflow for manual recovery and code-change validation only.
   workflow_dispatch:
 
 permissions:

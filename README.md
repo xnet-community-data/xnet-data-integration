@@ -109,7 +109,9 @@ Carrier service **Fees** are the gross amount paid for XNET WiFi offload. Where 
 - 20% is allocated to **XNET operations / Protocol Revenue**
 - the corresponding token emissions are burned
 
-The revenue sheet currently reports the fiat-operator payout in USD but does not identify the underlying service period or token quantity. The derived DeFiLlama feed therefore does not infer a token burn amount. Until the service period is known, the fiat split is provisionally attributed to the source month and distributed across that month's daily offload. If a service-period attribution is later published, the same reconciliation process backfills the historical daily split.
+The fiat mechanism is public and ratified. The official [XIP index](https://github.com/XNET-Foundation/XIP) lists **XIP-13.1 as Passed**, and [XIP-13.1](https://github.com/XNET-Foundation/XIP/blob/main/xip-13-1.md) specifies monthly fiat payment in arrears on the existing NET60+ carrier timeline. It derives a 75% operator cash payment from the 80% BuyBack Revenue Percentage less a 5% facilitation fee, while the remaining 20% is retained for operations. For DeFiLlama accounting, the fiat slice is therefore classified as 75% Supply-Side Revenue, 5% BBB / Holders Revenue and 20% Protocol Revenue. The corresponding fiat-option token emissions are assigned to the Burn facility, but the revenue sheet does not identify the token quantity, so the derived feed does not invent one.
+
+Because fiat operators are paid only after the underlying carrier cycle settles, the feed attributes a reported fiat payout to the service month **two calendar months earlier**, consistent with XIP-13.1's NET60+ language and the observed carrier settlement cadence. The amount is then distributed across that service month's daily offload rather than the later source/reporting month.
 
 For DeFiLlama terminology:
 
@@ -138,7 +140,7 @@ Both timelines are retained:
 
 For example, the $33,688.91 payment received on 25 September 2026 reconciles exactly to July 2026 WiFi service revenue.
 
-Payments that cannot be uniquely reconciled remain explicitly unattributed rather than being silently forced into a service period. Exact amount matching is preferred. When no unique exact match exists, the established roughly two-month carrier-payment cadence can be used conservatively: a payment below the remaining official projection is treated as a partial settlement of the service month two months earlier; a payment above the remaining projection is automatically accepted only when the overage is within 15%. The feed is rebuilt from the latest source sheet, so revised or newly dated carrier-payment entries supersede earlier provisional source states.
+Payments that cannot be uniquely reconciled remain explicitly unattributed rather than being silently forced into a service period. Exact amount matching is preferred. When no unique exact match exists, the established roughly two-month carrier-payment cadence can be used conservatively. There is one deliberately narrow historical exception: project accounting guidance identifies the three $15,000 carrier receipts settling **April, May and June 2026** as final settlements under the old carrier payment cap. Those service months are therefore reconciled down from their earlier projections to the actual $15,000 received; the projection differences are not left as phantom receivables. The cap is not extrapolated beyond those months. Outside that scoped period, a below-projection receipt remains a partial settlement, while a final payment above the remaining projection is accepted automatically only when the overage is within 15%. The feed is rebuilt from the latest source sheet, so revised or newly dated carrier-payment entries supersede earlier provisional source states.
 
 ### DeFiLlama daily accrual and reconciliation
 
@@ -162,7 +164,7 @@ The current calibration and recent previous-month-rate backtest are published in
 
 Payment receipt dates remain separate from service accrual dates. Projected values must not be described as cash received. Partial receipts confirm part of an already-accrued service month and are never added on top of that month's provisional revenue. When the source sheet is revised with a newer payment amount or date, the next rebuild follows the latest source and recalculates confirmation status automatically.
 
-The adapter should consume `daily_data` from the feed and should not impose a hard-coded final service date. Fiat-operator payouts affect Supply-Side Revenue immediately under the source-month fallback described above, while their service-period attribution remains explicitly provisional until the source provides a more precise period.
+The adapter should consume `daily_data` from the feed and should not impose a hard-coded final service date. XIP-13.1 fiat-operator payouts are attributed to the service month two months before the reporting/source month, consistent with the ratified NET60+ mechanism. Holder Revenue is reported on the same service-period accrual basis as Fees for comparable rolling 24h/7d/30d analytics; wherever Fees are provisional, the holder allocation is provisional too and is reconciled when carrier settlement arrives. This accrual attribution must not be described as proof that an on-chain buyback or burn executed on that exact day.
 
 Run both normalization stages with:
 

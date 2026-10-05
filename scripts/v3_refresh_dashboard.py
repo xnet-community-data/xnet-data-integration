@@ -70,21 +70,29 @@ def usage_guard():
         raise RuntimeError(f"Monthly spend guard reached: {used:.3f}/{limit:.0f} credits.")
     return {"credits_used": used, "guard_credits": limit, "period_start": period["start_date"], "period_end": period["end_date"]}
 
-def execute(spec, params=None, enforce_cap=True):
+def execute(spec, params=None, enforce_cap=True, timeout_seconds=None):
     usage = usage_guard()
     body = {"performance": CONFIG["performance"]}
     if params:
         body["query_parameters"] = params
     execution = api(f'query/{spec["query_id"]}/execute', body)
     execution_id = execution["execution_id"]
-    deadline = time.monotonic() + 600
+    if timeout_seconds is None:
+        timeout_seconds = CONFIG.get(
+            "source_execution_timeout_seconds",
+            240,
+        )
+    deadline = time.monotonic() + timeout_seconds
     while True:
         status = api(f"execution/{execution_id}/status")
         if status.get("is_execution_finished") or status.get("state") in {
             "QUERY_STATE_COMPLETED", "QUERY_STATE_FAILED", "QUERY_STATE_CANCELLED", "QUERY_STATE_EXPIRED"}:
             break
         if time.monotonic() > deadline:
-            raise RuntimeError(f"Execution {execution_id} polling timeout; do not automatically resubmit.")
+            raise RuntimeError(
+                f"Execution {execution_id} polling timeout after "
+                f"{timeout_seconds}s; do not automatically resubmit."
+            )
         time.sleep(4)
     cost = status.get("execution_cost_credits")
     if cost is None:
@@ -230,12 +238,48 @@ def main():
         run("v3_collect_market.py")
         save(STATE, state)
         publish()
+        due_presentation = []
         for spec in CONFIG["presentation"]:
             last = state["queries"].get(spec["key"], {}).get("completed_at_utc")
-            if not due(last, spec["cadence_minutes"]):
-                continue
-            # Do not download presentation rows: charts use Dune's cached executions.
-            state["queries"][spec["key"]] = execute(spec)
+            if due(last, spec["cadence_minutes"]):
+                due_presentation.append(spec)
+
+        # Bound each cron run so one slow cached chart cannot consume the
+        # whole GitHub Actions timeout. Overdue charts simply remain due for
+        # the next run.
+        max_presentation = int(
+            CONFIG.get("max_presentation_queries_per_run", 5)
+        )
+        presentation_timeout = int(
+            CONFIG.get("presentation_execution_timeout_seconds", 90)
+        )
+
+        presentation_errors = {}
+        for spec in due_presentation[:max_presentation]:
+            try:
+                # Do not download presentation rows: charts use Dune's cached
+                # executions. Presentation failures are fail-soft because the
+                # previous successful Dune result remains valid.
+                state["queries"][spec["key"]] = execute(
+                    spec,
+                    timeout_seconds=presentation_timeout,
+                )
+                state.get("presentation_errors", {}).pop(spec["key"], None)
+            except Exception as error:
+                presentation_errors[spec["key"]] = {
+                    "failed_at_utc": stamp(),
+                    "error": str(error),
+                }
+                print(
+                    f"::warning::Presentation refresh {spec['key']} "
+                    f"failed; preserving last-good Dune result: {error}"
+                )
+            save(STATE, state)
+
+        if presentation_errors:
+            state.setdefault("presentation_errors", {}).update(
+                presentation_errors
+            )
             save(STATE, state)
         state.update({"completed_at_utc": stamp(), "last_error": None, "billing": usage_guard()})
         save(STATE, state)

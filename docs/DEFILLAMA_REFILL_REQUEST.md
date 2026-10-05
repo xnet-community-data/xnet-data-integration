@@ -21,3 +21,9 @@ Checked **2026-10-05 04:13 UTC**:
 Website: https://www.xnetmobile.com/ · X: https://x.com/XNET_Mobile · Documentation: https://docs.xnetmobile.com/
 
 No new adapter PR or CodeRabbit review is required to load the already merged history.
+
+## Metadata clarification posted
+
+The [official-token metadata request](https://github.com/DefiLlama/dimension-adapters/pull/9872#issuecomment-5990991603) was posted and verified on October 5, 2026. A fresh live protocol API check identifies XNET as protocol ID `8867`, with the correct Solana mint and `dimensions.fees: "xnet"` already present. The remaining observed metadata gaps are an empty website and null `gecko_id` / `cmcId`; the fees/revenue summary endpoints still return HTTP 400. Requested identifiers are CoinGecko `xnet-mobile-2` and CoinMarketCap `32753`, with website `https://xnetmobile.com/`. Carrier fees remain Off Chain accounting, while the token is on Solana.
+
+The [full sourced metadata and XNET-team handoff](XNET_DEFILLAMA_METADATA_HANDOFF_2026-10-05.md) includes the field checklist, team confirmations, financial coverage requirements, and a draft email to the documented `metadata@defillama.com` address. That email and the team message have not been sent. Metadata completion and successful historical fees ingestion remain unconfirmed.

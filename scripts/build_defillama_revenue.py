@@ -30,18 +30,6 @@ MAX_OUTAGE_FALLBACK_DAYS = 14
 OUTAGE_FALLBACK_LOOKBACK_DAYS = 7
 MAX_LAG_FALLBACK_VARIANCE_PCT = Decimal("15")
 
-PARTIAL_SETTLEMENT_OVERRIDES = {
-    ("2026-07", Decimal("12000.00")): {
-        "service_month": "2026-05",
-        "reason": (
-            "Confirmed partial WiFi payment reported in the July 2026 "
-            "source-sheet column and attributed to May 2026 using the "
-            "established settlement-month sequence. The unconfirmed "
-            "remainder is left unsettled."
-        ),
-    },
-}
-
 
 def D(value):
     return None if value is None else Decimal(str(value))
@@ -341,89 +329,15 @@ def main():
 
     for payment in payments:
         if payment["payment_date"] is None:
-            source_month = payment["source_month"][:7]
-            override_key = (
-                source_month,
-                payment["amount"].quantize(CENT),
-            )
-            override = PARTIAL_SETTLEMENT_OVERRIDES.get(override_key)
-
-            if override is None:
-                unattributed.append(
-                    {
-                        "source_month": source_month,
-                        "payment_received_usd": money(payment["amount"]),
-                        "payment_received_date": None,
-                        "reason": "Source reports an amount but no payment date.",
-                    }
-                )
-                continue
-
-            target_month = month_start(override["service_month"])
-            target_service = next(
-                (
-                    service
-                    for service in services
-                    if service["month"] == target_month
-                ),
-                None,
-            )
-
-            if target_service is None:
-                raise RuntimeError(
-                    "Partial settlement override references an unknown "
-                    f"service month: {override['service_month']}"
-                )
-
-            already_recognized = recognized_by_service.get(
-                target_month, Decimal("0")
-            )
-            remaining = target_service["amount"] - already_recognized
-
-            if payment["amount"] > remaining + TOLERANCE:
-                raise RuntimeError(
-                    "Partial settlement override exceeds the remaining "
-                    f"service amount for {override['service_month']}: "
-                    f"payment={payment['amount']}, remaining={remaining}"
-                )
-
-            recognized_by_service[target_month] = (
-                already_recognized + payment["amount"]
-            )
-
-            settlement_id = (
-                f"undated-{source_month}-{money(payment['amount']):.2f}"
-            )
-            service_month = override["service_month"]
-
-            settlements.append(
+            unattributed.append(
                 {
-                    "settlement_id": settlement_id,
-                    "payment_received_date": None,
+                    "source_month": payment["source_month"][:7],
                     "payment_received_usd": money(payment["amount"]),
-                    "source_sheet_column": source_month,
-                    "service_months": [
-                        {
-                            "service_month": service_month,
-                            "service_revenue_usd": money(payment["amount"]),
-                        }
-                    ],
-                    "reconciliation_method": "explicit_partial_source_month_lag",
-                    "difference_usd": 0.0,
-                    "attribution_note": override["reason"],
-                }
-            )
-
-            recognized.append(
-                {
-                    "date": month_end(service_month).isoformat(),
-                    "service_month": service_month,
-                    "fees_usd": money(payment["amount"]),
-                    "user_fees_usd": money(payment["amount"]),
-                    "settlement_id": settlement_id,
                     "payment_received_date": None,
-                    "recognition_basis": (
-                        "confirmed_partial_payment_attributed_to_service_month"
+                    "reason": (
+                        "Source reports a payment amount without a payment "
+                        "date. It remains unattributed rather than relying on "
+                        "a manual historical override."
                     ),
                 }
             )

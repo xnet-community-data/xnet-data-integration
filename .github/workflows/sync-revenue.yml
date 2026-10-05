@@ -10,7 +10,8 @@ on:
       - "scripts/build_defillama_revenue.py"
       - "scripts/check_defillama_feed.py"
   schedule:
-    - cron: "17 9 * * *"
+    # Google Sheet polling is cheap and commits only when source data changes.
+    - cron: "11 * * * *"
   workflow_dispatch:
 
 permissions:
@@ -26,9 +27,10 @@ jobs:
     timeout-minutes: 15
 
     steps:
-      - name: Check out repository
+      - name: Check out latest main
         uses: actions/checkout@v4
         with:
+          ref: main
           fetch-depth: 0
 
       - name: Set up Python
@@ -76,7 +78,13 @@ jobs:
             data/xnet_offload_api.json \
             data/xnet_defillama_revenue.json
           git commit -m "Update XNET revenue data"
-          git push origin main
+
+          # The run may have been queued behind another writer. Rebase once
+          # against the latest main before pushing so a stale event SHA cannot
+          # create a non-fast-forward failure.
+          git fetch origin main
+          git rebase origin/main
+          git push origin HEAD:main
 
       - name: Validate published feed and DeFiLlama ingestion
         run: python scripts/check_defillama_feed.py

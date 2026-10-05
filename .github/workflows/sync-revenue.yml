@@ -1,6 +1,13 @@
 name: Sync XNET revenue data
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/sync-revenue.yml"
+      - "scripts/sync_revenue.py"
+      - "scripts/build_defillama_revenue.py"
+      - "scripts/v3_build_revenue_state.py"
   schedule:
     - cron: "17 9 * * *"
   workflow_dispatch:
@@ -15,6 +22,7 @@ concurrency:
 jobs:
   sync:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
       - name: Check out repository
@@ -42,21 +50,6 @@ jobs:
       - name: Fetch and normalize revenue sheet
         run: python scripts/sync_revenue.py
 
-      - name: Detect source changes
-        id: source
-        shell: bash
-        run: |
-          if git diff --quiet -- \
-            data/xnet_revenue_sheet_raw.csv \
-            data/xnet_revenue_monthly.json
-          then
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-            echo "Revenue source unchanged."
-          else
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-            echo "Revenue source changed."
-          fi
-
       - name: Build derived revenue state
         run: |
           python scripts/build_defillama_revenue.py
@@ -71,6 +64,34 @@ jobs:
             url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf \
             "https://github.com/"
           bash scripts/v3_publish_live_state.sh
+
+      - name: Commit changed revenue source and derived state
+        shell: bash
+        run: |
+          # Publish derived feed changes even when the Google Sheet is unchanged.
+          # Skip timestamp-only current-state updates on main.
+          if git diff --quiet -- \\
+            data/xnet_revenue_sheet_raw.csv \\
+            data/xnet_revenue_monthly.json \\
+            data/xnet_defillama_revenue.json
+          then
+            echo "Revenue source and public feed unchanged."
+            exit 0
+          fi
+
+          git add \\
+            data/xnet_revenue_sheet_raw.csv \
+            data/xnet_revenue_monthly.json \
+            data/xnet_defillama_revenue.json \
+            data/current/xnet_revenue_state.json
+
+          git diff --cached --check
+
+          git commit -m "Update XNET revenue data"
+          git push origin main
+
+      - name: Check published feed and DeFiLlama ingestion
+        run: python scripts/check_defillama_feed.py
 
       - name: Sync dynamic Dune revenue labels
         env:
@@ -91,17 +112,3 @@ jobs:
 
           python scripts/v3_sync_dynamic_counter_labels.py
 
-      - name: Commit changed revenue source and derived state
-        if: steps.source.outputs.changed == 'true'
-        shell: bash
-        run: |
-          git add \
-            data/xnet_revenue_sheet_raw.csv \
-            data/xnet_revenue_monthly.json \
-            data/xnet_defillama_revenue.json \
-            data/current/xnet_revenue_state.json
-
-          git diff --cached --check
-
-          git commit -m "Update XNET revenue data"
-          git push origin main

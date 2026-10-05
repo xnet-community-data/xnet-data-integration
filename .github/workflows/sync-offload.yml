@@ -26,9 +26,10 @@ jobs:
     timeout-minutes: 15
 
     steps:
-      - name: Check out repository
+      - name: Check out latest main
         uses: actions/checkout@v4
         with:
+          ref: main
           fetch-depth: 0
 
       - name: Set up Python
@@ -64,7 +65,13 @@ jobs:
 
           git diff --cached --check
           git commit -m "Update XNET offload and live revenue accrual"
-          git push origin main
+
+          # The run may have been queued behind another writer. Rebase once
+          # against the latest main before pushing so a stale event SHA cannot
+          # create a non-fast-forward failure.
+          git fetch origin main
+          git rebase origin/main
+          git push origin HEAD:main
 
       - name: Validate published feed and DeFiLlama ingestion
         run: python scripts/check_defillama_feed.py

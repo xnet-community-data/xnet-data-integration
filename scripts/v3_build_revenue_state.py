@@ -182,6 +182,38 @@ latest_fiat = (
     else None
 )
 
+latest_fiat_operator_payout = (
+    D(
+        latest_fiat[
+            "transferred_to_fiat_operators_usd"
+        ]
+    )
+    if latest_fiat
+    else None
+)
+
+latest_fiat_gross_allocation = None
+latest_fiat_bbb_allocation = None
+latest_fiat_operations_allocation = None
+
+if (
+    latest_fiat_operator_payout is not None
+    and latest_fiat_operator_payout > 0
+):
+    latest_fiat_gross_allocation = (
+        latest_fiat_operator_payout
+        / Decimal("0.75")
+    ).quantize(Decimal("0.01"))
+    latest_fiat_bbb_allocation = (
+        latest_fiat_gross_allocation
+        * Decimal("0.05")
+    ).quantize(Decimal("0.01"))
+    latest_fiat_operations_allocation = (
+        latest_fiat_gross_allocation
+        - latest_fiat_operator_payout
+        - latest_fiat_bbb_allocation
+    )
+
 
 # --------------------------------------------------
 # Current outstanding balance
@@ -463,7 +495,7 @@ if abs(payment_difference) > Decimal("0.02"):
 
 
 state = {
-    "schema_version": 1,
+    "schema_version": 2,
 
     "generated_at_utc":
         utc_now(),
@@ -582,32 +614,28 @@ state = {
 
         "operator_payout_usd":
             (
-                dec(
-                    latest_fiat[
-                        "transferred_to_fiat_operators_usd"
-                    ]
-                )
+                dec(latest_fiat_operator_payout)
                 if latest_fiat
                 else None
             ),
 
         "gross_fiat_allocation_usd":
             (
-                dec(fiat_gross_allocation)
+                dec(latest_fiat_gross_allocation)
                 if latest_fiat
                 else None
             ),
 
         "bbb_allocation_usd":
             (
-                dec(fiat_bbb_allocation)
+                dec(latest_fiat_bbb_allocation)
                 if latest_fiat
                 else None
             ),
 
         "operations_allocation_usd":
             (
-                dec(fiat_operations_allocation)
+                dec(latest_fiat_operations_allocation)
                 if latest_fiat
                 else None
             ),

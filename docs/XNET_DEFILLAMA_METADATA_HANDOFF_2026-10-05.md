@@ -54,8 +54,8 @@ Both [dailyFees](https://api.llama.fi/summary/fees/xnet?dataType=dailyFees) and 
 | Foundation | `https://xnet.foundation/` | Linked from official site and [Foundation overview](https://docs.xnetmobile.com/foundation/overview) |
 | Official public API repository | `https://github.com/xnetmobile/api` | Linked as Developer Hub from the official website |
 | Community integration repository | `https://github.com/xnet-community-data/xnet-data-integration` | Maintains this data pipeline; do not describe it as the team's official GitHub organization |
-| Community Dune dashboard | `https://dune.com/xnet_community_data/xnet-network-revenue-buy-burn-v3` | Current community-built dashboard; team should confirm whether to endorse/link it |
-| Existing website Dune link | `https://dune.com/xnet/xnetmobile` | Currently linked by the official site; distinct from the community V3 dashboard |
+| Community Dune dashboard | `https://dune.com/xnet_community_data/xnet-network-revenue-buy-burn` | Current community-built dashboard; team should confirm whether to endorse/link it |
+| Existing website Dune link | `https://dune.com/xnet/xnetmobile` | Currently linked by the official site; distinct from the community dashboard |
 
 The [DeFiLlama coin-price endpoint](https://coins.llama.fi/prices/current/coingecko:xnet-mobile-2,solana:xNETbUB7cRb3AAu2pNG2pUwQcJ2BHcktfvSB8x1Pq6L) already returns an XNET price for both identifiers, with the same price/timestamp and 8 decimals for the Solana mint. A new pricing adapter is not indicated by this test. Setting the protocol's market identifiers is a separate request. It may enable additional market-data presentation, but DeFiLlama controls the supported views and ratios.
 

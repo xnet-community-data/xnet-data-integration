@@ -1,38 +1,70 @@
-name: Sync XNET Offload
+name: Sync XNET offload and live accrual
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/sync-offload.yml"
+      - "scripts/sync_offload.py"
+      - "scripts/build_defillama_revenue.py"
+  schedule:
+    # The source is daily, so four-hour polling keeps the completed-day cache
+    # fresh without hammering an endpoint that publishes no public SLA.
+    - cron: "23 */4 * * *"
   workflow_dispatch:
 
 permissions:
   contents: write
 
+concurrency:
+  group: xnet-public-data-feed
+  cancel-in-progress: false
+
 jobs:
   sync:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 15
 
     steps:
-      - name: Checkout repository
+      - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
-      - name: Fetch XNET offload data
+      - name: Configure git
+        run: |
+          git config user.name "xnet-data-bot"
+          git config user.email "xnet-data-bot@users.noreply.github.com"
+
+      - name: Refresh fail-safe offload cache
         run: python scripts/sync_offload.py
 
-      - name: Commit updated mirror
-        run: |
-          git config user.name "XNET Community Data"
-          git config user.email "335743616+xnet-community-data@users.noreply.github.com"
-          git add data/xnet_offload_api.json
+      - name: Rebuild DeFiLlama accrual feed
+        run: python scripts/build_defillama_revenue.py
 
-          if git diff --cached --quiet; then
-            echo "No offload-data changes"
+      - name: Commit changed offload and accrual state
+        shell: bash
+        run: |
+          if git diff --quiet -- \
+            data/xnet_offload_api.json \
+            data/xnet_defillama_revenue.json
+          then
+            echo "Offload cache and DeFiLlama accrual feed unchanged."
             exit 0
           fi
 
-          git commit -m "data: refresh XNET offload mirror"
-          git push
+          git add \
+            data/xnet_offload_api.json \
+            data/xnet_defillama_revenue.json
+
+          git diff --cached --check
+          git commit -m "Update XNET offload and live revenue accrual"
+          git push origin main
+
+      - name: Validate published feed and DeFiLlama ingestion
+        run: python scripts/check_defillama_feed.py

@@ -6,7 +6,9 @@ on:
     paths:
       - ".github/workflows/sync-revenue.yml"
       - "scripts/sync_revenue.py"
+      - "scripts/sync_offload.py"
       - "scripts/build_defillama_revenue.py"
+      - "scripts/check_defillama_feed.py"
   schedule:
     - cron: "17 9 * * *"
   workflow_dispatch:
@@ -15,7 +17,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: xnet-revenue-feed
+  group: xnet-public-data-feed
   cancel-in-progress: false
 
 jobs:
@@ -42,33 +44,34 @@ jobs:
       - name: Fetch and normalize revenue sheet
         run: python scripts/sync_revenue.py
 
-      - name: Build DeFiLlama revenue feed
+      - name: Refresh fail-safe offload cache
+        run: python scripts/sync_offload.py
+
+      - name: Build DeFiLlama daily accrual feed
         run: python scripts/build_defillama_revenue.py
 
-      - name: Commit changed revenue source and derived state
+      - name: Commit changed revenue, offload and derived state
         shell: bash
         run: |
-          # Publish derived feed changes even when the Google Sheet is unchanged.
-          # Skip timestamp-only current-state updates on main.
           if git diff --quiet -- \
             data/xnet_revenue_sheet_raw.csv \
             data/xnet_revenue_monthly.json \
+            data/xnet_offload_api.json \
             data/xnet_defillama_revenue.json
           then
-            echo "Revenue source and public feed unchanged."
+            echo "Revenue source, offload cache and public feed unchanged."
             exit 0
           fi
 
           git add \
             data/xnet_revenue_sheet_raw.csv \
             data/xnet_revenue_monthly.json \
+            data/xnet_offload_api.json \
             data/xnet_defillama_revenue.json
 
           git diff --cached --check
-
           git commit -m "Update XNET revenue data"
           git push origin main
 
-      - name: Check published feed and DeFiLlama ingestion
+      - name: Validate published feed and DeFiLlama ingestion
         run: python scripts/check_defillama_feed.py
-

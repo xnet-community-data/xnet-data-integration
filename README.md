@@ -44,6 +44,10 @@ Do not fill a missing day with zero unless XNET explicitly defines the missing o
 
 The API does not expose timezone metadata. Preserve the returned `day` value rather than applying an assumed timezone conversion.
 
+### Fail-safe offload cache
+
+`data/xnet_offload_api.json` is a normalized completed-day mirror used by the accrual builder. The sync job merges newly returned completed observations into the cache rather than replacing history wholesale. If the upstream API is temporarily unavailable, the job preserves the last valid measured cache. The revenue builder may then use the bounded short-outage fallback described above for the trailing gap only; the cache itself remains measured-source data and is not polluted with imputed observations. When the API resumes, new measured observations are incorporated and affected provisional revenue is rebuilt automatically.
+
 ## 2. Total and operational devices
 
 **Base URL**
@@ -120,7 +124,29 @@ For example, the $33,688.91 payment received on 25 September 2026 reconciles exa
 
 Payments that cannot be uniquely reconciled remain explicitly unattributed and are not silently assigned to a service period. One explicit exception is the confirmed $12,000 receipt reported in the July 2026 source-sheet column: the surrounding 2026 settlement sequence consistently maps receipts to service periods roughly two months earlier, so only that $12,000 is conservatively recognized as a partial May 2026 settlement. The remaining May balance stays unsettled. Projected but unsettled WiFi revenue is excluded.
 
-The reconciled feed stores each confirmed service amount against its service month. For DeFiLlama, that settlement-confirmed monthly amount is prorated evenly across the calendar days of the underlying service month so daily, 7-day and 30-day comparisons reflect service accrual rather than a single artificial month-end spike. Payment receipt dates remain separate. A later carrier settlement can therefore backfill daily values for an earlier service month. The adapter should consume every recognized service month present in the feed rather than use a hard-coded final service date. Projected but unsettled revenue remains excluded from core DeFiLlama Fees and Revenue. October 2026 fiat-operator transfers still need service-period attribution before they can affect retained-revenue accounting.
+### DeFiLlama daily accrual and reconciliation
+
+DeFiLlama's 24-hour, 7-day and 30-day comparisons require a daily flow series. XNET's carrier settlements arrive later than the service activity, so the public feed uses an accrual-and-reconciliation model rather than booking an entire month on one settlement day or showing zero activity while a carrier invoice is pending.
+
+The daily series follows this hierarchy:
+
+1. **Settlement-confirmed month.** The confirmed service-month revenue is distributed across the actual daily offload observations in proportion to each day's measured GB. The daily values are rounded with a cent-preserving allocation so the month sums exactly to the confirmed carrier revenue.
+2. **Closed month with an official XNET projection but not yet fully settled.** The official `WiFi Revenue (Projected)` amount is distributed across that month's actual daily offload observations using the same proportional method. The amount remains explicitly provisional until settlement.
+3. **Newer days before an official monthly projection exists.** Daily network offload is multiplied by the latest conservative effective revenue per API GB. The effective rate is calculated as the latest complete month's official projected WiFi revenue divided by that month's summed daily offload API GB. It is also capped at the published blended billing rate.
+
+This last step is intentionally conservative. Daily network-offload GB and revenue-sheet billing GB are related but not identical. In the recent complete May-August 2026 comparison, summed daily API offload exceeded the revenue-sheet billing GB by roughly 6-8%. Using the raw billing `$/GB` directly on network-offload GB would therefore overstate the live projection. The effective API-GB rate absorbs that difference.
+
+The model is designed to revise historical provisional values, not to preserve a forecast after better information arrives. When an official monthly projection is published, the live daily estimate for that service month is replaced and rescaled to the official projection. When a carrier settlement can be reconciled to the service month, the daily values are rescaled again to the settlement-confirmed amount. In each case the relative day-to-day shape comes from measured offload rather than a blind equal-per-day average.
+
+Settlement attribution is fail-closed. Exact amount reconciliation to one service month or a contiguous run of service months is preferred. If no unique exact match exists, a payment can fall back to the established two-month settlement cadence only when its amount is within 15% of the remaining official projection for that service month. Outside that bound, the payment stays unattributed for review rather than being forced into the revenue series. This lets a final carrier payment legitimately differ from the earlier projection while keeping automatic reconciliation conservative.
+
+If the daily offload API itself is temporarily stale, the model can bridge a **short outage only**. For a trailing gap of at most 14 completed days, missing trailing days are provisionally assigned the average offload of the latest seven measured days. These rows are explicitly flagged as imputed and are replaced as soon as measured observations return. This keeps current 24-hour/7-day comparisons from collapsing to zero during a brief source outage without pretending the imputed GB are measured data. If the source remains stale for more than 14 completed days, the model fails closed and stops extending the synthetic series.
+
+The current calibration and recent previous-month-rate backtest are published inside `data/xnet_defillama_revenue.json` under `projection_model`, so third parties can audit both the rate and the forecast error.
+
+Payment receipt dates remain separate from service accrual dates. Projected values must not be described as cash received. The confirmed $12,000 receipt attributed to May 2026 is tracked as confirmation of part of May's service revenue, not added on top of May's provisional revenue. The remaining May balance stays unsettled until further confirmation.
+
+The adapter should consume `daily_data` from the feed and should not impose a hard-coded final service date. October 2026 fiat-operator transfers still need service-period attribution before they can affect retained-revenue accounting.
 
 Run both normalization stages with:
 
@@ -147,7 +173,9 @@ For this reason:
 - do not treat projected revenue as cash already received
 - do not treat a month's projected revenue as that same month's Buy & Burn transfer
 - do not derive BBB transfers directly from daily network-offload GB
-- use the spreadsheet's `GB per month` series for the revenue calculation basis
+- for source-faithful monthly revenue reporting, preserve the spreadsheet's `GB per month` and `WiFi Revenue (Projected)` series
+- for DeFiLlama's live daily accrual only, measured daily offload may be used with the conservative calibrated effective API-GB rate described above
+- once an official monthly projection or settlement is available, replace the provisional live estimate for that month rather than adding the two together
 - preserve `WiFi Payment (Received)` as a separate settlement-stage metric
 - preserve `Transferred to Buy & Burn` as a separate downstream cash-flow metric
 - preserve `Transferred to Fiat Operators` separately as that route becomes used
@@ -187,15 +215,16 @@ The following distinctions are deliberate and should be preserved:
 
 | Metric | Use |
 | --- | --- |
-| Daily offload API GB | Network usage and offload reporting |
-| Revenue-sheet `GB per month` | Revenue and billing calculations |
-| `WiFi Revenue (Projected)` | Projected revenue only |
-| `WiFi Payment (Received)` | Recorded payments received |
+| Daily offload API GB | Network usage and the day-to-day shape of DeFiLlama accrual |
+| Revenue-sheet `GB per month` | Source-faithful monthly revenue/billing GB |
+| `WiFi Revenue (Projected)` | Official provisional service-month revenue |
+| DeFiLlama live daily projection | Daily API GB × latest conservative effective API-GB revenue rate, until superseded |
+| `WiFi Payment (Received)` | Recorded payments received and reconciliation evidence |
 | `totalDevices` | Total devices from the device feed |
 | `totalOperational` | Operational devices from the device feed |
 | Solana transactions | On-chain token, burn, treasury and liquidity analytics |
 
-Do not derive revenue by multiplying daily-offload API GB by the spreadsheet rate. Revenue calculations should use the monthly revenue-sheet GB series.
+Do not multiply daily network-offload GB by the raw spreadsheet billing rate. The network API has recently reported more GB than the revenue/billing series. The DeFiLlama live estimator therefore uses a separately calibrated effective API-GB rate, publishes that rate and its backtest, and later reconciles the provisional daily values to the official monthly projection and ultimately to settlement-confirmed service revenue.
 
 ## 7. Validation snapshot
 

@@ -16,7 +16,7 @@ recomputed so the relevant service month reconciles exactly.
 
 import json
 from calendar import monthrange
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, ROUND_FLOOR, ROUND_HALF_UP
 from pathlib import Path
 
@@ -26,6 +26,8 @@ OUTPUT_PATH = Path("data/xnet_defillama_revenue.json")
 
 TOLERANCE = Decimal("0.02")
 CENT = Decimal("0.01")
+MAX_OUTAGE_FALLBACK_DAYS = 14
+OUTAGE_FALLBACK_LOOKBACK_DAYS = 7
 
 PARTIAL_SETTLEMENT_OVERRIDES = {
     ("2026-07", Decimal("12000.00")): {
@@ -179,6 +181,80 @@ def load_offload():
     return payload, points
 
 
+def apply_short_outage_fallback(points):
+    """Impute only a short trailing API outage, never internal missing days."""
+    if not points:
+        raise RuntimeError("Cannot build outage fallback without measured offload")
+
+    measured_dates = sorted(points)
+    last_measured = date.fromisoformat(measured_dates[-1])
+    latest_completed = datetime.now(timezone.utc).date() - timedelta(days=1)
+    gap_days = (latest_completed - last_measured).days
+
+    result = dict(points)
+    imputed_dates = set()
+    metadata = {
+        "method": "trailing_measured_7d_average",
+        "lookback_days": OUTAGE_FALLBACK_LOOKBACK_DAYS,
+        "max_fallback_days": MAX_OUTAGE_FALLBACK_DAYS,
+        "active": False,
+        "last_measured_date": last_measured.isoformat(),
+        "latest_completed_date": latest_completed.isoformat(),
+        "imputed_dates": [],
+        "imputed_daily_offload_gb": None,
+    }
+
+    if gap_days <= 0:
+        return result, metadata, imputed_dates
+
+    # Fail closed if the source is stale for too long. A short operational
+    # outage can be projected and later reconciled; an open-ended outage
+    # should not silently turn into an indefinite synthetic series.
+    if gap_days > MAX_OUTAGE_FALLBACK_DAYS:
+        metadata["reason"] = (
+            "Source gap exceeds the short-outage fallback limit; no "
+            "additional days were imputed."
+        )
+        return result, metadata, imputed_dates
+
+    trailing_days = measured_dates[-OUTAGE_FALLBACK_LOOKBACK_DAYS:]
+    trailing_values = [points[day] for day in trailing_days]
+
+    if not trailing_values:
+        return result, metadata, imputed_dates
+
+    fallback_gb = (
+        sum(trailing_values, Decimal("0"))
+        / Decimal(len(trailing_values))
+    )
+
+    for offset in range(1, gap_days + 1):
+        day = (last_measured + timedelta(days=offset)).isoformat()
+        result[day] = fallback_gb
+        imputed_dates.add(day)
+
+    metadata.update(
+        {
+            "active": True,
+            "imputed_dates": sorted(imputed_dates),
+            "imputed_daily_offload_gb": float(
+                fallback_gb.quantize(
+                    Decimal("0.001"),
+                    rounding=ROUND_HALF_UP,
+                )
+            ),
+            "reason": (
+                "The upstream daily offload feed is temporarily stale. "
+                "Missing trailing completed days are provisionally estimated "
+                "from the average of the latest measured seven days and are "
+                "replaced when measured observations resume."
+            ),
+        }
+    )
+
+    return result, metadata, imputed_dates
+
+
 def month_points(points, service_month):
     prefix = service_month[:7] + "-"
     return [
@@ -196,7 +272,10 @@ def main():
     with open(INPUT_PATH, encoding="utf-8") as f:
         source = json.load(f)
 
-    offload_source, offload = load_offload()
+    offload_source, measured_offload = load_offload()
+    offload, outage_fallback, imputed_dates = apply_short_outage_fallback(
+        measured_offload
+    )
     rows = source["data"]
 
     fiat_operator_rows = []
@@ -450,10 +529,10 @@ def main():
         projected = D(row.get("wifi_revenue_projected_usd"))
         sheet_rate = D(row.get("blended_rate_per_gb_projected_usd"))
 
-        if projected is None or not complete_month(offload, service_month):
+        if projected is None or not complete_month(measured_offload, service_month):
             continue
 
-        daily = month_points(offload, service_month)
+        daily = month_points(measured_offload, service_month)
         api_gb = sum(
             (item["gigabytes"] for item in daily),
             Decimal("0"),
@@ -552,6 +631,11 @@ def main():
                         "date": item["date"],
                         "service_month": service_month,
                         "offload_gb": float(item["gigabytes"]),
+                        "offload_basis": (
+                            "imputed_trailing_7d_average"
+                            if item["date"] in imputed_dates
+                            else "measured"
+                        ),
                         "fees_usd": money(amount),
                         "user_fees_usd": money(amount),
                         "basis": basis,
@@ -562,7 +646,14 @@ def main():
                 {
                     "service_month": service_month,
                     "basis": basis,
-                    "daily_shape": "measured_network_offload",
+                    "daily_shape": (
+                        "measured_network_offload_with_short_outage_imputation"
+                        if any(
+                            item["date"] in imputed_dates
+                            for item in daily
+                        )
+                        else "measured_network_offload"
+                    ),
                     "offload_days": len(daily),
                     "api_offload_gb": float(
                         sum(
@@ -590,6 +681,11 @@ def main():
                     "date": item["date"],
                     "service_month": service_month,
                     "offload_gb": float(item["gigabytes"]),
+                    "offload_basis": (
+                        "imputed_trailing_7d_average"
+                        if item["date"] in imputed_dates
+                        else "measured"
+                    ),
                     "fees_usd": money(amount),
                     "user_fees_usd": money(amount),
                     "basis": "provisional_live_offload",
@@ -607,7 +703,14 @@ def main():
             {
                 "service_month": service_month,
                 "basis": "provisional_live_offload",
-                "daily_shape": "measured_network_offload",
+                "daily_shape": (
+                    "measured_network_offload_with_short_outage_imputation"
+                    if any(
+                        item["date"] in imputed_dates
+                        for item in daily
+                    )
+                    else "measured_network_offload"
+                ),
                 "offload_days": len(daily),
                 "api_offload_gb": float(
                     sum(
@@ -657,6 +760,11 @@ def main():
                     "date": item["date"],
                     "service_month": service_month,
                     "offload_gb": float(item["gigabytes"]),
+                    "offload_basis": (
+                        "imputed_trailing_7d_average"
+                        if item["date"] in imputed_dates
+                        else "measured"
+                    ),
                     "fees_usd": money(amount),
                     "user_fees_usd": money(amount),
                     "basis": "provisional_live_offload",
@@ -674,7 +782,14 @@ def main():
             {
                 "service_month": service_month,
                 "basis": "provisional_live_offload",
-                "daily_shape": "measured_network_offload",
+                "daily_shape": (
+                    "measured_network_offload_with_short_outage_imputation"
+                    if any(
+                        item["date"] in imputed_dates
+                        for item in daily
+                    )
+                    else "measured_network_offload"
+                ),
                 "offload_days": len(daily),
                 "api_offload_gb": float(
                     sum(
@@ -795,7 +910,8 @@ def main():
             "name": offload_source["source"]["name"],
             "url": offload_source["source"]["url"],
             "first_date": offload_source["first_date"],
-            "last_date": offload_source["last_date"],
+            "last_measured_date": offload_source["last_date"],
+            "accrual_last_date": max(offload),
             "count": offload_source["count"],
         },
         "methodology": {
@@ -837,9 +953,13 @@ def main():
             ),
             "missing_offload": (
                 "Missing offload observations are never filled with zero. If "
-                "the upstream API is unavailable, the last valid public cache "
-                "is retained and later observations are incorporated when the "
-                "API resumes."
+                "the upstream API is temporarily stale by no more than 14 "
+                "completed days, trailing missing days are provisionally "
+                "estimated using the average of the latest seven measured "
+                "offload days. Those imputed days are explicitly flagged and "
+                "are replaced when measured observations resume. If the gap "
+                "exceeds 14 days, the model fails closed and stops extending "
+                "the synthetic series."
             ),
             "revenue": "Same as Fees.",
             "policy_allocation": (
@@ -883,6 +1003,7 @@ def main():
                     rounding=ROUND_HALF_UP,
                 )
             ),
+            "outage_fallback": outage_fallback,
         },
         "totals": {
             "source_payments_received_usd": money(source_received_total),

@@ -1,20 +1,21 @@
-# XNET DeFiLlama registration and refill
+# XNET DeFiLlama registration and historical refill
 
-Status: feed publication and official adapter tests pass. Production fees/revenue listing registration remains missing. The GitHub connector rejected posting this request to merged PR 9872 with HTTP 403, Resource not accessible by integration. No new adapter PR or CodeRabbit review is required for registration.
+The revenue sheet pipeline and merged adapter pass their checks. XNET's public fees/revenue API still returns HTTP 400. The connected GitHub app cannot comment on the upstream repository (HTTP 403), and the browser fallback is unavailable. The request below is ready to post on the merged PR:
 
-The following request is ready to post on https://github.com/DefiLlama/dimension-adapters/pull/9872.
+https://github.com/DefiLlama/dimension-adapters/pull/9872
 
-The merged adapter and published feed are working, but XNET is not yet available in the production fees/revenue API. Could the existing XNET listing be wired to the `xnet` fees module and its historical service dates refilled?
+---
 
-Checked 2026-10-04 23:03 UTC:
+Could you connect the existing [XNET listing](https://defillama.com/protocol/xnet) to the merged `fees/xnet.ts` module and backfill its historical fees and revenue?
 
-- `https://api.llama.fi/summary/fees/xnet?dataType=dailyFees` and the corresponding `dailyRevenue` request both return HTTP 400: “Fees for xnet not found, please visit /overview/fees to see available protocols.” The `xnet-mobile` alternative also returns not found.
-- The public feed at https://raw.githubusercontent.com/xnet-community-data/xnet-data-integration/main/data/xnet_defillama_revenue.json contains 20 reconciled service-month rows totaling **$119,816.08**. Source payments total $131,816.09; $12,000.01 without payment-date/service attribution remains excluded.
-- The merged upstream adapter passes the official runner on three service dates and a day without a recognition entry, plus both adapter and CLI TypeScript checks: https://github.com/xnet-community-data/xnet-data-integration/actions/runs/37242743651.
-- Runner dates are window ends: `npm test fees xnet 2025-03-01` reports February 2025 fees/revenue of $1,704.18; `2026-03-01` reports February 2026 $11,915.76; `2026-08-01` reports July 2026 $33,688.91. `2026-07-16` returns zero because there is no service-month recognition entry that day.
-- Please refill from **2024-09-30 through 2026-07-31** for Fees, Revenue and their existing holder/protocol breakdowns. Revenue uses the **service-month-end date**, not the carrier payment receipt date. The July $33,688.91 was paid on September 25, so re-reading only recent receipt days will miss it.
-- The feed is refreshed daily by the public XNET repository. Future late settlements require refilling their earlier service dates; the adapter currently retains its July 2026 coverage boundary. October's separately reported fiat-operator transfers need period attribution before extending retained-revenue accounting to that activity.
+Checked **2026-10-05 04:13 UTC**:
 
-Website: https://www.xnetmobile.com/ · X/Twitter: https://x.com/XNET_Mobile · Docs: https://docs.xnetmobile.com/
+- Both `https://api.llama.fi/summary/fees/xnet?dataType=dailyFees` and the corresponding `dailyRevenue` endpoint return HTTP 400: “Fees for xnet not found, please visit /overview/fees to see available protocols.”
+- The [public feed](https://raw.githubusercontent.com/xnet-community-data/xnet-data-integration/main/data/xnet_defillama_revenue.json) contains **20 reconciled service months totaling $119,816.08**. It is generated from the public XNET revenue sheet, refreshed daily at 09:17 UTC. The complete download, normalization, reconciliation, publication and Dune label workflow [passes](https://github.com/xnet-community-data/xnet-data-integration/actions/runs/37262542166).
+- The unchanged merged adapter [passes the official historical runner and both TypeScript checks](https://github.com/xnet-community-data/xnet-data-integration/actions/runs/37242743651). Window-end tests return February 2025 $1,704.18; February 2026 $11,915.76; July 2026 $33,688.91; and zero for a day with no recognition entry.
+- Please backfill **2024-09-30 through 2026-07-31**, including the holder/protocol breakdowns. The feed books revenue on the **service-month-end date**, rather than the later carrier payment date. July revenue was paid on September 25, so processing only recent payment dates will miss the history.
+- Source payments total $131,816.09; $12,000.01 without payment-date/service attribution remains excluded. Future late settlements require reprocessing their earlier service dates. The adapter retains its July 2026 coverage boundary; October's separately reported fiat-operator transfers require service-period attribution before extending retained-revenue accounting beyond that history.
 
-No adapter code change or additional CodeRabbit review is needed to enable the already merged history. The remaining step appears to be the server-side fees-module registration and refill.
+Website: https://www.xnetmobile.com/ · X: https://x.com/XNET_Mobile · Documentation: https://docs.xnetmobile.com/
+
+No new adapter PR or CodeRabbit review is required to load the already merged history.

@@ -10,13 +10,16 @@ on:
       - "scripts/build_defillama_revenue.py"
       - "scripts/check_defillama_feed.py"
   schedule:
-    # Google Sheet polling is cheap and commits only when source data changes.
-    - cron: "11 * * * *"
+    # The carrier revenue sheet changes infrequently. Refresh once daily, with
+    # enough lead time for the independent Dune revenue-state job.
+    - cron: "15 21 * * *"
   workflow_dispatch:
 
 permissions:
   contents: write
 
+# Independent source/DeFiLlama writer. Dune uses a separate schedule and lock,
+# so a failure in either pipeline cannot cascade into the other.
 concurrency:
   group: xnet-public-data-feed
   cancel-in-progress: false

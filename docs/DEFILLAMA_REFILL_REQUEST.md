@@ -1,8 +1,10 @@
 # XNET DeFiLlama registration and historical refill
 
-The revenue sheet pipeline and merged adapter pass their checks. XNET's public fees/revenue API still returns HTTP 400. The connected GitHub app cannot comment on the upstream repository (HTTP 403), and the browser fallback is unavailable. The request below is ready to post on the merged PR:
+The revenue sheet pipeline and merged adapter pass their checks. XNET's public fees/revenue API still returns HTTP 400. The registration and historical refill request was posted as `xnet-community-data` on October 5, 2026, and the published comment was verified:
 
-https://github.com/DefiLlama/dimension-adapters/pull/9872
+https://github.com/DefiLlama/dimension-adapters/pull/9872#issuecomment-5990513239
+
+Pending: DeFiLlama must connect the existing listing to the fees module, load the historical service dates, and confirm how earlier dates are reprocessed for future late settlements. The request is posted; production fees/revenue activation is not yet confirmed.
 
 ---
 

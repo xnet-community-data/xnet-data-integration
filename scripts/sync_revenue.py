@@ -58,6 +58,13 @@ METRICS = {
     "balance_outstanding_to_transfer_usd": "Balance Outstanding to Transfer",
 }
 
+METRIC_ALIASES = {
+    "balance_outstanding_to_transfer_usd": (
+        "Balance Outstanding to Transfer",
+        "Balance Due to Buy/Burn",
+    ),
+}
+
 
 def clean(value):
     return re.sub(r"\s+", " ", str(value or "")).strip()
@@ -131,17 +138,21 @@ def fetch_csv():
     text = content.decode("utf-8-sig")
 
     required = [
-        "GB per month",
-        "WiFi Revenue (Projected)",
-        "WiFi Payment (Received)",
-        "Transferred to Buy & Burn",
-        "Balance Outstanding to Transfer",
+        ("GB per month",),
+        ("WiFi Revenue (Projected)",),
+        ("WiFi Payment (Received)",),
+        ("Transferred to Buy & Burn",),
+        (
+            "Balance Outstanding to Transfer",
+            "Balance Due to Buy/Burn",
+        ),
     ]
 
-    for marker in required:
-        if marker not in text:
+    for alternatives in required:
+        if not any(marker in text for marker in alternatives):
             raise RuntimeError(
-                f"Downloaded CSV is missing required row: {marker}"
+                "Downloaded CSV is missing required row. "
+                f"Expected one of: {alternatives}"
             )
 
     return content, text
@@ -167,19 +178,23 @@ def main():
     metric_rows = {}
 
     for key, source_label in METRICS.items():
-        target = clean(source_label)
+        aliases = METRIC_ALIASES.get(key, (source_label,))
+        targets = {clean(label) for label in aliases}
 
         for row in rows:
-            labels = [clean(row[0]) if len(row) > 0 else "",
-                      clean(row[1]) if len(row) > 1 else ""]
+            labels = [
+                clean(row[0]) if len(row) > 0 else "",
+                clean(row[1]) if len(row) > 1 else "",
+            ]
 
-            if target in labels:
+            if any(target in labels for target in targets):
                 metric_rows[key] = row
                 break
 
         if key not in metric_rows:
             raise RuntimeError(
-                f"Required source row not found: {source_label}"
+                "Required source row not found. "
+                f"Expected one of: {aliases}"
             )
 
     data = []
@@ -237,6 +252,12 @@ def main():
             "token_clearing_price": (
                 "Token Clearing Price is intentionally excluded "
                 "from the normalized public feed."
+            ),
+            "balance_outstanding_to_transfer_usd": (
+                "Normalized from the current 'Balance Due to Buy/Burn' "
+                "source row or its historical 'Balance Outstanding to "
+                "Transfer' label. The normalized field name is retained "
+                "for schema continuity."
             ),
         },
         "count": len(data),

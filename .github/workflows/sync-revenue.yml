@@ -69,7 +69,12 @@ jobs:
             data/xnet_offload_api.json \
             data/xnet_defillama_revenue.json
 
-          git diff --cached --check
+          # Preserve source-faithful whitespace in the raw CSV. Validate only
+          # normalized/generated files for whitespace errors.
+          git diff --cached --check -- \
+            data/xnet_revenue_monthly.json \
+            data/xnet_offload_api.json \
+            data/xnet_defillama_revenue.json
           git commit -m "Update XNET revenue data"
           git push origin main
 

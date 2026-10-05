@@ -168,7 +168,7 @@ if common:
 save(
     "network_history.json",
     {
-        "schema_version": 2,
+        "schema_version": 1,
         "generated_at_utc":
             datetime.now(timezone.utc).isoformat(),
         "index_base_month":
@@ -311,7 +311,7 @@ for month in commercial_months:
 save(
     "commercial_history.json",
     {
-        "schema_version": 1,
+        "schema_version": 2,
         "generated_at_utc":
             datetime.now(timezone.utc).isoformat(),
         "data": commercial_rows,

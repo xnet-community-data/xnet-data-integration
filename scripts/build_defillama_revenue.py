@@ -1239,15 +1239,11 @@ def main():
         },
         "methodology": {
             "fees": (
-                "Carrier WiFi offload service fees are reported on an accrual "
-                "basis. Daily values follow measured XNET network offload. "
-                "Settlement-confirmed service months are scaled so their daily "
-                "values sum exactly to confirmed carrier revenue. Closed "
-                "unsettled months use XNET's official monthly projected WiFi "
-                "revenue, distributed across days in proportion to measured "
-                "offload. Newer days without an official monthly projection "
-                "use measured daily offload multiplied by the latest "
-                "conservative effective revenue-per-API-GB rate."
+                "Carriers pay XNET for mobile data offloaded onto WiFi. Until "
+                "carrier payment arrives, Fees are conservatively estimated "
+                "from daily offload. Payments typically arrive about two "
+                "months later, and historical estimates are then reconciled "
+                "to the amount actually paid."
             ),
             "live_projection": (
                 "The live rate is calibrated as official projected service "
@@ -1292,9 +1288,9 @@ def main():
                 "the synthetic series."
             ),
             "revenue": (
-                "Fees retained within the XNET ecosystem after payments to "
-                "deployers who choose fiat compensation. When no fiat-deployer "
-                "payout applies, Revenue equals Fees."
+                "Fees minus payments to deployers who choose fiat "
+                "compensation. When no fiat-deployer payout applies, Revenue "
+                "equals Fees."
             ),
             "supply_side_revenue": (
                 "Payments to deployers who choose fiat compensation for "

@@ -20,9 +20,9 @@ DEFI = (
     / "data/xnet_defillama_revenue.json"
 )
 
-VIS_STATE = (
+VIS_CONFIG = (
     ROOT
-    / "state/v3_headline_visuals.json"
+    / "config/v3_headline_visual_ids.json"
 )
 
 
@@ -235,6 +235,7 @@ def update_counter(
     viz_id,
     label,
     description,
+    expected_column,
 ):
     viz = run_json([
         "dune",
@@ -262,9 +263,16 @@ def update_counter(
         or {}
     )
 
-    options[
-        "counterLabel"
-    ] = label
+    if options.get("counterColName") != expected_column:
+        raise RuntimeError(
+            f"Visualization {viz_id} uses an unexpected counter column"
+        )
+
+    if options.get("counterLabel") == label and viz.get("description") == description:
+        print(f"Counter {viz_id} label unchanged.")
+        return
+
+    options["counterLabel"] = label
 
     run_json([
         "dune",
@@ -303,7 +311,7 @@ def main():
     )
 
     vis = json.loads(
-        VIS_STATE.read_text()
+        VIS_CONFIG.read_text()
     )[
         "visualizations"
     ]
@@ -355,6 +363,7 @@ def main():
         ],
         projected_label,
         projected_description,
+        vis["latest_projected_revenue"]["column"],
     )
 
     latest_payment = (
@@ -413,6 +422,7 @@ def main():
             ],
             payment_label,
             payment_description,
+            vis["latest_payment"]["column"],
         )
 
     print(

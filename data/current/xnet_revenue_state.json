@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "generated_at_utc": "2026-10-05T18:28:29Z",
   "source": {
     "name": "XNET Revenue Sheet",
@@ -27,7 +27,15 @@
   },
   "latest_fiat_operator_transfer": {
     "source_month": "2026-10-01",
-    "amount_usd": "1108.18"
+    "operator_payout_usd": "1108.18",
+    "gross_fiat_allocation_usd": "1477.57",
+    "bbb_allocation_usd": "73.88",
+    "operations_allocation_usd": "295.51",
+    "operator_share_pct": 75,
+    "bbb_share_pct": 5,
+    "operations_share_pct": 20,
+    "service_period_attribution": "source_month_provisional",
+    "token_emissions_treatment": "Corresponding fiat-option emissions are burned; token quantity is not inferred from the USD sheet."
   },
   "outstanding": {
     "source_month": "2026-10-01",
@@ -38,7 +46,10 @@
     "wifi_payments_received_usd": "164816.09",
     "projected_buy_burn_usd": "131852.89",
     "transferred_to_buy_burn_usd": "97318.68",
-    "transferred_to_fiat_operators_usd": "1108.18"
+    "transferred_to_fiat_operators_usd": "1108.18",
+    "fiat_gross_allocation_usd": "1477.57",
+    "fiat_bbb_allocation_usd": "73.88",
+    "fiat_operations_allocation_usd": "295.51"
   },
   "settled_accounting": {
     "recognized_service_revenue_usd": "164816.08",
@@ -51,14 +62,20 @@
     "fees_24h_usd": "773.33",
     "fees_7d_usd": "5342.87",
     "fees_30d_usd": "28532.46",
-    "avg_daily_fees_7d_usd": "763.2671428571428571428571429",
+    "avg_daily_fees_7d_usd": "763.2671428571429",
     "avg_daily_fees_30d_usd": "951.082",
     "provisional": true,
     "accounting_basis": "hybrid_accrual_reconciled",
     "rate_source_month": "2026-08",
     "conservative_rate_usd_per_api_gb": 0.153118,
     "last_measured_offload_date": "2026-09-27",
-    "methodology": "Rolling fee totals use the same daily offload-shaped accrual series prepared for DeFiLlama. Provisional days are replaced or rescaled when official monthly projections and carrier settlements arrive."
+    "methodology": "Rolling Fees use the same daily offload-shaped accrual series prepared for DeFiLlama. Revenue excludes payments to fiat-option deployers. For the fiat option, 75% of the gross allocation is Supply-Side Revenue, 5% goes to BBB and 20% to operations. Provisional source-month attribution is backfilled if a service period is later published.",
+    "revenue_24h_usd": "496.29",
+    "revenue_7d_usd": "4234.69",
+    "revenue_30d_usd": "27424.28",
+    "supply_side_revenue_24h_usd": "277.04",
+    "supply_side_revenue_7d_usd": "1108.18",
+    "supply_side_revenue_30d_usd": "1108.18"
   },
   "freshness": {
     "source_latest_month": "2026-10-01",

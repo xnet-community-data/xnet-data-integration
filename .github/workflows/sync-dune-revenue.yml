@@ -1,0 +1,62 @@
+name: Sync XNET revenue to Dune
+
+on:
+  workflow_run:
+    workflows: ["Sync XNET revenue data"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/sync-dune-revenue.yml"
+      - "scripts/v3_build_revenue_state.py"
+      - "scripts/v3_sync_dynamic_counter_labels.py"
+      - "config/v3_headline_visual_ids.json"
+
+permissions:
+  contents: write
+
+# Only Dune state writers share this lock. The DeFiLlama feed does not.
+concurrency:
+  group: xnet-live-state
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out the latest published revenue source
+        uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Restore dashboard state
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
+          python scripts/v3_hydrate_live_state.py
+      - name: Build Dune revenue state from the published feed
+        run: python scripts/v3_build_revenue_state.py
+      - name: Publish Dune revenue state
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
+          bash scripts/v3_publish_live_state.sh
+      - name: Sync dynamic Dune revenue labels
+        env:
+          DUNE_API_KEY: ${{ secrets.DUNE_API_KEY }}
+        run: |
+          if [ -z "${DUNE_API_KEY:-}" ]; then
+            echo "::warning::DUNE_API_KEY is not configured; Dune labels were not updated."
+            exit 0
+          fi
+          curl -sSfL https://github.com/duneanalytics/cli/raw/main/install.sh | bash
+          export PATH="$HOME/.local/bin:$PATH"
+          python scripts/v3_sync_dynamic_counter_labels.py

@@ -628,6 +628,74 @@ def main():
             }
         )
 
+    processed_months = {
+        row["service_month"] for row in monthly_accrual
+    }
+    future_offload_months = sorted(
+        {
+            day[:7]
+            for day in offload
+            if day[:7] not in processed_months
+            and month_index(day[:7])
+            > month_index(latest_calibration["service_month"])
+        }
+    )
+
+    for service_month in future_offload_months:
+        daily = month_points(offload, service_month)
+        if not daily:
+            continue
+
+        live_total = Decimal("0")
+        for item in daily:
+            amount = (
+                item["gigabytes"] * live_rate
+            ).quantize(CENT, rounding=ROUND_HALF_UP)
+            live_total += amount
+            daily_data.append(
+                {
+                    "date": item["date"],
+                    "service_month": service_month,
+                    "offload_gb": float(item["gigabytes"]),
+                    "fees_usd": money(amount),
+                    "user_fees_usd": money(amount),
+                    "basis": "provisional_live_offload",
+                    "rate_usd_per_api_gb": float(
+                        live_rate.quantize(
+                            Decimal("0.000001"),
+                            rounding=ROUND_HALF_UP,
+                        )
+                    ),
+                    "rate_source_month": latest_calibration["service_month"],
+                }
+            )
+
+        monthly_accrual.append(
+            {
+                "service_month": service_month,
+                "basis": "provisional_live_offload",
+                "daily_shape": "measured_network_offload",
+                "offload_days": len(daily),
+                "api_offload_gb": float(
+                    sum(
+                        (item["gigabytes"] for item in daily),
+                        Decimal("0"),
+                    )
+                ),
+                "accrual_total_usd": money(live_total),
+                "official_projected_revenue_usd": None,
+                "settlement_confirmed_usd": 0.0,
+                "rate_usd_per_api_gb": float(
+                    live_rate.quantize(
+                        Decimal("0.000001"),
+                        rounding=ROUND_HALF_UP,
+                    )
+                ),
+                "rate_source_month": latest_calibration["service_month"],
+            }
+        )
+
+    monthly_accrual.sort(key=lambda row: row["service_month"])
     daily_data.sort(key=lambda row: row["date"])
 
     if len({row["date"] for row in daily_data}) != len(daily_data):
@@ -679,7 +747,7 @@ def main():
         (Decimal(str(row["fees_usd"])) for row in daily_data),
         Decimal("0"),
     )
-    confirmed_daily_total = sum(
+    fully_settled_daily_total = sum(
         (
             Decimal(str(row["fees_usd"]))
             for row in daily_data
@@ -687,7 +755,18 @@ def main():
         ),
         Decimal("0"),
     )
-    provisional_daily_total = daily_total - confirmed_daily_total
+    partial_confirmed_total = sum(
+        (
+            recognized_by_service.get(
+                month_start(row["service_month"]),
+                Decimal("0"),
+            )
+            for row in monthly_accrual
+            if row["basis"] == "official_projection_partially_confirmed"
+        ),
+        Decimal("0"),
+    )
+    unconfirmed_accrual_component = daily_total - recognized_total
 
     recent_calibration = calibrations[-4:]
     recent_gap_pct = []
@@ -810,8 +889,15 @@ def main():
             "recognized_service_revenue_usd": money(recognized_total),
             "unattributed_payments_usd": money(unattributed_total),
             "defillama_daily_accrual_usd": money(daily_total),
-            "confirmed_daily_accrual_usd": money(confirmed_daily_total),
-            "provisional_daily_accrual_usd": money(provisional_daily_total),
+            "fully_settled_daily_accrual_usd": money(
+                fully_settled_daily_total
+            ),
+            "partially_confirmed_service_revenue_usd": money(
+                partial_confirmed_total
+            ),
+            "unconfirmed_accrual_component_usd": money(
+                unconfirmed_accrual_component
+            ),
         },
         "count": len(recognized),
         "daily_count": len(daily_data),

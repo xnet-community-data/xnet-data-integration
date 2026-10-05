@@ -44,6 +44,7 @@ FIAT_OPERATIONS_SHARE = Decimal("0.20")
 # operator cash share. We use the observed two-month carrier cadence as the
 # deterministic service-period lag for fiat payouts.
 FIAT_SERVICE_LAG_MONTHS = 2
+XIP_12_EFFECTIVE_DATE = "2025-05-22"
 XIP_INDEX_URL = "https://github.com/XNET-Foundation/XIP"
 XIP_12_URL = "https://github.com/XNET-Foundation/XIP/blob/main/XIP-12.md"
 XIP_13_1_URL = (
@@ -88,6 +89,35 @@ def shift_month(month, delta):
     absolute = year * 12 + (month_num - 1) + delta
     shifted_year, shifted_zero_month = divmod(absolute, 12)
     return f"{shifted_year:04d}-{shifted_zero_month + 1:02d}"
+
+
+def ordinary_policy_split(amount, day):
+    """Split ordinary retained revenue exactly to cents under XIP policy."""
+    amount = Decimal(amount).quantize(CENT, rounding=ROUND_HALF_UP)
+    operations = (
+        amount * Decimal("0.20")
+    ).quantize(CENT, rounding=ROUND_HALF_UP)
+
+    if day >= XIP_12_EFFECTIVE_DATE:
+        liquidity = (
+            amount * Decimal("0.20")
+        ).quantize(CENT, rounding=ROUND_HALF_UP)
+        holders = amount - operations - liquidity
+    else:
+        liquidity = Decimal("0")
+        holders = amount - operations
+
+    if min(holders, operations, liquidity) < 0:
+        raise RuntimeError(
+            f"Invalid ordinary policy split for {day}: {amount}"
+        )
+
+    if holders + operations + liquidity != amount:
+        raise RuntimeError(
+            f"Ordinary policy split does not reconcile for {day}"
+        )
+
+    return holders, operations, liquidity
 
 
 def expected_days(month):
@@ -975,21 +1005,26 @@ def main():
 
     for row in daily_data:
         fee = Decimal(str(row["fees_usd"]))
-        holder_share = (
-            Decimal("0.60")
-            if row["date"] >= "2025-05-22"
-            else Decimal("0.80")
+        (
+            ordinary_holders,
+            ordinary_operations,
+            ordinary_liquidity,
+        ) = ordinary_policy_split(fee, row["date"])
+        ordinary_protocol = (
+            ordinary_operations + ordinary_liquidity
         )
-        ordinary_holders = (
-            fee * holder_share
-        ).quantize(CENT, rounding=ROUND_HALF_UP)
-        ordinary_protocol = fee - ordinary_holders
 
         row["fiat_gross_allocation_usd"] = 0.0
         row["fiat_operator_payout_usd"] = 0.0
         row["fiat_bbb_allocation_usd"] = 0.0
         row["fiat_operations_allocation_usd"] = 0.0
         row["ordinary_holders_revenue_usd"] = money(ordinary_holders)
+        row["ordinary_operations_revenue_usd"] = money(
+            ordinary_operations
+        )
+        row["ordinary_protocol_owned_liquidity_usd"] = money(
+            ordinary_liquidity
+        )
         row["ordinary_protocol_revenue_usd"] = money(ordinary_protocol)
         row["supply_side_revenue_usd"] = 0.0
         row["holders_revenue_usd"] = money(ordinary_holders)
@@ -1075,15 +1110,17 @@ def main():
             if non_fiat_fee < 0:
                 non_fiat_fee = Decimal("0")
 
-            holder_share = (
-                Decimal("0.60")
-                if row["date"] >= "2025-05-22"
-                else Decimal("0.80")
+            (
+                ordinary_holders,
+                ordinary_operations,
+                ordinary_liquidity,
+            ) = ordinary_policy_split(
+                non_fiat_fee,
+                row["date"],
             )
-            ordinary_holders = (
-                non_fiat_fee * holder_share
-            ).quantize(CENT, rounding=ROUND_HALF_UP)
-            ordinary_protocol = non_fiat_fee - ordinary_holders
+            ordinary_protocol = (
+                ordinary_operations + ordinary_liquidity
+            )
 
             holders = ordinary_holders + bbb
             protocol = ordinary_protocol + operations
@@ -1106,6 +1143,12 @@ def main():
             row["fiat_bbb_allocation_usd"] = money(bbb)
             row["fiat_operations_allocation_usd"] = money(operations)
             row["ordinary_holders_revenue_usd"] = money(ordinary_holders)
+            row["ordinary_operations_revenue_usd"] = money(
+                ordinary_operations
+            )
+            row["ordinary_protocol_owned_liquidity_usd"] = money(
+                ordinary_liquidity
+            )
             row["ordinary_protocol_revenue_usd"] = money(ordinary_protocol)
             row["supply_side_revenue_usd"] = money(supply)
             row["holders_revenue_usd"] = money(holders)
@@ -1138,6 +1181,8 @@ def main():
             "fiat_bbb_allocation_usd",
             "fiat_operations_allocation_usd",
             "ordinary_holders_revenue_usd",
+            "ordinary_operations_revenue_usd",
+            "ordinary_protocol_owned_liquidity_usd",
             "ordinary_protocol_revenue_usd",
             "supply_side_revenue_usd",
             "revenue_usd",

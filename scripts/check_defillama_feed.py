@@ -83,6 +83,23 @@ def main():
         )
 
         fiat_gross = dec(row.get("fiat_gross_allocation_usd", 0))
+        ordinary_protocol = (
+            dec(row["ordinary_operations_revenue_usd"])
+            + dec(row["ordinary_protocol_owned_liquidity_usd"])
+        )
+        assert ordinary_protocol == dec(
+            row["ordinary_protocol_revenue_usd"]
+        )
+
+        assert dec(row["holders_revenue_usd"]) == (
+            dec(row["ordinary_holders_revenue_usd"])
+            + dec(row["fiat_bbb_allocation_usd"])
+        )
+        assert dec(row["protocol_revenue_usd"]) == (
+            dec(row["ordinary_protocol_revenue_usd"])
+            + dec(row["fiat_operations_allocation_usd"])
+        )
+
         if fiat_gross:
             assert row["fiat_allocation_basis"] == (
                 "xip_13_1_net60_two_month_service_lag"

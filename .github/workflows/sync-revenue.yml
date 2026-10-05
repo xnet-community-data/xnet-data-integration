@@ -70,16 +70,16 @@ jobs:
         run: |
           # Publish derived feed changes even when the Google Sheet is unchanged.
           # Skip timestamp-only current-state updates on main.
-          if git diff --quiet -- \\
-            data/xnet_revenue_sheet_raw.csv \\
-            data/xnet_revenue_monthly.json \\
+          if git diff --quiet -- \
+            data/xnet_revenue_sheet_raw.csv \
+            data/xnet_revenue_monthly.json \
             data/xnet_defillama_revenue.json
           then
             echo "Revenue source and public feed unchanged."
             exit 0
           fi
 
-          git add \\
+          git add \
             data/xnet_revenue_sheet_raw.csv \
             data/xnet_revenue_monthly.json \
             data/xnet_defillama_revenue.json \

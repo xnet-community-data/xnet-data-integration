@@ -1,21 +1,32 @@
 #!/usr/bin/env python3
+"""Build XNET's auditable DeFiLlama fee/revenue accrual feed.
+
+The model has two layers:
+1. Settlement reconciliation keeps an auditable mapping between recorded carrier
+   payments and service months.
+2. Daily accrual uses measured daily offload to shape each service month.
+   Confirmed months are scaled exactly to settlement-confirmed revenue.
+   Unsettled closed months use the official XNET monthly projection.
+   Newer days without an official monthly projection use a conservative
+   effective revenue-per-API-GB rate calibrated from the latest complete month.
+
+When a later projection or settlement arrives, historical daily values are
+recomputed so the relevant service month reconciles exactly.
+"""
 
 import json
 from calendar import monthrange
 from datetime import date
-from decimal import Decimal
+from decimal import Decimal, ROUND_FLOOR, ROUND_HALF_UP
+from pathlib import Path
 
-INPUT_PATH = "data/xnet_revenue_monthly.json"
-OUTPUT_PATH = "data/xnet_defillama_revenue.json"
+INPUT_PATH = Path("data/xnet_revenue_monthly.json")
+OFFLOAD_PATH = Path("data/xnet_offload_api.json")
+OUTPUT_PATH = Path("data/xnet_defillama_revenue.json")
 
 TOLERANCE = Decimal("0.02")
+CENT = Decimal("0.01")
 
-# Explicit source-accounting attribution for a confirmed partial receipt.
-# The July 2026 source-sheet column reports a $12,000 WiFi payment received
-# without a payment date. The surrounding 2026 settlement sequence maps
-# receipts to service periods roughly two months earlier, so this receipt is
-# conservatively recognized as a partial May 2026 settlement. Only the
-# confirmed $12,000 is recognized; the remaining May balance stays unsettled.
 PARTIAL_SETTLEMENT_OVERRIDES = {
     ("2026-07", Decimal("12000.00")): {
         "service_month": "2026-05",
@@ -34,18 +45,27 @@ def D(value):
 
 
 def money(value):
-    return float(value.quantize(Decimal("0.01")))
+    return float(Decimal(value).quantize(CENT, rounding=ROUND_HALF_UP))
 
 
 def month_index(month):
-    year, month_num, _ = map(int, month.split("-"))
+    year, month_num = map(int, month[:7].split("-"))
     return year * 12 + month_num
 
 
+def month_start(month):
+    return f"{month[:7]}-01"
+
+
 def month_end(month):
-    year, month_num, _ = map(int, month.split("-"))
-    last_day = monthrange(year, month_num)[1]
-    return date(year, month_num, last_day)
+    year, month_num = map(int, month[:7].split("-"))
+    return date(year, month_num, monthrange(year, month_num)[1])
+
+
+def expected_days(month):
+    year, month_num = map(int, month[:7].split("-"))
+    last = monthrange(year, month_num)[1]
+    return [f"{year:04d}-{month_num:02d}-{day:02d}" for day in range(1, last + 1)]
 
 
 def find_candidates(services, amount, payment_date, recognized_by_service):
@@ -81,10 +101,7 @@ def find_candidates(services, amount, payment_date, recognized_by_service):
 
             current_index = month_index(candidate["month"])
 
-            if (
-                previous_index is not None
-                and current_index != previous_index + 1
-            ):
+            if previous_index is not None and current_index != previous_index + 1:
                 break
 
             total += candidate_remaining
@@ -105,20 +122,86 @@ def find_candidates(services, amount, payment_date, recognized_by_service):
     return candidates
 
 
+def allocate_cents(total_usd, daily_rows):
+    """Allocate a monthly USD total proportionally to GB, exactly to the cent."""
+    total = Decimal(total_usd).quantize(CENT, rounding=ROUND_HALF_UP)
+    total_cents = int((total * 100).to_integral_value(rounding=ROUND_HALF_UP))
+
+    if not daily_rows:
+        raise RuntimeError("Cannot allocate a monthly total without daily rows")
+
+    weights = [Decimal(str(row["gigabytes"])) for row in daily_rows]
+    weight_total = sum(weights, Decimal("0"))
+
+    if weight_total <= 0:
+        weights = [Decimal("1")] * len(daily_rows)
+        weight_total = Decimal(len(daily_rows))
+
+    raw = [Decimal(total_cents) * weight / weight_total for weight in weights]
+    base = [
+        int(value.to_integral_value(rounding=ROUND_FLOOR))
+        for value in raw
+    ]
+    remainder = total_cents - sum(base)
+
+    order = sorted(
+        range(len(raw)),
+        key=lambda i: (-(raw[i] - Decimal(base[i])), daily_rows[i]["date"]),
+    )
+
+    for i in order[:remainder]:
+        base[i] += 1
+
+    allocated = [Decimal(cents) / Decimal("100") for cents in base]
+
+    if sum(allocated, Decimal("0")) != total:
+        raise RuntimeError("Cent allocation failed to reconcile to monthly total")
+
+    return allocated
+
+
+def load_offload():
+    with open(OFFLOAD_PATH, encoding="utf-8") as f:
+        payload = json.load(f)
+
+    rows = payload.get("data", [])
+    if not rows:
+        raise RuntimeError("Offload cache is empty")
+
+    points = {}
+    for row in rows:
+        day = str(row["date"])
+        gigabytes = D(row["gigabytes"])
+        if gigabytes is None or gigabytes < 0:
+            raise RuntimeError(f"Invalid offload value for {day}")
+        points[day] = gigabytes
+
+    return payload, points
+
+
+def month_points(points, service_month):
+    prefix = service_month[:7] + "-"
+    return [
+        {"date": day, "gigabytes": points[day]}
+        for day in sorted(points)
+        if day.startswith(prefix)
+    ]
+
+
+def complete_month(points, service_month):
+    return all(day in points for day in expected_days(service_month))
+
+
 def main():
     with open(INPUT_PATH, encoding="utf-8") as f:
         source = json.load(f)
 
+    offload_source, offload = load_offload()
     rows = source["data"]
 
-    # DeFiLlama Revenue = Fees - Supply-Side Revenue.
-    # Do not silently claim Fees == Revenue if source-attributed
-    # fiat operator payouts become non-zero.
     fiat_operator_rows = []
-
     for row in rows:
         amount = D(row.get("transferred_to_fiat_operators_usd"))
-
         if amount is not None and abs(amount) > TOLERANCE:
             fiat_operator_rows.append(
                 {
@@ -127,10 +210,6 @@ def main():
                 }
             )
 
-    # Fiat-operator transfers are preserved separately.
-    # The source currently provides the accounting-month column but
-    # not enough information to assign an exact DeFiLlama day or
-    # underlying service period safely.
     fiat_operator_transfers = [
         {
             "source_month": row["source_month"][:7],
@@ -149,7 +228,6 @@ def main():
         for row in rows
         if row["wifi_revenue_projected_usd"] is not None
     ]
-
     services.sort(key=lambda row: row["month"])
 
     payments = [
@@ -161,7 +239,6 @@ def main():
         for row in rows
         if row["wifi_payment_received_usd"] is not None
     ]
-
     payments.sort(
         key=lambda row: (
             row["payment_date"] is None,
@@ -180,7 +257,7 @@ def main():
             source_month = payment["source_month"][:7]
             override_key = (
                 source_month,
-                payment["amount"].quantize(Decimal("0.01")),
+                payment["amount"].quantize(CENT),
             )
             override = PARTIAL_SETTLEMENT_OVERRIDES.get(override_key)
 
@@ -195,7 +272,7 @@ def main():
                 )
                 continue
 
-            target_month = override["service_month"] + "-01"
+            target_month = month_start(override["service_month"])
             target_service = next(
                 (
                     service
@@ -228,10 +305,8 @@ def main():
             )
 
             settlement_id = (
-                f"undated-{source_month}-"
-                f"{money(payment['amount']):.2f}"
+                f"undated-{source_month}-{money(payment['amount']):.2f}"
             )
-            recognition_date = month_end(target_month).isoformat()
             service_month = override["service_month"]
 
             settlements.append(
@@ -246,9 +321,7 @@ def main():
                             "service_revenue_usd": money(payment["amount"]),
                         }
                     ],
-                    "reconciliation_method": (
-                        "explicit_partial_source_month_lag"
-                    ),
+                    "reconciliation_method": "explicit_partial_source_month_lag",
                     "difference_usd": 0.0,
                     "attribution_note": override["reason"],
                 }
@@ -256,7 +329,7 @@ def main():
 
             recognized.append(
                 {
-                    "date": recognition_date,
+                    "date": month_end(service_month).isoformat(),
                     "service_month": service_month,
                     "fees_usd": money(payment["amount"]),
                     "user_fees_usd": money(payment["amount"]),
@@ -270,7 +343,6 @@ def main():
             continue
 
         payment_date = date.fromisoformat(payment["payment_date"])
-
         candidates = find_candidates(
             services,
             payment["amount"],
@@ -293,12 +365,9 @@ def main():
             continue
 
         matched = candidates[0]
-
         settlement_id = (
-            f"{payment['payment_date']}-"
-            f"{money(payment['amount']):.2f}"
+            f"{payment['payment_date']}-{money(payment['amount']):.2f}"
         )
-
         settlement = {
             "settlement_id": settlement_id,
             "payment_received_date": payment["payment_date"],
@@ -308,7 +377,6 @@ def main():
             "reconciliation_method": "exact_contiguous_sum",
             "difference_usd": 0.0,
         }
-
         matched_total = Decimal("0")
 
         for service in matched:
@@ -317,9 +385,7 @@ def main():
                 + service["amount"]
             )
             matched_total += service["amount"]
-
             service_month = service["month"][:7]
-            recognition_date = month_end(service["month"]).isoformat()
 
             settlement["service_months"].append(
                 {
@@ -330,7 +396,7 @@ def main():
 
             recognized.append(
                 {
-                    "date": recognition_date,
+                    "date": month_end(service_month).isoformat(),
                     "service_month": service_month,
                     "fees_usd": money(service["amount"]),
                     "user_fees_usd": money(service["amount"]),
@@ -342,16 +408,250 @@ def main():
                 }
             )
 
-        settlement["difference_usd"] = money(
-            matched_total - payment["amount"]
-        )
-
+        settlement["difference_usd"] = money(matched_total - payment["amount"])
         settlements.append(settlement)
 
-    recognized.sort(key=lambda row: row["date"])
+    recognized.sort(key=lambda row: (row["date"], row["settlement_id"]))
+
+    source_received_total = sum(
+        (
+            D(row["wifi_payment_received_usd"]) or Decimal("0")
+            for row in rows
+        ),
+        Decimal("0"),
+    )
+    recognized_total = sum(
+        (Decimal(str(row["fees_usd"])) for row in recognized),
+        Decimal("0"),
+    )
+    unattributed_total = sum(
+        (
+            Decimal(str(row["payment_received_usd"]))
+            for row in unattributed
+        ),
+        Decimal("0"),
+    )
+
+    if abs(
+        source_received_total
+        - recognized_total
+        - unattributed_total
+    ) > TOLERANCE:
+        raise RuntimeError(
+            "Payment accounting does not reconcile: "
+            f"source={source_received_total}, "
+            f"recognized={recognized_total}, "
+            f"unattributed={unattributed_total}"
+        )
+
+    calibrations = []
+    for row in rows:
+        service_month = row["month"][:7]
+        projected = D(row.get("wifi_revenue_projected_usd"))
+        sheet_rate = D(row.get("blended_rate_per_gb_projected_usd"))
+
+        if projected is None or not complete_month(offload, service_month):
+            continue
+
+        daily = month_points(offload, service_month)
+        api_gb = sum(
+            (item["gigabytes"] for item in daily),
+            Decimal("0"),
+        )
+
+        if api_gb <= 0:
+            continue
+
+        effective_rate = projected / api_gb
+        conservative_rate = (
+            min(effective_rate, sheet_rate)
+            if sheet_rate is not None
+            else effective_rate
+        )
+
+        calibrations.append(
+            {
+                "service_month": service_month,
+                "api_offload_gb": api_gb,
+                "billing_gb": D(row.get("gb_per_month")),
+                "projected_revenue_usd": projected,
+                "sheet_blended_rate_usd_per_billing_gb": sheet_rate,
+                "effective_api_rate_usd_per_gb": effective_rate,
+                "conservative_api_rate_usd_per_gb": conservative_rate,
+            }
+        )
+
+    if not calibrations:
+        raise RuntimeError("No complete month is available to calibrate live revenue")
+
+    calibrations.sort(key=lambda row: row["service_month"])
+    latest_calibration = calibrations[-1]
+    live_rate = latest_calibration["conservative_api_rate_usd_per_gb"]
+
+    backtest = []
+    for previous, current in zip(calibrations, calibrations[1:]):
+        forecast = (
+            previous["conservative_api_rate_usd_per_gb"]
+            * current["api_offload_gb"]
+        )
+        actual = current["projected_revenue_usd"]
+        error_pct = (
+            (forecast - actual) / actual * Decimal("100")
+            if actual
+            else Decimal("0")
+        )
+        backtest.append(
+            {
+                "forecast_month": current["service_month"],
+                "rate_source_month": previous["service_month"],
+                "forecast_revenue_usd": money(forecast),
+                "official_projected_revenue_usd": money(actual),
+                "error_pct": float(
+                    error_pct.quantize(
+                        Decimal("0.001"),
+                        rounding=ROUND_HALF_UP,
+                    )
+                ),
+            }
+        )
+
+    daily_data = []
+    monthly_accrual = []
+
+    for row in rows:
+        service_month = row["month"][:7]
+        projected = D(row.get("wifi_revenue_projected_usd"))
+        recognized_amount = recognized_by_service.get(
+            row["month"], Decimal("0")
+        )
+        daily = month_points(offload, service_month)
+
+        if not daily:
+            continue
+
+        full_offload_month = complete_month(offload, service_month)
+        target = None
+        basis = None
+
+        if projected is not None and recognized_amount >= projected - TOLERANCE:
+            target = recognized_amount
+            basis = "confirmed_settlement"
+        elif projected is not None and full_offload_month:
+            target = projected
+            basis = (
+                "official_projection_partially_confirmed"
+                if recognized_amount > TOLERANCE
+                else "official_projection"
+            )
+
+        if target is not None:
+            amounts = allocate_cents(target, daily)
+            for item, amount in zip(daily, amounts):
+                daily_data.append(
+                    {
+                        "date": item["date"],
+                        "service_month": service_month,
+                        "offload_gb": float(item["gigabytes"]),
+                        "fees_usd": money(amount),
+                        "user_fees_usd": money(amount),
+                        "basis": basis,
+                    }
+                )
+
+            monthly_accrual.append(
+                {
+                    "service_month": service_month,
+                    "basis": basis,
+                    "daily_shape": "measured_network_offload",
+                    "offload_days": len(daily),
+                    "api_offload_gb": float(
+                        sum(
+                            (item["gigabytes"] for item in daily),
+                            Decimal("0"),
+                        )
+                    ),
+                    "accrual_total_usd": money(target),
+                    "official_projected_revenue_usd": (
+                        money(projected) if projected is not None else None
+                    ),
+                    "settlement_confirmed_usd": money(recognized_amount),
+                }
+            )
+            continue
+
+        live_total = Decimal("0")
+        for item in daily:
+            amount = (
+                item["gigabytes"] * live_rate
+            ).quantize(CENT, rounding=ROUND_HALF_UP)
+            live_total += amount
+            daily_data.append(
+                {
+                    "date": item["date"],
+                    "service_month": service_month,
+                    "offload_gb": float(item["gigabytes"]),
+                    "fees_usd": money(amount),
+                    "user_fees_usd": money(amount),
+                    "basis": "provisional_live_offload",
+                    "rate_usd_per_api_gb": float(
+                        live_rate.quantize(
+                            Decimal("0.000001"),
+                            rounding=ROUND_HALF_UP,
+                        )
+                    ),
+                    "rate_source_month": latest_calibration["service_month"],
+                }
+            )
+
+        monthly_accrual.append(
+            {
+                "service_month": service_month,
+                "basis": "provisional_live_offload",
+                "daily_shape": "measured_network_offload",
+                "offload_days": len(daily),
+                "api_offload_gb": float(
+                    sum(
+                        (item["gigabytes"] for item in daily),
+                        Decimal("0"),
+                    )
+                ),
+                "accrual_total_usd": money(live_total),
+                "official_projected_revenue_usd": None,
+                "settlement_confirmed_usd": money(recognized_amount),
+                "rate_usd_per_api_gb": float(
+                    live_rate.quantize(
+                        Decimal("0.000001"),
+                        rounding=ROUND_HALF_UP,
+                    )
+                ),
+                "rate_source_month": latest_calibration["service_month"],
+            }
+        )
+
+    daily_data.sort(key=lambda row: row["date"])
+
+    if len({row["date"] for row in daily_data}) != len(daily_data):
+        raise RuntimeError("Duplicate dates found in daily DeFiLlama accrual")
+
+    for month in monthly_accrual:
+        if month["basis"] == "provisional_live_offload":
+            continue
+        actual = sum(
+            (
+                Decimal(str(row["fees_usd"]))
+                for row in daily_data
+                if row["service_month"] == month["service_month"]
+            ),
+            Decimal("0"),
+        )
+        expected = Decimal(str(month["accrual_total_usd"]))
+        if actual != expected:
+            raise RuntimeError(
+                f"Daily accrual does not reconcile for {month['service_month']}: "
+                f"{actual} != {expected}"
+            )
 
     unsettled_services = []
-
     for service in services:
         recognized_amount = recognized_by_service.get(
             service["month"], Decimal("0")
@@ -375,158 +675,149 @@ def main():
             }
         )
 
-    source_received_total = sum(
+    daily_total = sum(
+        (Decimal(str(row["fees_usd"])) for row in daily_data),
+        Decimal("0"),
+    )
+    confirmed_daily_total = sum(
         (
-            D(row["wifi_payment_received_usd"]) or Decimal("0")
-            for row in rows
+            Decimal(str(row["fees_usd"]))
+            for row in daily_data
+            if row["basis"] == "confirmed_settlement"
         ),
         Decimal("0"),
     )
+    provisional_daily_total = daily_total - confirmed_daily_total
 
-    recognized_total = sum(
-        (Decimal(str(row["fees_usd"])) for row in recognized),
-        Decimal("0"),
-    )
-
-    unattributed_total = sum(
-        (
-            Decimal(str(row["payment_received_usd"]))
-            for row in unattributed
-        ),
-        Decimal("0"),
-    )
-
-    if abs(
-        source_received_total
-        - recognized_total
-        - unattributed_total
-    ) > TOLERANCE:
-        raise RuntimeError(
-            "Payment accounting does not reconcile: "
-            f"source={source_received_total}, "
-            f"recognized={recognized_total}, "
-            f"unattributed={unattributed_total}"
+    recent_calibration = calibrations[-4:]
+    recent_gap_pct = []
+    for item in recent_calibration:
+        billing_gb = item["billing_gb"]
+        if billing_gb is None or billing_gb <= 0:
+            continue
+        gap = (
+            (item["api_offload_gb"] - billing_gb)
+            / billing_gb
+            * Decimal("100")
         )
+        recent_gap_pct.append(gap)
 
-    # Multiple settlements may reconcile to the same service month. The
-    # DeFiLlama adapter sums all rows sharing the same recognition date.
+    recent_backtest = backtest[-3:]
+    max_recent_abs_error = max(
+        (abs(Decimal(str(row["error_pct"]))) for row in recent_backtest),
+        default=Decimal("0"),
+    )
 
     output = {
-        "schema_version": 1,
-        "accounting_basis": "settled_service_period",
+        "schema_version": 2,
+        "accounting_basis": "hybrid_accrual_reconciled",
         "source": source["source"],
-        "policy_regimes": [
-            {
-                "effective_from": "2024-09-30",
-                "effective_to": "2025-05-21",
-                "holders_revenue_pct": 80,
-                "protocol_revenue_pct": 20,
-                "protocol_revenue_breakdown_pct": {
-                    "operations": 20,
-                    "protocol_owned_liquidity": 0,
-                },
-                "description": (
-                    "Historical allocation: 80% of carrier service revenue "
-                    "allocated to XNET market buyback-and-burn and 20% to "
-                    "operations."
-                ),
-            },
-            {
-                "effective_from": "2025-05-22",
-                "effective_to": None,
-                "holders_revenue_pct": 60,
-                "protocol_revenue_pct": 40,
-                "protocol_revenue_breakdown_pct": {
-                    "operations": 20,
-                    "protocol_owned_liquidity": 20,
-                },
-                "description": (
-                    "XIP-12 allocation: 60% of carrier service revenue "
-                    "continues to XNET market buyback-and-burn, 20% is "
-                    "allocated to protocol-owned liquidity to bolster XNET "
-                    "liquidity, and 20% remains allocated to operations."
-                ),
-            },
-        ],
+        "offload_source": {
+            "name": offload_source["source"]["name"],
+            "url": offload_source["source"]["url"],
+            "first_date": offload_source["first_date"],
+            "last_date": offload_source["last_date"],
+            "count": offload_source["count"],
+        },
         "methodology": {
             "fees": (
-                "Carrier WiFi service revenue is recognized only after "
-                "a recorded payment can be uniquely reconciled to the "
-                "underlying service month or contiguous service months."
+                "Carrier WiFi offload service fees are reported on an accrual "
+                "basis. Daily values follow measured XNET network offload. "
+                "Settlement-confirmed service months are scaled so their daily "
+                "values sum exactly to confirmed carrier revenue. Closed "
+                "unsettled months use XNET's official monthly projected WiFi "
+                "revenue, distributed across days in proportion to measured "
+                "offload. Newer days without an official monthly projection "
+                "use measured daily offload multiplied by the latest "
+                "conservative effective revenue-per-API-GB rate."
             ),
-            "recognition_date": (
-                "The feed stores each recognized service amount with a "
-                "month-end service-period anchor. The DeFiLlama adapter "
-                "prorates the settlement-confirmed service-month total "
-                "evenly across that month's calendar days for daily, 7d, "
-                "and 30d comparability."
+            "live_projection": (
+                "The live rate is calibrated as official projected service "
+                "revenue divided by total measured daily API offload for the "
+                "latest complete month. It is capped at the published blended "
+                "billing rate. This is deliberately more conservative than "
+                "multiplying network offload by the raw billing rate because "
+                "measured network offload has recently run modestly above "
+                "revenue/billing GB."
             ),
-            "projected_revenue": (
-                "Unsettled projected WiFi revenue is excluded from core "
-                "DeFiLlama Fees and Revenue. Projections remain separate "
-                "until a carrier settlement confirms the service amount."
-            ),
-            "unattributed_payments": (
-                "Payments without sufficient date or service-period "
-                "evidence remain unattributed and are excluded."
+            "reconciliation": (
+                "When an official monthly projection or later carrier "
+                "settlement becomes available, the affected historical daily "
+                "values are recomputed. The confirmed monthly amount is "
+                "distributed in proportion to actual daily offload, preserving "
+                "the observed traffic shape while forcing the daily values to "
+                "sum exactly to the reconciled service-month revenue."
             ),
             "partial_settlements": (
-                "A confirmed received payment may be recognized as a partial "
-                "service-period settlement when the source-sheet month maps "
-                "to an established settlement sequence. The July 2026 "
-                "$12,000 receipt is attributed to May 2026; only that "
-                "confirmed amount is recognized and the remaining May "
-                "balance stays unsettled."
+                "A partial payment confirms part of a service month but is not "
+                "added on top of the month's provisional accrual. The confirmed "
+                "portion is tracked separately until the service month is fully "
+                "settled. The $12,000 receipt reported in the July 2026 source "
+                "column is attributed to May 2026; the remaining May balance "
+                "stays unsettled."
             ),
+            "missing_offload": (
+                "Missing offload observations are never filled with zero. If "
+                "the upstream API is unavailable, the last valid public cache "
+                "is retained and later observations are incorporated when the "
+                "API resumes."
+            ),
+            "revenue": "Same as Fees.",
             "policy_allocation": (
-                "For DeFiLlama policy-based allocation, recognized service "
-                "periods before 2025-05-22 use the historical 80% "
-                "Holders Revenue / 20% Protocol Revenue split. Recognized "
-                "service periods from 2025-05-22 use the XIP-12 60% "
-                "Holders Revenue / 40% Protocol Revenue split, with the "
-                "40% Protocol Revenue comprising 20% protocol-owned "
-                "liquidity and 20% operations."
+                "Before 2025-05-22, 80% of carrier service revenue is "
+                "attributed to Holders Revenue and 20% to Protocol Revenue. "
+                "From 2025-05-22 under XIP-12, 60% is attributed to Holders "
+                "Revenue and 40% to Protocol Revenue, comprising 20% "
+                "protocol-owned liquidity and 20% operations."
             ),
-            "protocol_revenue": (
-                "Policy-derived Protocol Revenue is 20% of carrier "
-                "service revenue under the historical allocation. From "
-                "2025-05-22 under XIP-12 it is 40%: 20% for operations "
-                "and 20% for protocol-owned liquidity. The liquidity "
-                "allocation remains Protocol Revenue even when part of it "
-                "is used to acquire XNET for the XNET side of the "
-                "protocol-owned liquidity position."
+        },
+        "projection_model": {
+            "name": "measured_offload_times_conservative_effective_api_rate",
+            "rate_source_month": latest_calibration["service_month"],
+            "effective_rate_usd_per_api_gb": float(
+                latest_calibration[
+                    "effective_api_rate_usd_per_gb"
+                ].quantize(Decimal("0.000001"), rounding=ROUND_HALF_UP)
             ),
-            "supply_side_revenue": (
-                "No Supply-side Revenue is estimated from the policy "
-                "allocation used by the covered adapter history. Reported "
-                "fiat-operator transfers are preserved separately and are "
-                "not assigned to service periods until their timing and "
-                "service attribution can be independently established."
+            "conservative_rate_usd_per_api_gb": float(
+                live_rate.quantize(Decimal("0.000001"), rounding=ROUND_HALF_UP)
             ),
-            "holders_revenue": (
-                "Policy-derived Holders Revenue is historically 80% "
-                "of carrier service revenue allocated to XNET market "
-                "buyback-and-burn. From 2025-05-22 under XIP-12, 60% "
-                "continues to fund XNET buyback-and-burn while 20 "
-                "percentage points were redirected to protocol-owned "
-                "liquidity to bolster XNET liquidity. These percentages "
-                "represent policy allocation rather than measured "
-                "on-chain execution amounts."
+            "published_blended_rate_usd_per_billing_gb": (
+                float(latest_calibration["sheet_blended_rate_usd_per_billing_gb"])
+                if latest_calibration["sheet_blended_rate_usd_per_billing_gb"]
+                is not None
+                else None
+            ),
+            "recent_complete_month_api_vs_billing_gb_gap_pct": [
+                float(
+                    value.quantize(
+                        Decimal("0.001"),
+                        rounding=ROUND_HALF_UP,
+                    )
+                )
+                for value in recent_gap_pct
+            ],
+            "recent_previous_month_rate_backtest": recent_backtest,
+            "max_abs_error_pct_recent_backtest": float(
+                max_recent_abs_error.quantize(
+                    Decimal("0.001"),
+                    rounding=ROUND_HALF_UP,
+                )
             ),
         },
         "totals": {
-            "source_payments_received_usd": money(
-                source_received_total
-            ),
-            "recognized_service_revenue_usd": money(
-                recognized_total
-            ),
-            "unattributed_payments_usd": money(
-                unattributed_total
-            ),
+            "source_payments_received_usd": money(source_received_total),
+            "recognized_service_revenue_usd": money(recognized_total),
+            "unattributed_payments_usd": money(unattributed_total),
+            "defillama_daily_accrual_usd": money(daily_total),
+            "confirmed_daily_accrual_usd": money(confirmed_daily_total),
+            "provisional_daily_accrual_usd": money(provisional_daily_total),
         },
         "count": len(recognized),
+        "daily_count": len(daily_data),
         "data": recognized,
+        "daily_data": daily_data,
+        "monthly_accrual": monthly_accrual,
         "settlements": settlements,
         "unattributed_settlements": unattributed,
         "fiat_operator_transfers": fiat_operator_transfers,
@@ -538,23 +829,24 @@ def main():
         f.write("\n")
 
     print(f"Wrote {OUTPUT_PATH}")
-    print(f"Recognized service months: {len(recognized)}")
     print(
-        "Recognized revenue: "
-        f"${money(recognized_total):,.2f}"
+        f"Settlement-confirmed service revenue: "
+        f"USD {money(recognized_total):,.2f}"
     )
     print(
-        "Unattributed payments: "
-        f"${money(unattributed_total):,.2f}"
+        f"Daily DeFiLlama accrual: USD {money(daily_total):,.2f} "
+        f"across {len(daily_data)} days"
     )
     print(
-        "Source payment total: "
-        f"${money(source_received_total):,.2f}"
+        "Live projection rate: "
+        f"USD {live_rate:.6f}/API-GB from "
+        f"{latest_calibration['service_month']}"
     )
-    print(
-        "Unsettled projected service months: "
-        f"{len(unsettled_services)}"
-    )
+    if recent_backtest:
+        print(
+            "Recent previous-month-rate max absolute error: "
+            f"{max_recent_abs_error:.3f}%"
+        )
 
 
 if __name__ == "__main__":

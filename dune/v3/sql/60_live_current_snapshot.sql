@@ -218,6 +218,40 @@ SELECT
         AS DOUBLE
     ) AS bbb_policy_execution_days,
 
+    TRY_CAST(
+        json_extract_scalar(
+            c.j,
+            '$.bbb_observed_avg_daily_spend_usd'
+        )
+        AS DOUBLE
+    ) AS bbb_observed_avg_daily_spend_usd,
+
+    TRY_CAST(
+        json_extract_scalar(
+            c.j,
+            '$.bbb_observed_spend_window_days'
+        )
+        AS BIGINT
+    ) AS bbb_observed_spend_window_days,
+
+    json_extract_scalar(
+        c.j,
+        '$.bbb_observed_spend_window_start'
+    ) AS bbb_observed_spend_window_start,
+
+    json_extract_scalar(
+        c.j,
+        '$.bbb_observed_spend_window_end'
+    ) AS bbb_observed_spend_window_end,
+
+    TRY_CAST(
+        json_extract_scalar(
+            c.j,
+            '$.bbb_observed_spend_window_total_usd'
+        )
+        AS DOUBLE
+    ) AS bbb_observed_spend_window_total_usd,
+
 
     TRY_CAST(
         json_extract_scalar(
@@ -687,14 +721,17 @@ SELECT
     cs.*,
     CONCAT(SUBSTR(CAST(cs.observed_at_utc AS VARCHAR), 1, 19), ' UTC') AS dashboard_updated_utc,
     json_extract_scalar(c_clock.j, '$.bbb_wallet_usdc_observed_at_utc') AS bbb_wallet_usdc_observed_at_utc,
-    (
-        cs.latest_wifi_payment_received_usd
-        * cs.bbb_policy_effective_xnet_market_buy_share
-        / NULLIF(
-            cs.bbb_policy_execution_days,
-            0
-        )
-    ) AS bbb_daily_rate_usd,
+    cs.bbb_observed_avg_daily_spend_usd
+        AS bbb_daily_rate_usd,
+
+    cs.bbb_observed_spend_window_days
+        AS bbb_daily_rate_window_days,
+
+    cs.bbb_observed_spend_window_start
+        AS bbb_daily_rate_window_start,
+
+    cs.bbb_observed_spend_window_end
+        AS bbb_daily_rate_window_end,
 
 
     f.freshness_source,
@@ -797,7 +834,7 @@ CROSS JOIN (
         2,
         'Dune Solana',
         'chain',
-        'Circulating Supply · XNET Holders · XNET Burned · Buy & Burn Wallet Balance'
+        'Circulating Supply · XNET Holders · XNET Burned · Buy & Burn Wallet Balance · BBB Avg Daily Spend'
     ),
 
     (
@@ -818,7 +855,7 @@ CROSS JOIN (
         5,
         'XNET Revenue Sheet',
         'revenue',
-        'Annualized Revenue Run Rate · P/S Ratio · WiFi Revenue (Projected) · WiFi Payment (Received) · Estimated Fees 7D · Estimated Fees 30D · Revenue 7D · Revenue 30D · Fiat Operator Payout · Fiat BBB Allocation · Fiat Operations Allocation · Balance Due to Buy/Burn · BBB Daily Rate · Transferred to Buy & Burn'
+        'Annualized Revenue Run Rate · P/S Ratio · WiFi Revenue (Projected) · WiFi Payment (Received) · Estimated Fees 7D · Estimated Fees 30D · Revenue 7D · Revenue 30D · Fiat Operator Payout · Fiat BBB Allocation · Fiat Operations Allocation · Balance Due to Buy/Burn · Transferred to Buy & Burn'
     )
 
 ) AS f(

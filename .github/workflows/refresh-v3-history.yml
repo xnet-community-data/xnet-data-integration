@@ -2,11 +2,17 @@ name: Refresh XNET V3
 
 on:
   push:
+    branches: [main]
     paths:
       - ".github/workflows/refresh-v3-history.yml"
       - "scripts/v3_refresh_dashboard.py"
+      - "scripts/v3_reduce_chain.py"
+      - "scripts/v3_build_chain_snapshot.py"
       - "config/v3_refresh.json"
+      - "config/v3_pipeline.json"
       - "scripts/v3_build_revenue_state.py"
+      - "dune/v3/sql/60_live_current_snapshot.sql"
+      - "dune/v3/sql/62_bbb_dex_hot.sql"
   schedule:
     - cron: "7,22,37,52 * * * *"
   workflow_dispatch:

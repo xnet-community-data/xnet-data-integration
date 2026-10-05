@@ -667,6 +667,8 @@ def derive_bbb_trades(rows: list[dict]) -> None:
             "gross_bought": Decimal("0"),
             "gross_sold": Decimal("0"),
             "net": Decimal("0"),
+            "buy_usd": Decimal("0"),
+            "sell_usd": Decimal("0"),
             "usd": Decimal("0"),
         }
     )
@@ -677,11 +679,17 @@ def derive_bbb_trades(rows: list[dict]) -> None:
 
         d = daily[day]
 
+        trade_usd = dec(
+            r["trade_value_usd"]
+        )
+
         if side == "BUY_XNET":
             d["buy_count"] += 1
+            d["buy_usd"] += trade_usd
 
         elif side == "SELL_XNET":
             d["sell_count"] += 1
+            d["sell_usd"] += trade_usd
 
         d["gross_bought"] += dec(
             r["gross_xnet_bought"]
@@ -695,9 +703,7 @@ def derive_bbb_trades(rows: list[dict]) -> None:
             r["net_xnet_change"]
         )
 
-        d["usd"] += dec(
-            r["trade_value_usd"]
-        )
+        d["usd"] += trade_usd
 
     out_rows = []
 
@@ -714,6 +720,10 @@ def derive_bbb_trades(rows: list[dict]) -> None:
                 decstr(d["gross_sold"]),
             "net_xnet_change":
                 decstr(d["net"]),
+            "bbb_buy_value_usd":
+                decstr(d["buy_usd"]),
+            "bbb_sell_value_usd":
+                decstr(d["sell_usd"]),
             "trade_value_usd":
                 decstr(d["usd"]),
         })
@@ -730,6 +740,8 @@ def derive_bbb_trades(rows: list[dict]) -> None:
                 "gross_xnet_bought",
                 "gross_xnet_sold",
                 "net_xnet_change",
+                "bbb_buy_value_usd",
+                "bbb_sell_value_usd",
                 "trade_value_usd",
             ],
         )
@@ -752,13 +764,25 @@ def derive_bbb_trades(rows: list[dict]) -> None:
         Decimal("0"),
     )
 
-    total_usd = sum(
+    total_buy_usd = sum(
         (
             dec(r["trade_value_usd"])
             for r in rows
+            if r["economic_side"] == "BUY_XNET"
         ),
         Decimal("0"),
     )
+
+    total_sell_usd = sum(
+        (
+            dec(r["trade_value_usd"])
+            for r in rows
+            if r["economic_side"] == "SELL_XNET"
+        ),
+        Decimal("0"),
+    )
+
+    total_usd = total_buy_usd + total_sell_usd
 
     state = {
         "schema_version": 1,
@@ -767,6 +791,8 @@ def derive_bbb_trades(rows: list[dict]) -> None:
         "gross_xnet_sold": decstr(total_sold),
         "net_xnet_change":
             decstr(total_bought - total_sold),
+        "buy_value_usd": decstr(total_buy_usd),
+        "sell_value_usd": decstr(total_sell_usd),
         "trade_value_usd": decstr(total_usd),
         "latest_trade_utc":
             max(

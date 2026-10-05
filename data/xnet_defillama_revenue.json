@@ -37,7 +37,7 @@
     "live_projection": "The live rate is calibrated as official projected service revenue divided by total measured daily API offload for the latest complete month. It is capped at the published blended billing rate. This is deliberately more conservative than multiplying network offload by the raw billing rate because measured network offload has recently run modestly above revenue/billing GB.",
     "reconciliation": "When an official monthly projection or later carrier settlement becomes available, the affected historical daily values are recomputed. The confirmed monthly amount is distributed in proportion to actual daily offload, preserving the observed traffic shape while forcing the daily values to sum exactly to the reconciled service-month revenue.",
     "partial_settlements": "A partial payment confirms part of a service month but is not added on top of the month's provisional accrual. The confirmed portion is tracked separately until the service month is fully settled. The $12,000 receipt reported in the July 2026 source column is attributed to May 2026; the remaining May balance stays unsettled.",
-    "missing_offload": "Missing offload observations are never filled with zero. If the upstream API is unavailable, the last valid public cache is retained and later observations are incorporated when the API resumes.",
+    "missing_offload": "Missing offload observations are never filled with zero. If the upstream API is temporarily stale by no more than 14 completed days, trailing missing days are provisionally estimated using the average of the latest seven measured offload days. Those imputed days are explicitly flagged and are replaced when measured observations resume. If the gap exceeds 14 days, the model fails closed and stops extending the synthetic series.",
     "revenue": "Same as Fees.",
     "policy_allocation": "Before 2025-05-22, 80% of carrier service revenue is attributed to Holders Revenue and 20% to Protocol Revenue. From 2025-05-22 under XIP-12, 60% is attributed to Holders Revenue and 40% to Protocol Revenue, comprising 20% protocol-owned liquidity and 20% operations."
   },
@@ -45,10 +45,10 @@
     "source_payments_received_usd": 131816.09,
     "recognized_service_revenue_usd": 131816.08,
     "unattributed_payments_usd": 0.01,
-    "defillama_daily_accrual_usd": 269647.48,
+    "defillama_daily_accrual_usd": 275060.79,
     "fully_settled_daily_accrual_usd": 119816.08,
     "partially_confirmed_service_revenue_usd": 12000,
-    "unconfirmed_accrual_component_usd": 137831.4
+    "unconfirmed_accrual_component_usd": 143244.71
   },
   "count": 21,
   "data": [
@@ -559,7 +559,8 @@
     "name": "XNET daily offload API",
     "url": "https://xnet-offload-scraper.vercel.app/api/data",
     "first_date": "2024-07-29",
-    "last_date": "2026-09-27",
+    "last_measured_date": "2026-09-27",
+    "accrual_last_date": "2026-10-04",
     "count": 791
   },
   "projection_model": {
@@ -597,14 +598,34 @@
         "error_pct": 0.714
       }
     ],
-    "max_abs_error_pct_recent_backtest": 1.265
+    "max_abs_error_pct_recent_backtest": 1.265,
+    "outage_fallback": {
+      "method": "trailing_measured_7d_average",
+      "lookback_days": 7,
+      "max_fallback_days": 14,
+      "active": true,
+      "last_measured_date": "2026-09-27",
+      "latest_completed_date": "2026-10-04",
+      "imputed_dates": [
+        "2026-09-28",
+        "2026-09-29",
+        "2026-09-30",
+        "2026-10-01",
+        "2026-10-02",
+        "2026-10-03",
+        "2026-10-04"
+      ],
+      "imputed_daily_offload_gb": 5050.571,
+      "reason": "The upstream daily offload feed is temporarily stale. Missing trailing completed days are provisionally estimated from the average of the latest measured seven days and are replaced when measured observations resume."
+    }
   },
-  "daily_count": 757,
+  "daily_count": 764,
   "daily_data": [
     {
       "date": "2024-09-01",
       "service_month": "2024-09",
       "offload_gb": 410,
+      "offload_basis": "measured",
       "fees_usd": 35.78,
       "user_fees_usd": 35.78,
       "basis": "confirmed_settlement"
@@ -613,6 +634,7 @@
       "date": "2024-09-02",
       "service_month": "2024-09",
       "offload_gb": 280,
+      "offload_basis": "measured",
       "fees_usd": 24.44,
       "user_fees_usd": 24.44,
       "basis": "confirmed_settlement"
@@ -621,6 +643,7 @@
       "date": "2024-09-03",
       "service_month": "2024-09",
       "offload_gb": 192,
+      "offload_basis": "measured",
       "fees_usd": 16.76,
       "user_fees_usd": 16.76,
       "basis": "confirmed_settlement"
@@ -629,6 +652,7 @@
       "date": "2024-09-04",
       "service_month": "2024-09",
       "offload_gb": 260,
+      "offload_basis": "measured",
       "fees_usd": 22.69,
       "user_fees_usd": 22.69,
       "basis": "confirmed_settlement"
@@ -637,6 +661,7 @@
       "date": "2024-09-05",
       "service_month": "2024-09",
       "offload_gb": 265,
+      "offload_basis": "measured",
       "fees_usd": 23.13,
       "user_fees_usd": 23.13,
       "basis": "confirmed_settlement"
@@ -645,6 +670,7 @@
       "date": "2024-09-06",
       "service_month": "2024-09",
       "offload_gb": 325,
+      "offload_basis": "measured",
       "fees_usd": 28.36,
       "user_fees_usd": 28.36,
       "basis": "confirmed_settlement"
@@ -653,6 +679,7 @@
       "date": "2024-09-07",
       "service_month": "2024-09",
       "offload_gb": 266,
+      "offload_basis": "measured",
       "fees_usd": 23.21,
       "user_fees_usd": 23.21,
       "basis": "confirmed_settlement"
@@ -661,6 +688,7 @@
       "date": "2024-09-08",
       "service_month": "2024-09",
       "offload_gb": 244,
+      "offload_basis": "measured",
       "fees_usd": 21.29,
       "user_fees_usd": 21.29,
       "basis": "confirmed_settlement"
@@ -669,6 +697,7 @@
       "date": "2024-09-09",
       "service_month": "2024-09",
       "offload_gb": 194,
+      "offload_basis": "measured",
       "fees_usd": 16.93,
       "user_fees_usd": 16.93,
       "basis": "confirmed_settlement"
@@ -677,6 +706,7 @@
       "date": "2024-09-10",
       "service_month": "2024-09",
       "offload_gb": 191,
+      "offload_basis": "measured",
       "fees_usd": 16.67,
       "user_fees_usd": 16.67,
       "basis": "confirmed_settlement"
@@ -685,6 +715,7 @@
       "date": "2024-09-11",
       "service_month": "2024-09",
       "offload_gb": 176,
+      "offload_basis": "measured",
       "fees_usd": 15.36,
       "user_fees_usd": 15.36,
       "basis": "confirmed_settlement"
@@ -693,6 +724,7 @@
       "date": "2024-09-12",
       "service_month": "2024-09",
       "offload_gb": 146,
+      "offload_basis": "measured",
       "fees_usd": 12.74,
       "user_fees_usd": 12.74,
       "basis": "confirmed_settlement"
@@ -701,6 +733,7 @@
       "date": "2024-09-13",
       "service_month": "2024-09",
       "offload_gb": 149,
+      "offload_basis": "measured",
       "fees_usd": 13,
       "user_fees_usd": 13,
       "basis": "confirmed_settlement"
@@ -709,6 +742,7 @@
       "date": "2024-09-14",
       "service_month": "2024-09",
       "offload_gb": 100,
+      "offload_basis": "measured",
       "fees_usd": 8.73,
       "user_fees_usd": 8.73,
       "basis": "confirmed_settlement"
@@ -717,6 +751,7 @@
       "date": "2024-09-15",
       "service_month": "2024-09",
       "offload_gb": 186,
+      "offload_basis": "measured",
       "fees_usd": 16.23,
       "user_fees_usd": 16.23,
       "basis": "confirmed_settlement"
@@ -725,6 +760,7 @@
       "date": "2024-09-16",
       "service_month": "2024-09",
       "offload_gb": 194,
+      "offload_basis": "measured",
       "fees_usd": 16.93,
       "user_fees_usd": 16.93,
       "basis": "confirmed_settlement"
@@ -733,6 +769,7 @@
       "date": "2024-09-17",
       "service_month": "2024-09",
       "offload_gb": 214,
+      "offload_basis": "measured",
       "fees_usd": 18.68,
       "user_fees_usd": 18.68,
       "basis": "confirmed_settlement"
@@ -741,6 +778,7 @@
       "date": "2024-09-18",
       "service_month": "2024-09",
       "offload_gb": 112,
+      "offload_basis": "measured",
       "fees_usd": 9.77,
       "user_fees_usd": 9.77,
       "basis": "confirmed_settlement"
@@ -749,6 +787,7 @@
       "date": "2024-09-19",
       "service_month": "2024-09",
       "offload_gb": 224,
+      "offload_basis": "measured",
       "fees_usd": 19.55,
       "user_fees_usd": 19.55,
       "basis": "confirmed_settlement"
@@ -757,6 +796,7 @@
       "date": "2024-09-20",
       "service_month": "2024-09",
       "offload_gb": 206,
+      "offload_basis": "measured",
       "fees_usd": 17.98,
       "user_fees_usd": 17.98,
       "basis": "confirmed_settlement"
@@ -765,6 +805,7 @@
       "date": "2024-09-21",
       "service_month": "2024-09",
       "offload_gb": 299,
+      "offload_basis": "measured",
       "fees_usd": 26.09,
       "user_fees_usd": 26.09,
       "basis": "confirmed_settlement"
@@ -773,6 +814,7 @@
       "date": "2024-09-22",
       "service_month": "2024-09",
       "offload_gb": 305,
+      "offload_basis": "measured",
       "fees_usd": 26.62,
       "user_fees_usd": 26.62,
       "basis": "confirmed_settlement"
@@ -781,6 +823,7 @@
       "date": "2024-09-23",
       "service_month": "2024-09",
       "offload_gb": 236,
+      "offload_basis": "measured",
       "fees_usd": 20.6,
       "user_fees_usd": 20.6,
       "basis": "confirmed_settlement"
@@ -789,6 +832,7 @@
       "date": "2024-09-24",
       "service_month": "2024-09",
       "offload_gb": 283,
+      "offload_basis": "measured",
       "fees_usd": 24.7,
       "user_fees_usd": 24.7,
       "basis": "confirmed_settlement"
@@ -797,6 +841,7 @@
       "date": "2024-09-25",
       "service_month": "2024-09",
       "offload_gb": 297,
+      "offload_basis": "measured",
       "fees_usd": 25.92,
       "user_fees_usd": 25.92,
       "basis": "confirmed_settlement"
@@ -805,6 +850,7 @@
       "date": "2024-09-26",
       "service_month": "2024-09",
       "offload_gb": 395,
+      "offload_basis": "measured",
       "fees_usd": 34.47,
       "user_fees_usd": 34.47,
       "basis": "confirmed_settlement"
@@ -813,6 +859,7 @@
       "date": "2024-09-27",
       "service_month": "2024-09",
       "offload_gb": 334,
+      "offload_basis": "measured",
       "fees_usd": 29.15,
       "user_fees_usd": 29.15,
       "basis": "confirmed_settlement"
@@ -821,6 +868,7 @@
       "date": "2024-09-28",
       "service_month": "2024-09",
       "offload_gb": 358,
+      "offload_basis": "measured",
       "fees_usd": 31.24,
       "user_fees_usd": 31.24,
       "basis": "confirmed_settlement"
@@ -829,6 +877,7 @@
       "date": "2024-09-29",
       "service_month": "2024-09",
       "offload_gb": 331,
+      "offload_basis": "measured",
       "fees_usd": 28.89,
       "user_fees_usd": 28.89,
       "basis": "confirmed_settlement"
@@ -837,6 +886,7 @@
       "date": "2024-09-30",
       "service_month": "2024-09",
       "offload_gb": 205,
+      "offload_basis": "measured",
       "fees_usd": 17.89,
       "user_fees_usd": 17.89,
       "basis": "confirmed_settlement"
@@ -845,6 +895,7 @@
       "date": "2024-10-01",
       "service_month": "2024-10",
       "offload_gb": 184,
+      "offload_basis": "measured",
       "fees_usd": 14.27,
       "user_fees_usd": 14.27,
       "basis": "confirmed_settlement"
@@ -853,6 +904,7 @@
       "date": "2024-10-02",
       "service_month": "2024-10",
       "offload_gb": 196,
+      "offload_basis": "measured",
       "fees_usd": 15.2,
       "user_fees_usd": 15.2,
       "basis": "confirmed_settlement"
@@ -861,6 +913,7 @@
       "date": "2024-10-03",
       "service_month": "2024-10",
       "offload_gb": 199,
+      "offload_basis": "measured",
       "fees_usd": 15.43,
       "user_fees_usd": 15.43,
       "basis": "confirmed_settlement"
@@ -869,6 +922,7 @@
       "date": "2024-10-04",
       "service_month": "2024-10",
       "offload_gb": 210,
+      "offload_basis": "measured",
       "fees_usd": 16.28,
       "user_fees_usd": 16.28,
       "basis": "confirmed_settlement"
@@ -877,6 +931,7 @@
       "date": "2024-10-05",
       "service_month": "2024-10",
       "offload_gb": 469,
+      "offload_basis": "measured",
       "fees_usd": 36.37,
       "user_fees_usd": 36.37,
       "basis": "confirmed_settlement"
@@ -885,6 +940,7 @@
       "date": "2024-10-06",
       "service_month": "2024-10",
       "offload_gb": 232,
+      "offload_basis": "measured",
       "fees_usd": 17.99,
       "user_fees_usd": 17.99,
       "basis": "confirmed_settlement"
@@ -893,6 +949,7 @@
       "date": "2024-10-07",
       "service_month": "2024-10",
       "offload_gb": 184,
+      "offload_basis": "measured",
       "fees_usd": 14.27,
       "user_fees_usd": 14.27,
       "basis": "confirmed_settlement"
@@ -901,6 +958,7 @@
       "date": "2024-10-08",
       "service_month": "2024-10",
       "offload_gb": 197,
+      "offload_basis": "measured",
       "fees_usd": 15.28,
       "user_fees_usd": 15.28,
       "basis": "confirmed_settlement"
@@ -909,6 +967,7 @@
       "date": "2024-10-09",
       "service_month": "2024-10",
       "offload_gb": 222,
+      "offload_basis": "measured",
       "fees_usd": 17.22,
       "user_fees_usd": 17.22,
       "basis": "confirmed_settlement"
@@ -917,6 +976,7 @@
       "date": "2024-10-10",
       "service_month": "2024-10",
       "offload_gb": 237,
+      "offload_basis": "measured",
       "fees_usd": 18.38,
       "user_fees_usd": 18.38,
       "basis": "confirmed_settlement"
@@ -925,6 +985,7 @@
       "date": "2024-10-11",
       "service_month": "2024-10",
       "offload_gb": 261,
+      "offload_basis": "measured",
       "fees_usd": 20.24,
       "user_fees_usd": 20.24,
       "basis": "confirmed_settlement"
@@ -933,6 +994,7 @@
       "date": "2024-10-12",
       "service_month": "2024-10",
       "offload_gb": 297,
+      "offload_basis": "measured",
       "fees_usd": 23.03,
       "user_fees_usd": 23.03,
       "basis": "confirmed_settlement"
@@ -941,6 +1003,7 @@
       "date": "2024-10-13",
       "service_month": "2024-10",
       "offload_gb": 341,
+      "offload_basis": "measured",
       "fees_usd": 26.44,
       "user_fees_usd": 26.44,
       "basis": "confirmed_settlement"
@@ -949,6 +1012,7 @@
       "date": "2024-10-14",
       "service_month": "2024-10",
       "offload_gb": 267,
+      "offload_basis": "measured",
       "fees_usd": 20.7,
       "user_fees_usd": 20.7,
       "basis": "confirmed_settlement"
@@ -957,6 +1021,7 @@
       "date": "2024-10-15",
       "service_month": "2024-10",
       "offload_gb": 160,
+      "offload_basis": "measured",
       "fees_usd": 12.41,
       "user_fees_usd": 12.41,
       "basis": "confirmed_settlement"
@@ -965,6 +1030,7 @@
       "date": "2024-10-16",
       "service_month": "2024-10",
       "offload_gb": 262,
+      "offload_basis": "measured",
       "fees_usd": 20.32,
       "user_fees_usd": 20.32,
       "basis": "confirmed_settlement"
@@ -973,6 +1039,7 @@
       "date": "2024-10-17",
       "service_month": "2024-10",
       "offload_gb": 257,
+      "offload_basis": "measured",
       "fees_usd": 19.93,
       "user_fees_usd": 19.93,
       "basis": "confirmed_settlement"
@@ -981,6 +1048,7 @@
       "date": "2024-10-18",
       "service_month": "2024-10",
       "offload_gb": 355,
+      "offload_basis": "measured",
       "fees_usd": 27.53,
       "user_fees_usd": 27.53,
       "basis": "confirmed_settlement"
@@ -989,6 +1057,7 @@
       "date": "2024-10-19",
       "service_month": "2024-10",
       "offload_gb": 364,
+      "offload_basis": "measured",
       "fees_usd": 28.23,
       "user_fees_usd": 28.23,
       "basis": "confirmed_settlement"
@@ -997,6 +1066,7 @@
       "date": "2024-10-20",
       "service_month": "2024-10",
       "offload_gb": 345,
+      "offload_basis": "measured",
       "fees_usd": 26.75,
       "user_fees_usd": 26.75,
       "basis": "confirmed_settlement"
@@ -1005,6 +1075,7 @@
       "date": "2024-10-21",
       "service_month": "2024-10",
       "offload_gb": 240,
+      "offload_basis": "measured",
       "fees_usd": 18.61,
       "user_fees_usd": 18.61,
       "basis": "confirmed_settlement"
@@ -1013,6 +1084,7 @@
       "date": "2024-10-22",
       "service_month": "2024-10",
       "offload_gb": 240,
+      "offload_basis": "measured",
       "fees_usd": 18.61,
       "user_fees_usd": 18.61,
       "basis": "confirmed_settlement"
@@ -1021,6 +1093,7 @@
       "date": "2024-10-23",
       "service_month": "2024-10",
       "offload_gb": 234,
+      "offload_basis": "measured",
       "fees_usd": 18.15,
       "user_fees_usd": 18.15,
       "basis": "confirmed_settlement"
@@ -1029,6 +1102,7 @@
       "date": "2024-10-24",
       "service_month": "2024-10",
       "offload_gb": 275,
+      "offload_basis": "measured",
       "fees_usd": 21.32,
       "user_fees_usd": 21.32,
       "basis": "confirmed_settlement"
@@ -1037,6 +1111,7 @@
       "date": "2024-10-25",
       "service_month": "2024-10",
       "offload_gb": 286,
+      "offload_basis": "measured",
       "fees_usd": 22.18,
       "user_fees_usd": 22.18,
       "basis": "confirmed_settlement"
@@ -1045,6 +1120,7 @@
       "date": "2024-10-26",
       "service_month": "2024-10",
       "offload_gb": 278,
+      "offload_basis": "measured",
       "fees_usd": 21.56,
       "user_fees_usd": 21.56,
       "basis": "confirmed_settlement"
@@ -1053,6 +1129,7 @@
       "date": "2024-10-27",
       "service_month": "2024-10",
       "offload_gb": 271,
+      "offload_basis": "measured",
       "fees_usd": 21.01,
       "user_fees_usd": 21.01,
       "basis": "confirmed_settlement"
@@ -1061,6 +1138,7 @@
       "date": "2024-10-28",
       "service_month": "2024-10",
       "offload_gb": 250,
+      "offload_basis": "measured",
       "fees_usd": 19.39,
       "user_fees_usd": 19.39,
       "basis": "confirmed_settlement"
@@ -1069,6 +1147,7 @@
       "date": "2024-10-29",
       "service_month": "2024-10",
       "offload_gb": 281,
+      "offload_basis": "measured",
       "fees_usd": 21.79,
       "user_fees_usd": 21.79,
       "basis": "confirmed_settlement"
@@ -1077,6 +1156,7 @@
       "date": "2024-10-30",
       "service_month": "2024-10",
       "offload_gb": 310,
+      "offload_basis": "measured",
       "fees_usd": 24.04,
       "user_fees_usd": 24.04,
       "basis": "confirmed_settlement"
@@ -1085,6 +1165,7 @@
       "date": "2024-10-31",
       "service_month": "2024-10",
       "offload_gb": 358,
+      "offload_basis": "measured",
       "fees_usd": 27.76,
       "user_fees_usd": 27.76,
       "basis": "confirmed_settlement"
@@ -1093,6 +1174,7 @@
       "date": "2024-11-01",
       "service_month": "2024-11",
       "offload_gb": 362,
+      "offload_basis": "measured",
       "fees_usd": 32.58,
       "user_fees_usd": 32.58,
       "basis": "confirmed_settlement"
@@ -1101,6 +1183,7 @@
       "date": "2024-11-02",
       "service_month": "2024-11",
       "offload_gb": 450,
+      "offload_basis": "measured",
       "fees_usd": 40.49,
       "user_fees_usd": 40.49,
       "basis": "confirmed_settlement"
@@ -1109,6 +1192,7 @@
       "date": "2024-11-03",
       "service_month": "2024-11",
       "offload_gb": 366,
+      "offload_basis": "measured",
       "fees_usd": 32.93,
       "user_fees_usd": 32.93,
       "basis": "confirmed_settlement"
@@ -1117,6 +1201,7 @@
       "date": "2024-11-04",
       "service_month": "2024-11",
       "offload_gb": 298,
+      "offload_basis": "measured",
       "fees_usd": 26.82,
       "user_fees_usd": 26.82,
       "basis": "confirmed_settlement"
@@ -1125,6 +1210,7 @@
       "date": "2024-11-05",
       "service_month": "2024-11",
       "offload_gb": 292,
+      "offload_basis": "measured",
       "fees_usd": 26.28,
       "user_fees_usd": 26.28,
       "basis": "confirmed_settlement"
@@ -1133,6 +1219,7 @@
       "date": "2024-11-06",
       "service_month": "2024-11",
       "offload_gb": 299,
+      "offload_basis": "measured",
       "fees_usd": 26.91,
       "user_fees_usd": 26.91,
       "basis": "confirmed_settlement"
@@ -1141,6 +1228,7 @@
       "date": "2024-11-07",
       "service_month": "2024-11",
       "offload_gb": 257,
+      "offload_basis": "measured",
       "fees_usd": 23.13,
       "user_fees_usd": 23.13,
       "basis": "confirmed_settlement"
@@ -1149,6 +1237,7 @@
       "date": "2024-11-08",
       "service_month": "2024-11",
       "offload_gb": 280,
+      "offload_basis": "measured",
       "fees_usd": 25.2,
       "user_fees_usd": 25.2,
       "basis": "confirmed_settlement"
@@ -1157,6 +1246,7 @@
       "date": "2024-11-09",
       "service_month": "2024-11",
       "offload_gb": 322,
+      "offload_basis": "measured",
       "fees_usd": 28.98,
       "user_fees_usd": 28.98,
       "basis": "confirmed_settlement"
@@ -1165,6 +1255,7 @@
       "date": "2024-11-10",
       "service_month": "2024-11",
       "offload_gb": 297,
+      "offload_basis": "measured",
       "fees_usd": 26.73,
       "user_fees_usd": 26.73,
       "basis": "confirmed_settlement"
@@ -1173,6 +1264,7 @@
       "date": "2024-11-11",
       "service_month": "2024-11",
       "offload_gb": 275,
+      "offload_basis": "measured",
       "fees_usd": 24.75,
       "user_fees_usd": 24.75,
       "basis": "confirmed_settlement"
@@ -1181,6 +1273,7 @@
       "date": "2024-11-12",
       "service_month": "2024-11",
       "offload_gb": 275,
+      "offload_basis": "measured",
       "fees_usd": 24.75,
       "user_fees_usd": 24.75,
       "basis": "confirmed_settlement"
@@ -1189,6 +1282,7 @@
       "date": "2024-11-13",
       "service_month": "2024-11",
       "offload_gb": 250,
+      "offload_basis": "measured",
       "fees_usd": 22.5,
       "user_fees_usd": 22.5,
       "basis": "confirmed_settlement"
@@ -1197,6 +1291,7 @@
       "date": "2024-11-14",
       "service_month": "2024-11",
       "offload_gb": 366,
+      "offload_basis": "measured",
       "fees_usd": 32.93,
       "user_fees_usd": 32.93,
       "basis": "confirmed_settlement"
@@ -1205,6 +1300,7 @@
       "date": "2024-11-15",
       "service_month": "2024-11",
       "offload_gb": 105,
+      "offload_basis": "measured",
       "fees_usd": 9.45,
       "user_fees_usd": 9.45,
       "basis": "confirmed_settlement"
@@ -1213,6 +1309,7 @@
       "date": "2024-11-16",
       "service_month": "2024-11",
       "offload_gb": 102,
+      "offload_basis": "measured",
       "fees_usd": 9.18,
       "user_fees_usd": 9.18,
       "basis": "confirmed_settlement"
@@ -1221,6 +1318,7 @@
       "date": "2024-11-17",
       "service_month": "2024-11",
       "offload_gb": 63,
+      "offload_basis": "measured",
       "fees_usd": 5.67,
       "user_fees_usd": 5.67,
       "basis": "confirmed_settlement"
@@ -1229,6 +1327,7 @@
       "date": "2024-11-18",
       "service_month": "2024-11",
       "offload_gb": 251,
+      "offload_basis": "measured",
       "fees_usd": 22.59,
       "user_fees_usd": 22.59,
       "basis": "confirmed_settlement"
@@ -1237,6 +1336,7 @@
       "date": "2024-11-19",
       "service_month": "2024-11",
       "offload_gb": 299,
+      "offload_basis": "measured",
       "fees_usd": 26.91,
       "user_fees_usd": 26.91,
       "basis": "confirmed_settlement"
@@ -1245,6 +1345,7 @@
       "date": "2024-11-20",
       "service_month": "2024-11",
       "offload_gb": 309,
+      "offload_basis": "measured",
       "fees_usd": 27.81,
       "user_fees_usd": 27.81,
       "basis": "confirmed_settlement"
@@ -1253,6 +1354,7 @@
       "date": "2024-11-21",
       "service_month": "2024-11",
       "offload_gb": 365,
+      "offload_basis": "measured",
       "fees_usd": 32.84,
       "user_fees_usd": 32.84,
       "basis": "confirmed_settlement"
@@ -1261,6 +1363,7 @@
       "date": "2024-11-22",
       "service_month": "2024-11",
       "offload_gb": 309,
+      "offload_basis": "measured",
       "fees_usd": 27.81,
       "user_fees_usd": 27.81,
       "basis": "confirmed_settlement"
@@ -1269,6 +1372,7 @@
       "date": "2024-11-23",
       "service_month": "2024-11",
       "offload_gb": 362,
+      "offload_basis": "measured",
       "fees_usd": 32.58,
       "user_fees_usd": 32.58,
       "basis": "confirmed_settlement"
@@ -1277,6 +1381,7 @@
       "date": "2024-11-24",
       "service_month": "2024-11",
       "offload_gb": 346,
+      "offload_basis": "measured",
       "fees_usd": 31.14,
       "user_fees_usd": 31.14,
       "basis": "confirmed_settlement"
@@ -1285,6 +1390,7 @@
       "date": "2024-11-25",
       "service_month": "2024-11",
       "offload_gb": 490,
+      "offload_basis": "measured",
       "fees_usd": 44.09,
       "user_fees_usd": 44.09,
       "basis": "confirmed_settlement"
@@ -1293,6 +1399,7 @@
       "date": "2024-11-26",
       "service_month": "2024-11",
       "offload_gb": 324,
+      "offload_basis": "measured",
       "fees_usd": 29.16,
       "user_fees_usd": 29.16,
       "basis": "confirmed_settlement"
@@ -1301,6 +1408,7 @@
       "date": "2024-11-27",
       "service_month": "2024-11",
       "offload_gb": 365,
+      "offload_basis": "measured",
       "fees_usd": 32.84,
       "user_fees_usd": 32.84,
       "basis": "confirmed_settlement"
@@ -1309,6 +1417,7 @@
       "date": "2024-11-28",
       "service_month": "2024-11",
       "offload_gb": 186,
+      "offload_basis": "measured",
       "fees_usd": 16.74,
       "user_fees_usd": 16.74,
       "basis": "confirmed_settlement"
@@ -1317,6 +1426,7 @@
       "date": "2024-11-29",
       "service_month": "2024-11",
       "offload_gb": 257,
+      "offload_basis": "measured",
       "fees_usd": 23.13,
       "user_fees_usd": 23.13,
       "basis": "confirmed_settlement"
@@ -1325,6 +1435,7 @@
       "date": "2024-11-30",
       "service_month": "2024-11",
       "offload_gb": 332,
+      "offload_basis": "measured",
       "fees_usd": 29.88,
       "user_fees_usd": 29.88,
       "basis": "confirmed_settlement"
@@ -1333,6 +1444,7 @@
       "date": "2024-12-01",
       "service_month": "2024-12",
       "offload_gb": 324,
+      "offload_basis": "measured",
       "fees_usd": 29.5,
       "user_fees_usd": 29.5,
       "basis": "confirmed_settlement"
@@ -1341,6 +1453,7 @@
       "date": "2024-12-02",
       "service_month": "2024-12",
       "offload_gb": 242,
+      "offload_basis": "measured",
       "fees_usd": 22.03,
       "user_fees_usd": 22.03,
       "basis": "confirmed_settlement"
@@ -1349,6 +1462,7 @@
       "date": "2024-12-03",
       "service_month": "2024-12",
       "offload_gb": 305,
+      "offload_basis": "measured",
       "fees_usd": 27.77,
       "user_fees_usd": 27.77,
       "basis": "confirmed_settlement"
@@ -1357,6 +1471,7 @@
       "date": "2024-12-04",
       "service_month": "2024-12",
       "offload_gb": 339,
+      "offload_basis": "measured",
       "fees_usd": 30.87,
       "user_fees_usd": 30.87,
       "basis": "confirmed_settlement"
@@ -1365,6 +1480,7 @@
       "date": "2024-12-05",
       "service_month": "2024-12",
       "offload_gb": 308,
+      "offload_basis": "measured",
       "fees_usd": 28.04,
       "user_fees_usd": 28.04,
       "basis": "confirmed_settlement"
@@ -1373,6 +1489,7 @@
       "date": "2024-12-06",
       "service_month": "2024-12",
       "offload_gb": 333,
+      "offload_basis": "measured",
       "fees_usd": 30.32,
       "user_fees_usd": 30.32,
       "basis": "confirmed_settlement"
@@ -1381,6 +1498,7 @@
       "date": "2024-12-07",
       "service_month": "2024-12",
       "offload_gb": 416,
+      "offload_basis": "measured",
       "fees_usd": 37.88,
       "user_fees_usd": 37.88,
       "basis": "confirmed_settlement"
@@ -1389,6 +1507,7 @@
       "date": "2024-12-08",
       "service_month": "2024-12",
       "offload_gb": 361,
+      "offload_basis": "measured",
       "fees_usd": 32.87,
       "user_fees_usd": 32.87,
       "basis": "confirmed_settlement"
@@ -1397,6 +1516,7 @@
       "date": "2024-12-09",
       "service_month": "2024-12",
       "offload_gb": 289,
+      "offload_basis": "measured",
       "fees_usd": 26.31,
       "user_fees_usd": 26.31,
       "basis": "confirmed_settlement"
@@ -1405,6 +1525,7 @@
       "date": "2024-12-10",
       "service_month": "2024-12",
       "offload_gb": 318,
+      "offload_basis": "measured",
       "fees_usd": 28.95,
       "user_fees_usd": 28.95,
       "basis": "confirmed_settlement"
@@ -1413,6 +1534,7 @@
       "date": "2024-12-11",
       "service_month": "2024-12",
       "offload_gb": 306,
+      "offload_basis": "measured",
       "fees_usd": 27.86,
       "user_fees_usd": 27.86,
       "basis": "confirmed_settlement"
@@ -1421,6 +1543,7 @@
       "date": "2024-12-12",
       "service_month": "2024-12",
       "offload_gb": 331,
+      "offload_basis": "measured",
       "fees_usd": 30.14,
       "user_fees_usd": 30.14,
       "basis": "confirmed_settlement"
@@ -1429,6 +1552,7 @@
       "date": "2024-12-13",
       "service_month": "2024-12",
       "offload_gb": 394,
+      "offload_basis": "measured",
       "fees_usd": 35.87,
       "user_fees_usd": 35.87,
       "basis": "confirmed_settlement"
@@ -1437,6 +1561,7 @@
       "date": "2024-12-14",
       "service_month": "2024-12",
       "offload_gb": 495,
+      "offload_basis": "measured",
       "fees_usd": 45.07,
       "user_fees_usd": 45.07,
       "basis": "confirmed_settlement"
@@ -1445,6 +1570,7 @@
       "date": "2024-12-15",
       "service_month": "2024-12",
       "offload_gb": 418,
+      "offload_basis": "measured",
       "fees_usd": 38.06,
       "user_fees_usd": 38.06,
       "basis": "confirmed_settlement"
@@ -1453,6 +1579,7 @@
       "date": "2024-12-16",
       "service_month": "2024-12",
       "offload_gb": 330,
+      "offload_basis": "measured",
       "fees_usd": 30.05,
       "user_fees_usd": 30.05,
       "basis": "confirmed_settlement"
@@ -1461,6 +1588,7 @@
       "date": "2024-12-17",
       "service_month": "2024-12",
       "offload_gb": 471,
+      "offload_basis": "measured",
       "fees_usd": 42.89,
       "user_fees_usd": 42.89,
       "basis": "confirmed_settlement"
@@ -1469,6 +1597,7 @@
       "date": "2024-12-18",
       "service_month": "2024-12",
       "offload_gb": 423,
+      "offload_basis": "measured",
       "fees_usd": 38.52,
       "user_fees_usd": 38.52,
       "basis": "confirmed_settlement"
@@ -1477,6 +1606,7 @@
       "date": "2024-12-19",
       "service_month": "2024-12",
       "offload_gb": 480,
+      "offload_basis": "measured",
       "fees_usd": 43.7,
       "user_fees_usd": 43.7,
       "basis": "confirmed_settlement"
@@ -1485,6 +1615,7 @@
       "date": "2024-12-20",
       "service_month": "2024-12",
       "offload_gb": 561,
+      "offload_basis": "measured",
       "fees_usd": 51.08,
       "user_fees_usd": 51.08,
       "basis": "confirmed_settlement"
@@ -1493,6 +1624,7 @@
       "date": "2024-12-21",
       "service_month": "2024-12",
       "offload_gb": 458,
+      "offload_basis": "measured",
       "fees_usd": 41.7,
       "user_fees_usd": 41.7,
       "basis": "confirmed_settlement"
@@ -1501,6 +1633,7 @@
       "date": "2024-12-22",
       "service_month": "2024-12",
       "offload_gb": 525,
+      "offload_basis": "measured",
       "fees_usd": 47.8,
       "user_fees_usd": 47.8,
       "basis": "confirmed_settlement"
@@ -1509,6 +1642,7 @@
       "date": "2024-12-23",
       "service_month": "2024-12",
       "offload_gb": 395,
+      "offload_basis": "measured",
       "fees_usd": 35.97,
       "user_fees_usd": 35.97,
       "basis": "confirmed_settlement"
@@ -1517,6 +1651,7 @@
       "date": "2024-12-24",
       "service_month": "2024-12",
       "offload_gb": 338,
+      "offload_basis": "measured",
       "fees_usd": 30.78,
       "user_fees_usd": 30.78,
       "basis": "confirmed_settlement"
@@ -1525,6 +1660,7 @@
       "date": "2024-12-25",
       "service_month": "2024-12",
       "offload_gb": 169,
+      "offload_basis": "measured",
       "fees_usd": 15.39,
       "user_fees_usd": 15.39,
       "basis": "confirmed_settlement"
@@ -1533,6 +1669,7 @@
       "date": "2024-12-26",
       "service_month": "2024-12",
       "offload_gb": 382,
+      "offload_basis": "measured",
       "fees_usd": 34.78,
       "user_fees_usd": 34.78,
       "basis": "confirmed_settlement"
@@ -1541,6 +1678,7 @@
       "date": "2024-12-27",
       "service_month": "2024-12",
       "offload_gb": 434,
+      "offload_basis": "measured",
       "fees_usd": 39.52,
       "user_fees_usd": 39.52,
       "basis": "confirmed_settlement"
@@ -1549,6 +1687,7 @@
       "date": "2024-12-28",
       "service_month": "2024-12",
       "offload_gb": 497,
+      "offload_basis": "measured",
       "fees_usd": 45.25,
       "user_fees_usd": 45.25,
       "basis": "confirmed_settlement"
@@ -1557,6 +1696,7 @@
       "date": "2024-12-29",
       "service_month": "2024-12",
       "offload_gb": 426,
+      "offload_basis": "measured",
       "fees_usd": 38.79,
       "user_fees_usd": 38.79,
       "basis": "confirmed_settlement"
@@ -1565,6 +1705,7 @@
       "date": "2024-12-30",
       "service_month": "2024-12",
       "offload_gb": 405,
+      "offload_basis": "measured",
       "fees_usd": 36.88,
       "user_fees_usd": 36.88,
       "basis": "confirmed_settlement"
@@ -1573,6 +1714,7 @@
       "date": "2024-12-31",
       "service_month": "2024-12",
       "offload_gb": 445,
+      "offload_basis": "measured",
       "fees_usd": 40.52,
       "user_fees_usd": 40.52,
       "basis": "confirmed_settlement"
@@ -1581,6 +1723,7 @@
       "date": "2025-01-01",
       "service_month": "2025-01",
       "offload_gb": 428,
+      "offload_basis": "measured",
       "fees_usd": 38.08,
       "user_fees_usd": 38.08,
       "basis": "confirmed_settlement"
@@ -1589,6 +1732,7 @@
       "date": "2025-01-02",
       "service_month": "2025-01",
       "offload_gb": 469,
+      "offload_basis": "measured",
       "fees_usd": 41.73,
       "user_fees_usd": 41.73,
       "basis": "confirmed_settlement"
@@ -1597,6 +1741,7 @@
       "date": "2025-01-03",
       "service_month": "2025-01",
       "offload_gb": 412,
+      "offload_basis": "measured",
       "fees_usd": 36.66,
       "user_fees_usd": 36.66,
       "basis": "confirmed_settlement"
@@ -1605,6 +1750,7 @@
       "date": "2025-01-04",
       "service_month": "2025-01",
       "offload_gb": 425,
+      "offload_basis": "measured",
       "fees_usd": 37.81,
       "user_fees_usd": 37.81,
       "basis": "confirmed_settlement"
@@ -1613,6 +1759,7 @@
       "date": "2025-01-05",
       "service_month": "2025-01",
       "offload_gb": 483,
+      "offload_basis": "measured",
       "fees_usd": 42.98,
       "user_fees_usd": 42.98,
       "basis": "confirmed_settlement"
@@ -1621,6 +1768,7 @@
       "date": "2025-01-06",
       "service_month": "2025-01",
       "offload_gb": 380,
+      "offload_basis": "measured",
       "fees_usd": 33.81,
       "user_fees_usd": 33.81,
       "basis": "confirmed_settlement"
@@ -1629,6 +1777,7 @@
       "date": "2025-01-07",
       "service_month": "2025-01",
       "offload_gb": 375,
+      "offload_basis": "measured",
       "fees_usd": 33.37,
       "user_fees_usd": 33.37,
       "basis": "confirmed_settlement"
@@ -1637,6 +1786,7 @@
       "date": "2025-01-08",
       "service_month": "2025-01",
       "offload_gb": 532,
+      "offload_basis": "measured",
       "fees_usd": 47.34,
       "user_fees_usd": 47.34,
       "basis": "confirmed_settlement"
@@ -1645,6 +1795,7 @@
       "date": "2025-01-09",
       "service_month": "2025-01",
       "offload_gb": 365,
+      "offload_basis": "measured",
       "fees_usd": 32.48,
       "user_fees_usd": 32.48,
       "basis": "confirmed_settlement"
@@ -1653,6 +1804,7 @@
       "date": "2025-01-10",
       "service_month": "2025-01",
       "offload_gb": 379,
+      "offload_basis": "measured",
       "fees_usd": 33.72,
       "user_fees_usd": 33.72,
       "basis": "confirmed_settlement"
@@ -1661,6 +1813,7 @@
       "date": "2025-01-11",
       "service_month": "2025-01",
       "offload_gb": 469,
+      "offload_basis": "measured",
       "fees_usd": 41.73,
       "user_fees_usd": 41.73,
       "basis": "confirmed_settlement"
@@ -1669,6 +1822,7 @@
       "date": "2025-01-12",
       "service_month": "2025-01",
       "offload_gb": 481,
+      "offload_basis": "measured",
       "fees_usd": 42.8,
       "user_fees_usd": 42.8,
       "basis": "confirmed_settlement"
@@ -1677,6 +1831,7 @@
       "date": "2025-01-13",
       "service_month": "2025-01",
       "offload_gb": 416,
+      "offload_basis": "measured",
       "fees_usd": 37.01,
       "user_fees_usd": 37.01,
       "basis": "confirmed_settlement"
@@ -1685,6 +1840,7 @@
       "date": "2025-01-14",
       "service_month": "2025-01",
       "offload_gb": 439,
+      "offload_basis": "measured",
       "fees_usd": 39.06,
       "user_fees_usd": 39.06,
       "basis": "confirmed_settlement"
@@ -1693,6 +1849,7 @@
       "date": "2025-01-15",
       "service_month": "2025-01",
       "offload_gb": 569,
+      "offload_basis": "measured",
       "fees_usd": 50.63,
       "user_fees_usd": 50.63,
       "basis": "confirmed_settlement"
@@ -1701,6 +1858,7 @@
       "date": "2025-01-16",
       "service_month": "2025-01",
       "offload_gb": 523,
+      "offload_basis": "measured",
       "fees_usd": 46.53,
       "user_fees_usd": 46.53,
       "basis": "confirmed_settlement"
@@ -1709,6 +1867,7 @@
       "date": "2025-01-17",
       "service_month": "2025-01",
       "offload_gb": 485,
+      "offload_basis": "measured",
       "fees_usd": 43.15,
       "user_fees_usd": 43.15,
       "basis": "confirmed_settlement"
@@ -1717,6 +1876,7 @@
       "date": "2025-01-18",
       "service_month": "2025-01",
       "offload_gb": 492,
+      "offload_basis": "measured",
       "fees_usd": 43.78,
       "user_fees_usd": 43.78,
       "basis": "confirmed_settlement"
@@ -1725,6 +1885,7 @@
       "date": "2025-01-19",
       "service_month": "2025-01",
       "offload_gb": 529,
+      "offload_basis": "measured",
       "fees_usd": 47.07,
       "user_fees_usd": 47.07,
       "basis": "confirmed_settlement"
@@ -1733,6 +1894,7 @@
       "date": "2025-01-20",
       "service_month": "2025-01",
       "offload_gb": 445,
+      "offload_basis": "measured",
       "fees_usd": 39.59,
       "user_fees_usd": 39.59,
       "basis": "confirmed_settlement"
@@ -1741,6 +1903,7 @@
       "date": "2025-01-21",
       "service_month": "2025-01",
       "offload_gb": 348,
+      "offload_basis": "measured",
       "fees_usd": 30.96,
       "user_fees_usd": 30.96,
       "basis": "confirmed_settlement"
@@ -1749,6 +1912,7 @@
       "date": "2025-01-22",
       "service_month": "2025-01",
       "offload_gb": 499,
+      "offload_basis": "measured",
       "fees_usd": 44.4,
       "user_fees_usd": 44.4,
       "basis": "confirmed_settlement"
@@ -1757,6 +1921,7 @@
       "date": "2025-01-23",
       "service_month": "2025-01",
       "offload_gb": 507,
+      "offload_basis": "measured",
       "fees_usd": 45.11,
       "user_fees_usd": 45.11,
       "basis": "confirmed_settlement"
@@ -1765,6 +1930,7 @@
       "date": "2025-01-24",
       "service_month": "2025-01",
       "offload_gb": 581,
+      "offload_basis": "measured",
       "fees_usd": 51.7,
       "user_fees_usd": 51.7,
       "basis": "confirmed_settlement"
@@ -1773,6 +1939,7 @@
       "date": "2025-01-25",
       "service_month": "2025-01",
       "offload_gb": 712,
+      "offload_basis": "measured",
       "fees_usd": 63.35,
       "user_fees_usd": 63.35,
       "basis": "confirmed_settlement"
@@ -1781,6 +1948,7 @@
       "date": "2025-01-26",
       "service_month": "2025-01",
       "offload_gb": 630,
+      "offload_basis": "measured",
       "fees_usd": 56.05,
       "user_fees_usd": 56.05,
       "basis": "confirmed_settlement"
@@ -1789,6 +1957,7 @@
       "date": "2025-01-27",
       "service_month": "2025-01",
       "offload_gb": 605,
+      "offload_basis": "measured",
       "fees_usd": 53.83,
       "user_fees_usd": 53.83,
       "basis": "confirmed_settlement"
@@ -1797,6 +1966,7 @@
       "date": "2025-01-28",
       "service_month": "2025-01",
       "offload_gb": 648,
+      "offload_basis": "measured",
       "fees_usd": 57.66,
       "user_fees_usd": 57.66,
       "basis": "confirmed_settlement"
@@ -1805,6 +1975,7 @@
       "date": "2025-01-29",
       "service_month": "2025-01",
       "offload_gb": 643,
+      "offload_basis": "measured",
       "fees_usd": 57.21,
       "user_fees_usd": 57.21,
       "basis": "confirmed_settlement"
@@ -1813,6 +1984,7 @@
       "date": "2025-01-30",
       "service_month": "2025-01",
       "offload_gb": 723,
+      "offload_basis": "measured",
       "fees_usd": 64.33,
       "user_fees_usd": 64.33,
       "basis": "confirmed_settlement"
@@ -1821,6 +1993,7 @@
       "date": "2025-01-31",
       "service_month": "2025-01",
       "offload_gb": 708,
+      "offload_basis": "measured",
       "fees_usd": 62.99,
       "user_fees_usd": 62.99,
       "basis": "confirmed_settlement"
@@ -1829,6 +2002,7 @@
       "date": "2025-02-01",
       "service_month": "2025-02",
       "offload_gb": 471,
+      "offload_basis": "measured",
       "fees_usd": 40.63,
       "user_fees_usd": 40.63,
       "basis": "confirmed_settlement"
@@ -1837,6 +2011,7 @@
       "date": "2025-02-02",
       "service_month": "2025-02",
       "offload_gb": 345,
+      "offload_basis": "measured",
       "fees_usd": 29.76,
       "user_fees_usd": 29.76,
       "basis": "confirmed_settlement"
@@ -1845,6 +2020,7 @@
       "date": "2025-02-03",
       "service_month": "2025-02",
       "offload_gb": 423,
+      "offload_basis": "measured",
       "fees_usd": 36.49,
       "user_fees_usd": 36.49,
       "basis": "confirmed_settlement"
@@ -1853,6 +2029,7 @@
       "date": "2025-02-04",
       "service_month": "2025-02",
       "offload_gb": 628,
+      "offload_basis": "measured",
       "fees_usd": 54.17,
       "user_fees_usd": 54.17,
       "basis": "confirmed_settlement"
@@ -1861,6 +2038,7 @@
       "date": "2025-02-05",
       "service_month": "2025-02",
       "offload_gb": 691,
+      "offload_basis": "measured",
       "fees_usd": 59.61,
       "user_fees_usd": 59.61,
       "basis": "confirmed_settlement"
@@ -1869,6 +2047,7 @@
       "date": "2025-02-06",
       "service_month": "2025-02",
       "offload_gb": 502,
+      "offload_basis": "measured",
       "fees_usd": 43.3,
       "user_fees_usd": 43.3,
       "basis": "confirmed_settlement"
@@ -1877,6 +2056,7 @@
       "date": "2025-02-07",
       "service_month": "2025-02",
       "offload_gb": 585,
+      "offload_basis": "measured",
       "fees_usd": 50.46,
       "user_fees_usd": 50.46,
       "basis": "confirmed_settlement"
@@ -1885,6 +2065,7 @@
       "date": "2025-02-08",
       "service_month": "2025-02",
       "offload_gb": 832,
+      "offload_basis": "measured",
       "fees_usd": 71.77,
       "user_fees_usd": 71.77,
       "basis": "confirmed_settlement"
@@ -1893,6 +2074,7 @@
       "date": "2025-02-09",
       "service_month": "2025-02",
       "offload_gb": 729,
+      "offload_basis": "measured",
       "fees_usd": 62.88,
       "user_fees_usd": 62.88,
       "basis": "confirmed_settlement"
@@ -1901,6 +2083,7 @@
       "date": "2025-02-10",
       "service_month": "2025-02",
       "offload_gb": 559,
+      "offload_basis": "measured",
       "fees_usd": 48.22,
       "user_fees_usd": 48.22,
       "basis": "confirmed_settlement"
@@ -1909,6 +2092,7 @@
       "date": "2025-02-11",
       "service_month": "2025-02",
       "offload_gb": 781,
+      "offload_basis": "measured",
       "fees_usd": 67.37,
       "user_fees_usd": 67.37,
       "basis": "confirmed_settlement"
@@ -1917,6 +2101,7 @@
       "date": "2025-02-12",
       "service_month": "2025-02",
       "offload_gb": 684,
+      "offload_basis": "measured",
       "fees_usd": 59,
       "user_fees_usd": 59,
       "basis": "confirmed_settlement"
@@ -1925,6 +2110,7 @@
       "date": "2025-02-13",
       "service_month": "2025-02",
       "offload_gb": 714,
+      "offload_basis": "measured",
       "fees_usd": 61.59,
       "user_fees_usd": 61.59,
       "basis": "confirmed_settlement"
@@ -1933,6 +2119,7 @@
       "date": "2025-02-14",
       "service_month": "2025-02",
       "offload_gb": 894,
+      "offload_basis": "measured",
       "fees_usd": 77.12,
       "user_fees_usd": 77.12,
       "basis": "confirmed_settlement"
@@ -1941,6 +2128,7 @@
       "date": "2025-02-15",
       "service_month": "2025-02",
       "offload_gb": 993,
+      "offload_basis": "measured",
       "fees_usd": 85.66,
       "user_fees_usd": 85.66,
       "basis": "confirmed_settlement"
@@ -1949,6 +2137,7 @@
       "date": "2025-02-16",
       "service_month": "2025-02",
       "offload_gb": 930,
+      "offload_basis": "measured",
       "fees_usd": 80.22,
       "user_fees_usd": 80.22,
       "basis": "confirmed_settlement"
@@ -1957,6 +2146,7 @@
       "date": "2025-02-17",
       "service_month": "2025-02",
       "offload_gb": 716,
+      "offload_basis": "measured",
       "fees_usd": 61.76,
       "user_fees_usd": 61.76,
       "basis": "confirmed_settlement"
@@ -1965,6 +2155,7 @@
       "date": "2025-02-18",
       "service_month": "2025-02",
       "offload_gb": 711,
+      "offload_basis": "measured",
       "fees_usd": 61.33,
       "user_fees_usd": 61.33,
       "basis": "confirmed_settlement"
@@ -1973,6 +2164,7 @@
       "date": "2025-02-19",
       "service_month": "2025-02",
       "offload_gb": 767,
+      "offload_basis": "measured",
       "fees_usd": 66.16,
       "user_fees_usd": 66.16,
       "basis": "confirmed_settlement"
@@ -1981,6 +2173,7 @@
       "date": "2025-02-20",
       "service_month": "2025-02",
       "offload_gb": 798,
+      "offload_basis": "measured",
       "fees_usd": 68.84,
       "user_fees_usd": 68.84,
       "basis": "confirmed_settlement"
@@ -1989,6 +2182,7 @@
       "date": "2025-02-21",
       "service_month": "2025-02",
       "offload_gb": 794,
+      "offload_basis": "measured",
       "fees_usd": 68.49,
       "user_fees_usd": 68.49,
       "basis": "confirmed_settlement"
@@ -1997,6 +2191,7 @@
       "date": "2025-02-22",
       "service_month": "2025-02",
       "offload_gb": 940,
+      "offload_basis": "measured",
       "fees_usd": 81.09,
       "user_fees_usd": 81.09,
       "basis": "confirmed_settlement"
@@ -2005,6 +2200,7 @@
       "date": "2025-02-23",
       "service_month": "2025-02",
       "offload_gb": 870,
+      "offload_basis": "measured",
       "fees_usd": 75.05,
       "user_fees_usd": 75.05,
       "basis": "confirmed_settlement"
@@ -2013,6 +2209,7 @@
       "date": "2025-02-24",
       "service_month": "2025-02",
       "offload_gb": 598,
+      "offload_basis": "measured",
       "fees_usd": 51.58,
       "user_fees_usd": 51.58,
       "basis": "confirmed_settlement"
@@ -2021,6 +2218,7 @@
       "date": "2025-02-25",
       "service_month": "2025-02",
       "offload_gb": 667,
+      "offload_basis": "measured",
       "fees_usd": 57.54,
       "user_fees_usd": 57.54,
       "basis": "confirmed_settlement"
@@ -2029,6 +2227,7 @@
       "date": "2025-02-26",
       "service_month": "2025-02",
       "offload_gb": 714,
+      "offload_basis": "measured",
       "fees_usd": 61.59,
       "user_fees_usd": 61.59,
       "basis": "confirmed_settlement"
@@ -2037,6 +2236,7 @@
       "date": "2025-02-27",
       "service_month": "2025-02",
       "offload_gb": 568,
+      "offload_basis": "measured",
       "fees_usd": 49,
       "user_fees_usd": 49,
       "basis": "confirmed_settlement"
@@ -2045,6 +2245,7 @@
       "date": "2025-02-28",
       "service_month": "2025-02",
       "offload_gb": 852,
+      "offload_basis": "measured",
       "fees_usd": 73.5,
       "user_fees_usd": 73.5,
       "basis": "confirmed_settlement"
@@ -2053,6 +2254,7 @@
       "date": "2025-03-01",
       "service_month": "2025-03",
       "offload_gb": 728,
+      "offload_basis": "measured",
       "fees_usd": 62.03,
       "user_fees_usd": 62.03,
       "basis": "confirmed_settlement"
@@ -2061,6 +2263,7 @@
       "date": "2025-03-02",
       "service_month": "2025-03",
       "offload_gb": 551,
+      "offload_basis": "measured",
       "fees_usd": 46.95,
       "user_fees_usd": 46.95,
       "basis": "confirmed_settlement"
@@ -2069,6 +2272,7 @@
       "date": "2025-03-03",
       "service_month": "2025-03",
       "offload_gb": 376,
+      "offload_basis": "measured",
       "fees_usd": 32.03,
       "user_fees_usd": 32.03,
       "basis": "confirmed_settlement"
@@ -2077,6 +2281,7 @@
       "date": "2025-03-04",
       "service_month": "2025-03",
       "offload_gb": 451,
+      "offload_basis": "measured",
       "fees_usd": 38.43,
       "user_fees_usd": 38.43,
       "basis": "confirmed_settlement"
@@ -2085,6 +2290,7 @@
       "date": "2025-03-05",
       "service_month": "2025-03",
       "offload_gb": 446,
+      "offload_basis": "measured",
       "fees_usd": 38,
       "user_fees_usd": 38,
       "basis": "confirmed_settlement"
@@ -2093,6 +2299,7 @@
       "date": "2025-03-06",
       "service_month": "2025-03",
       "offload_gb": 498,
+      "offload_basis": "measured",
       "fees_usd": 42.43,
       "user_fees_usd": 42.43,
       "basis": "confirmed_settlement"
@@ -2101,6 +2308,7 @@
       "date": "2025-03-07",
       "service_month": "2025-03",
       "offload_gb": 617,
+      "offload_basis": "measured",
       "fees_usd": 52.57,
       "user_fees_usd": 52.57,
       "basis": "confirmed_settlement"
@@ -2109,6 +2317,7 @@
       "date": "2025-03-08",
       "service_month": "2025-03",
       "offload_gb": 802,
+      "offload_basis": "measured",
       "fees_usd": 68.33,
       "user_fees_usd": 68.33,
       "basis": "confirmed_settlement"
@@ -2117,6 +2326,7 @@
       "date": "2025-03-09",
       "service_month": "2025-03",
       "offload_gb": 568,
+      "offload_basis": "measured",
       "fees_usd": 48.39,
       "user_fees_usd": 48.39,
       "basis": "confirmed_settlement"
@@ -2125,6 +2335,7 @@
       "date": "2025-03-10",
       "service_month": "2025-03",
       "offload_gb": 667,
+      "offload_basis": "measured",
       "fees_usd": 56.83,
       "user_fees_usd": 56.83,
       "basis": "confirmed_settlement"
@@ -2133,6 +2344,7 @@
       "date": "2025-03-11",
       "service_month": "2025-03",
       "offload_gb": 849,
+      "offload_basis": "measured",
       "fees_usd": 72.34,
       "user_fees_usd": 72.34,
       "basis": "confirmed_settlement"
@@ -2141,6 +2353,7 @@
       "date": "2025-03-12",
       "service_month": "2025-03",
       "offload_gb": 945,
+      "offload_basis": "measured",
       "fees_usd": 80.51,
       "user_fees_usd": 80.51,
       "basis": "confirmed_settlement"
@@ -2149,6 +2362,7 @@
       "date": "2025-03-13",
       "service_month": "2025-03",
       "offload_gb": 845,
+      "offload_basis": "measured",
       "fees_usd": 71.99,
       "user_fees_usd": 71.99,
       "basis": "confirmed_settlement"
@@ -2157,6 +2371,7 @@
       "date": "2025-03-14",
       "service_month": "2025-03",
       "offload_gb": 972,
+      "offload_basis": "measured",
       "fees_usd": 82.81,
       "user_fees_usd": 82.81,
       "basis": "confirmed_settlement"
@@ -2165,6 +2380,7 @@
       "date": "2025-03-15",
       "service_month": "2025-03",
       "offload_gb": 1140,
+      "offload_basis": "measured",
       "fees_usd": 97.13,
       "user_fees_usd": 97.13,
       "basis": "confirmed_settlement"
@@ -2173,6 +2389,7 @@
       "date": "2025-03-16",
       "service_month": "2025-03",
       "offload_gb": 984,
+      "offload_basis": "measured",
       "fees_usd": 83.84,
       "user_fees_usd": 83.84,
       "basis": "confirmed_settlement"
@@ -2181,6 +2398,7 @@
       "date": "2025-03-17",
       "service_month": "2025-03",
       "offload_gb": 849,
+      "offload_basis": "measured",
       "fees_usd": 72.34,
       "user_fees_usd": 72.34,
       "basis": "confirmed_settlement"
@@ -2189,6 +2407,7 @@
       "date": "2025-03-18",
       "service_month": "2025-03",
       "offload_gb": 803,
+      "offload_basis": "measured",
       "fees_usd": 68.42,
       "user_fees_usd": 68.42,
       "basis": "confirmed_settlement"
@@ -2197,6 +2416,7 @@
       "date": "2025-03-19",
       "service_month": "2025-03",
       "offload_gb": 805,
+      "offload_basis": "measured",
       "fees_usd": 68.59,
       "user_fees_usd": 68.59,
       "basis": "confirmed_settlement"
@@ -2205,6 +2425,7 @@
       "date": "2025-03-20",
       "service_month": "2025-03",
       "offload_gb": 886,
+      "offload_basis": "measured",
       "fees_usd": 75.49,
       "user_fees_usd": 75.49,
       "basis": "confirmed_settlement"
@@ -2213,6 +2434,7 @@
       "date": "2025-03-21",
       "service_month": "2025-03",
       "offload_gb": 903,
+      "offload_basis": "measured",
       "fees_usd": 76.94,
       "user_fees_usd": 76.94,
       "basis": "confirmed_settlement"
@@ -2221,6 +2443,7 @@
       "date": "2025-03-22",
       "service_month": "2025-03",
       "offload_gb": 1003,
+      "offload_basis": "measured",
       "fees_usd": 85.46,
       "user_fees_usd": 85.46,
       "basis": "confirmed_settlement"
@@ -2229,6 +2452,7 @@
       "date": "2025-03-23",
       "service_month": "2025-03",
       "offload_gb": 904,
+      "offload_basis": "measured",
       "fees_usd": 77.02,
       "user_fees_usd": 77.02,
       "basis": "confirmed_settlement"
@@ -2237,6 +2461,7 @@
       "date": "2025-03-24",
       "service_month": "2025-03",
       "offload_gb": 695,
+      "offload_basis": "measured",
       "fees_usd": 59.21,
       "user_fees_usd": 59.21,
       "basis": "confirmed_settlement"
@@ -2245,6 +2470,7 @@
       "date": "2025-03-25",
       "service_month": "2025-03",
       "offload_gb": 747,
+      "offload_basis": "measured",
       "fees_usd": 63.64,
       "user_fees_usd": 63.64,
       "basis": "confirmed_settlement"
@@ -2253,6 +2479,7 @@
       "date": "2025-03-26",
       "service_month": "2025-03",
       "offload_gb": 823,
+      "offload_basis": "measured",
       "fees_usd": 70.12,
       "user_fees_usd": 70.12,
       "basis": "confirmed_settlement"
@@ -2261,6 +2488,7 @@
       "date": "2025-03-27",
       "service_month": "2025-03",
       "offload_gb": 806,
+      "offload_basis": "measured",
       "fees_usd": 68.67,
       "user_fees_usd": 68.67,
       "basis": "confirmed_settlement"
@@ -2269,6 +2497,7 @@
       "date": "2025-03-28",
       "service_month": "2025-03",
       "offload_gb": 944,
+      "offload_basis": "measured",
       "fees_usd": 80.43,
       "user_fees_usd": 80.43,
       "basis": "confirmed_settlement"
@@ -2277,6 +2506,7 @@
       "date": "2025-03-29",
       "service_month": "2025-03",
       "offload_gb": 1267,
+      "offload_basis": "measured",
       "fees_usd": 107.95,
       "user_fees_usd": 107.95,
       "basis": "confirmed_settlement"
@@ -2285,6 +2515,7 @@
       "date": "2025-03-30",
       "service_month": "2025-03",
       "offload_gb": 1103,
+      "offload_basis": "measured",
       "fees_usd": 93.98,
       "user_fees_usd": 93.98,
       "basis": "confirmed_settlement"
@@ -2293,6 +2524,7 @@
       "date": "2025-03-31",
       "service_month": "2025-03",
       "offload_gb": 883,
+      "offload_basis": "measured",
       "fees_usd": 75.23,
       "user_fees_usd": 75.23,
       "basis": "confirmed_settlement"
@@ -2301,6 +2533,7 @@
       "date": "2025-04-01",
       "service_month": "2025-04",
       "offload_gb": 869,
+      "offload_basis": "measured",
       "fees_usd": 79.66,
       "user_fees_usd": 79.66,
       "basis": "confirmed_settlement"
@@ -2309,6 +2542,7 @@
       "date": "2025-04-02",
       "service_month": "2025-04",
       "offload_gb": 979,
+      "offload_basis": "measured",
       "fees_usd": 89.75,
       "user_fees_usd": 89.75,
       "basis": "confirmed_settlement"
@@ -2317,6 +2551,7 @@
       "date": "2025-04-03",
       "service_month": "2025-04",
       "offload_gb": 1001,
+      "offload_basis": "measured",
       "fees_usd": 91.76,
       "user_fees_usd": 91.76,
       "basis": "confirmed_settlement"
@@ -2325,6 +2560,7 @@
       "date": "2025-04-04",
       "service_month": "2025-04",
       "offload_gb": 976,
+      "offload_basis": "measured",
       "fees_usd": 89.47,
       "user_fees_usd": 89.47,
       "basis": "confirmed_settlement"
@@ -2333,6 +2569,7 @@
       "date": "2025-04-05",
       "service_month": "2025-04",
       "offload_gb": 1088,
+      "offload_basis": "measured",
       "fees_usd": 99.74,
       "user_fees_usd": 99.74,
       "basis": "confirmed_settlement"
@@ -2341,6 +2578,7 @@
       "date": "2025-04-06",
       "service_month": "2025-04",
       "offload_gb": 956,
+      "offload_basis": "measured",
       "fees_usd": 87.64,
       "user_fees_usd": 87.64,
       "basis": "confirmed_settlement"
@@ -2349,6 +2587,7 @@
       "date": "2025-04-07",
       "service_month": "2025-04",
       "offload_gb": 789,
+      "offload_basis": "measured",
       "fees_usd": 72.33,
       "user_fees_usd": 72.33,
       "basis": "confirmed_settlement"
@@ -2357,6 +2596,7 @@
       "date": "2025-04-08",
       "service_month": "2025-04",
       "offload_gb": 848,
+      "offload_basis": "measured",
       "fees_usd": 77.74,
       "user_fees_usd": 77.74,
       "basis": "confirmed_settlement"
@@ -2365,6 +2605,7 @@
       "date": "2025-04-09",
       "service_month": "2025-04",
       "offload_gb": 885,
+      "offload_basis": "measured",
       "fees_usd": 81.13,
       "user_fees_usd": 81.13,
       "basis": "confirmed_settlement"
@@ -2373,6 +2614,7 @@
       "date": "2025-04-10",
       "service_month": "2025-04",
       "offload_gb": 1009,
+      "offload_basis": "measured",
       "fees_usd": 92.5,
       "user_fees_usd": 92.5,
       "basis": "confirmed_settlement"
@@ -2381,6 +2623,7 @@
       "date": "2025-04-11",
       "service_month": "2025-04",
       "offload_gb": 1159,
+      "offload_basis": "measured",
       "fees_usd": 106.25,
       "user_fees_usd": 106.25,
       "basis": "confirmed_settlement"
@@ -2389,6 +2632,7 @@
       "date": "2025-04-12",
       "service_month": "2025-04",
       "offload_gb": 1461,
+      "offload_basis": "measured",
       "fees_usd": 133.93,
       "user_fees_usd": 133.93,
       "basis": "confirmed_settlement"
@@ -2397,6 +2641,7 @@
       "date": "2025-04-13",
       "service_month": "2025-04",
       "offload_gb": 1084,
+      "offload_basis": "measured",
       "fees_usd": 99.37,
       "user_fees_usd": 99.37,
       "basis": "confirmed_settlement"
@@ -2405,6 +2650,7 @@
       "date": "2025-04-14",
       "service_month": "2025-04",
       "offload_gb": 903,
+      "offload_basis": "measured",
       "fees_usd": 82.78,
       "user_fees_usd": 82.78,
       "basis": "confirmed_settlement"
@@ -2413,6 +2659,7 @@
       "date": "2025-04-15",
       "service_month": "2025-04",
       "offload_gb": 912,
+      "offload_basis": "measured",
       "fees_usd": 83.61,
       "user_fees_usd": 83.61,
       "basis": "confirmed_settlement"
@@ -2421,6 +2668,7 @@
       "date": "2025-04-16",
       "service_month": "2025-04",
       "offload_gb": 1062,
+      "offload_basis": "measured",
       "fees_usd": 97.36,
       "user_fees_usd": 97.36,
       "basis": "confirmed_settlement"
@@ -2429,6 +2677,7 @@
       "date": "2025-04-17",
       "service_month": "2025-04",
       "offload_gb": 1016,
+      "offload_basis": "measured",
       "fees_usd": 93.14,
       "user_fees_usd": 93.14,
       "basis": "confirmed_settlement"
@@ -2437,6 +2686,7 @@
       "date": "2025-04-18",
       "service_month": "2025-04",
       "offload_gb": 1055,
+      "offload_basis": "measured",
       "fees_usd": 96.72,
       "user_fees_usd": 96.72,
       "basis": "confirmed_settlement"
@@ -2445,6 +2695,7 @@
       "date": "2025-04-19",
       "service_month": "2025-04",
       "offload_gb": 1104,
+      "offload_basis": "measured",
       "fees_usd": 101.21,
       "user_fees_usd": 101.21,
       "basis": "confirmed_settlement"
@@ -2453,6 +2704,7 @@
       "date": "2025-04-20",
       "service_month": "2025-04",
       "offload_gb": 783,
+      "offload_basis": "measured",
       "fees_usd": 71.78,
       "user_fees_usd": 71.78,
       "basis": "confirmed_settlement"
@@ -2461,6 +2713,7 @@
       "date": "2025-04-21",
       "service_month": "2025-04",
       "offload_gb": 781,
+      "offload_basis": "measured",
       "fees_usd": 71.6,
       "user_fees_usd": 71.6,
       "basis": "confirmed_settlement"
@@ -2469,6 +2722,7 @@
       "date": "2025-04-22",
       "service_month": "2025-04",
       "offload_gb": 787,
+      "offload_basis": "measured",
       "fees_usd": 72.15,
       "user_fees_usd": 72.15,
       "basis": "confirmed_settlement"
@@ -2477,6 +2731,7 @@
       "date": "2025-04-23",
       "service_month": "2025-04",
       "offload_gb": 814,
+      "offload_basis": "measured",
       "fees_usd": 74.62,
       "user_fees_usd": 74.62,
       "basis": "confirmed_settlement"
@@ -2485,6 +2740,7 @@
       "date": "2025-04-24",
       "service_month": "2025-04",
       "offload_gb": 656,
+      "offload_basis": "measured",
       "fees_usd": 60.14,
       "user_fees_usd": 60.14,
       "basis": "confirmed_settlement"
@@ -2493,6 +2749,7 @@
       "date": "2025-04-25",
       "service_month": "2025-04",
       "offload_gb": 951,
+      "offload_basis": "measured",
       "fees_usd": 87.18,
       "user_fees_usd": 87.18,
       "basis": "confirmed_settlement"
@@ -2501,6 +2758,7 @@
       "date": "2025-04-26",
       "service_month": "2025-04",
       "offload_gb": 954,
+      "offload_basis": "measured",
       "fees_usd": 87.46,
       "user_fees_usd": 87.46,
       "basis": "confirmed_settlement"
@@ -2509,6 +2767,7 @@
       "date": "2025-04-27",
       "service_month": "2025-04",
       "offload_gb": 875,
+      "offload_basis": "measured",
       "fees_usd": 80.21,
       "user_fees_usd": 80.21,
       "basis": "confirmed_settlement"
@@ -2517,6 +2776,7 @@
       "date": "2025-04-28",
       "service_month": "2025-04",
       "offload_gb": 620,
+      "offload_basis": "measured",
       "fees_usd": 56.84,
       "user_fees_usd": 56.84,
       "basis": "confirmed_settlement"
@@ -2525,6 +2785,7 @@
       "date": "2025-04-29",
       "service_month": "2025-04",
       "offload_gb": 657,
+      "offload_basis": "measured",
       "fees_usd": 60.23,
       "user_fees_usd": 60.23,
       "basis": "confirmed_settlement"
@@ -2533,6 +2794,7 @@
       "date": "2025-04-30",
       "service_month": "2025-04",
       "offload_gb": 664,
+      "offload_basis": "measured",
       "fees_usd": 60.87,
       "user_fees_usd": 60.87,
       "basis": "confirmed_settlement"
@@ -2541,6 +2803,7 @@
       "date": "2025-05-01",
       "service_month": "2025-05",
       "offload_gb": 717,
+      "offload_basis": "measured",
       "fees_usd": 62.94,
       "user_fees_usd": 62.94,
       "basis": "confirmed_settlement"
@@ -2549,6 +2812,7 @@
       "date": "2025-05-02",
       "service_month": "2025-05",
       "offload_gb": 781,
+      "offload_basis": "measured",
       "fees_usd": 68.56,
       "user_fees_usd": 68.56,
       "basis": "confirmed_settlement"
@@ -2557,6 +2821,7 @@
       "date": "2025-05-03",
       "service_month": "2025-05",
       "offload_gb": 990,
+      "offload_basis": "measured",
       "fees_usd": 86.91,
       "user_fees_usd": 86.91,
       "basis": "confirmed_settlement"
@@ -2565,6 +2830,7 @@
       "date": "2025-05-04",
       "service_month": "2025-05",
       "offload_gb": 855,
+      "offload_basis": "measured",
       "fees_usd": 75.06,
       "user_fees_usd": 75.06,
       "basis": "confirmed_settlement"
@@ -2573,6 +2839,7 @@
       "date": "2025-05-05",
       "service_month": "2025-05",
       "offload_gb": 707,
+      "offload_basis": "measured",
       "fees_usd": 62.06,
       "user_fees_usd": 62.06,
       "basis": "confirmed_settlement"
@@ -2581,6 +2848,7 @@
       "date": "2025-05-06",
       "service_month": "2025-05",
       "offload_gb": 670,
+      "offload_basis": "measured",
       "fees_usd": 58.82,
       "user_fees_usd": 58.82,
       "basis": "confirmed_settlement"
@@ -2589,6 +2857,7 @@
       "date": "2025-05-07",
       "service_month": "2025-05",
       "offload_gb": 703,
+      "offload_basis": "measured",
       "fees_usd": 61.71,
       "user_fees_usd": 61.71,
       "basis": "confirmed_settlement"
@@ -2597,6 +2866,7 @@
       "date": "2025-05-08",
       "service_month": "2025-05",
       "offload_gb": 714,
+      "offload_basis": "measured",
       "fees_usd": 62.68,
       "user_fees_usd": 62.68,
       "basis": "confirmed_settlement"
@@ -2605,6 +2875,7 @@
       "date": "2025-05-09",
       "service_month": "2025-05",
       "offload_gb": 908,
+      "offload_basis": "measured",
       "fees_usd": 79.71,
       "user_fees_usd": 79.71,
       "basis": "confirmed_settlement"
@@ -2613,6 +2884,7 @@
       "date": "2025-05-10",
       "service_month": "2025-05",
       "offload_gb": 949,
+      "offload_basis": "measured",
       "fees_usd": 83.31,
       "user_fees_usd": 83.31,
       "basis": "confirmed_settlement"
@@ -2621,6 +2893,7 @@
       "date": "2025-05-11",
       "service_month": "2025-05",
       "offload_gb": 893,
+      "offload_basis": "measured",
       "fees_usd": 78.39,
       "user_fees_usd": 78.39,
       "basis": "confirmed_settlement"
@@ -2629,6 +2902,7 @@
       "date": "2025-05-12",
       "service_month": "2025-05",
       "offload_gb": 583,
+      "offload_basis": "measured",
       "fees_usd": 51.18,
       "user_fees_usd": 51.18,
       "basis": "confirmed_settlement"
@@ -2637,6 +2911,7 @@
       "date": "2025-05-13",
       "service_month": "2025-05",
       "offload_gb": 549,
+      "offload_basis": "measured",
       "fees_usd": 48.19,
       "user_fees_usd": 48.19,
       "basis": "confirmed_settlement"
@@ -2645,6 +2920,7 @@
       "date": "2025-05-14",
       "service_month": "2025-05",
       "offload_gb": 736,
+      "offload_basis": "measured",
       "fees_usd": 64.61,
       "user_fees_usd": 64.61,
       "basis": "confirmed_settlement"
@@ -2653,6 +2929,7 @@
       "date": "2025-05-15",
       "service_month": "2025-05",
       "offload_gb": 698,
+      "offload_basis": "measured",
       "fees_usd": 61.27,
       "user_fees_usd": 61.27,
       "basis": "confirmed_settlement"
@@ -2661,6 +2938,7 @@
       "date": "2025-05-16",
       "service_month": "2025-05",
       "offload_gb": 786,
+      "offload_basis": "measured",
       "fees_usd": 69,
       "user_fees_usd": 69,
       "basis": "confirmed_settlement"
@@ -2669,6 +2947,7 @@
       "date": "2025-05-17",
       "service_month": "2025-05",
       "offload_gb": 1013,
+      "offload_basis": "measured",
       "fees_usd": 88.93,
       "user_fees_usd": 88.93,
       "basis": "confirmed_settlement"
@@ -2677,6 +2956,7 @@
       "date": "2025-05-18",
       "service_month": "2025-05",
       "offload_gb": 714,
+      "offload_basis": "measured",
       "fees_usd": 62.68,
       "user_fees_usd": 62.68,
       "basis": "confirmed_settlement"
@@ -2685,6 +2965,7 @@
       "date": "2025-05-19",
       "service_month": "2025-05",
       "offload_gb": 589,
+      "offload_basis": "measured",
       "fees_usd": 51.7,
       "user_fees_usd": 51.7,
       "basis": "confirmed_settlement"
@@ -2693,6 +2974,7 @@
       "date": "2025-05-20",
       "service_month": "2025-05",
       "offload_gb": 746,
+      "offload_basis": "measured",
       "fees_usd": 65.49,
       "user_fees_usd": 65.49,
       "basis": "confirmed_settlement"
@@ -2701,6 +2983,7 @@
       "date": "2025-05-21",
       "service_month": "2025-05",
       "offload_gb": 856,
+      "offload_basis": "measured",
       "fees_usd": 75.14,
       "user_fees_usd": 75.14,
       "basis": "confirmed_settlement"
@@ -2709,6 +2992,7 @@
       "date": "2025-05-22",
       "service_month": "2025-05",
       "offload_gb": 875,
+      "offload_basis": "measured",
       "fees_usd": 76.81,
       "user_fees_usd": 76.81,
       "basis": "confirmed_settlement"
@@ -2717,6 +3001,7 @@
       "date": "2025-05-23",
       "service_month": "2025-05",
       "offload_gb": 882,
+      "offload_basis": "measured",
       "fees_usd": 77.43,
       "user_fees_usd": 77.43,
       "basis": "confirmed_settlement"
@@ -2725,6 +3010,7 @@
       "date": "2025-05-24",
       "service_month": "2025-05",
       "offload_gb": 1020,
+      "offload_basis": "measured",
       "fees_usd": 89.54,
       "user_fees_usd": 89.54,
       "basis": "confirmed_settlement"
@@ -2733,6 +3019,7 @@
       "date": "2025-05-25",
       "service_month": "2025-05",
       "offload_gb": 1005,
+      "offload_basis": "measured",
       "fees_usd": 88.22,
       "user_fees_usd": 88.22,
       "basis": "confirmed_settlement"
@@ -2741,6 +3028,7 @@
       "date": "2025-05-26",
       "service_month": "2025-05",
       "offload_gb": 858,
+      "offload_basis": "measured",
       "fees_usd": 75.32,
       "user_fees_usd": 75.32,
       "basis": "confirmed_settlement"
@@ -2749,6 +3037,7 @@
       "date": "2025-05-27",
       "service_month": "2025-05",
       "offload_gb": 945,
+      "offload_basis": "measured",
       "fees_usd": 82.96,
       "user_fees_usd": 82.96,
       "basis": "confirmed_settlement"
@@ -2757,6 +3046,7 @@
       "date": "2025-05-28",
       "service_month": "2025-05",
       "offload_gb": 875,
+      "offload_basis": "measured",
       "fees_usd": 76.81,
       "user_fees_usd": 76.81,
       "basis": "confirmed_settlement"
@@ -2765,6 +3055,7 @@
       "date": "2025-05-29",
       "service_month": "2025-05",
       "offload_gb": 1090,
+      "offload_basis": "measured",
       "fees_usd": 95.69,
       "user_fees_usd": 95.69,
       "basis": "confirmed_settlement"
@@ -2773,6 +3064,7 @@
       "date": "2025-05-30",
       "service_month": "2025-05",
       "offload_gb": 1278,
+      "offload_basis": "measured",
       "fees_usd": 112.19,
       "user_fees_usd": 112.19,
       "basis": "confirmed_settlement"
@@ -2781,6 +3073,7 @@
       "date": "2025-05-31",
       "service_month": "2025-05",
       "offload_gb": 1594,
+      "offload_basis": "measured",
       "fees_usd": 139.93,
       "user_fees_usd": 139.93,
       "basis": "confirmed_settlement"
@@ -2789,6 +3082,7 @@
       "date": "2025-06-01",
       "service_month": "2025-06",
       "offload_gb": 1350,
+      "offload_basis": "measured",
       "fees_usd": 119.23,
       "user_fees_usd": 119.23,
       "basis": "confirmed_settlement"
@@ -2797,6 +3091,7 @@
       "date": "2025-06-02",
       "service_month": "2025-06",
       "offload_gb": 667,
+      "offload_basis": "measured",
       "fees_usd": 58.91,
       "user_fees_usd": 58.91,
       "basis": "confirmed_settlement"
@@ -2805,6 +3100,7 @@
       "date": "2025-06-03",
       "service_month": "2025-06",
       "offload_gb": 750,
+      "offload_basis": "measured",
       "fees_usd": 66.24,
       "user_fees_usd": 66.24,
       "basis": "confirmed_settlement"
@@ -2813,6 +3109,7 @@
       "date": "2025-06-04",
       "service_month": "2025-06",
       "offload_gb": 798,
+      "offload_basis": "measured",
       "fees_usd": 70.48,
       "user_fees_usd": 70.48,
       "basis": "confirmed_settlement"
@@ -2821,6 +3118,7 @@
       "date": "2025-06-05",
       "service_month": "2025-06",
       "offload_gb": 986,
+      "offload_basis": "measured",
       "fees_usd": 87.08,
       "user_fees_usd": 87.08,
       "basis": "confirmed_settlement"
@@ -2829,6 +3127,7 @@
       "date": "2025-06-06",
       "service_month": "2025-06",
       "offload_gb": 1062,
+      "offload_basis": "measured",
       "fees_usd": 93.79,
       "user_fees_usd": 93.79,
       "basis": "confirmed_settlement"
@@ -2837,6 +3136,7 @@
       "date": "2025-06-07",
       "service_month": "2025-06",
       "offload_gb": 1085,
+      "offload_basis": "measured",
       "fees_usd": 95.82,
       "user_fees_usd": 95.82,
       "basis": "confirmed_settlement"
@@ -2845,6 +3145,7 @@
       "date": "2025-06-08",
       "service_month": "2025-06",
       "offload_gb": 924,
+      "offload_basis": "measured",
       "fees_usd": 81.6,
       "user_fees_usd": 81.6,
       "basis": "confirmed_settlement"
@@ -2853,6 +3154,7 @@
       "date": "2025-06-09",
       "service_month": "2025-06",
       "offload_gb": 737,
+      "offload_basis": "measured",
       "fees_usd": 65.09,
       "user_fees_usd": 65.09,
       "basis": "confirmed_settlement"
@@ -2861,6 +3163,7 @@
       "date": "2025-06-10",
       "service_month": "2025-06",
       "offload_gb": 747,
+      "offload_basis": "measured",
       "fees_usd": 65.97,
       "user_fees_usd": 65.97,
       "basis": "confirmed_settlement"
@@ -2869,6 +3172,7 @@
       "date": "2025-06-11",
       "service_month": "2025-06",
       "offload_gb": 796,
+      "offload_basis": "measured",
       "fees_usd": 70.3,
       "user_fees_usd": 70.3,
       "basis": "confirmed_settlement"
@@ -2877,6 +3181,7 @@
       "date": "2025-06-12",
       "service_month": "2025-06",
       "offload_gb": 828,
+      "offload_basis": "measured",
       "fees_usd": 73.12,
       "user_fees_usd": 73.12,
       "basis": "confirmed_settlement"
@@ -2885,6 +3190,7 @@
       "date": "2025-06-13",
       "service_month": "2025-06",
       "offload_gb": 1000,
+      "offload_basis": "measured",
       "fees_usd": 88.31,
       "user_fees_usd": 88.31,
       "basis": "confirmed_settlement"
@@ -2893,6 +3199,7 @@
       "date": "2025-06-14",
       "service_month": "2025-06",
       "offload_gb": 1083,
+      "offload_basis": "measured",
       "fees_usd": 95.64,
       "user_fees_usd": 95.64,
       "basis": "confirmed_settlement"
@@ -2901,6 +3208,7 @@
       "date": "2025-06-15",
       "service_month": "2025-06",
       "offload_gb": 931,
+      "offload_basis": "measured",
       "fees_usd": 82.22,
       "user_fees_usd": 82.22,
       "basis": "confirmed_settlement"
@@ -2909,6 +3217,7 @@
       "date": "2025-06-16",
       "service_month": "2025-06",
       "offload_gb": 692,
+      "offload_basis": "measured",
       "fees_usd": 61.11,
       "user_fees_usd": 61.11,
       "basis": "confirmed_settlement"
@@ -2917,6 +3226,7 @@
       "date": "2025-06-17",
       "service_month": "2025-06",
       "offload_gb": 827,
+      "offload_basis": "measured",
       "fees_usd": 73.04,
       "user_fees_usd": 73.04,
       "basis": "confirmed_settlement"
@@ -2925,6 +3235,7 @@
       "date": "2025-06-18",
       "service_month": "2025-06",
       "offload_gb": 943,
+      "offload_basis": "measured",
       "fees_usd": 83.28,
       "user_fees_usd": 83.28,
       "basis": "confirmed_settlement"
@@ -2933,6 +3244,7 @@
       "date": "2025-06-19",
       "service_month": "2025-06",
       "offload_gb": 1119,
+      "offload_basis": "measured",
       "fees_usd": 98.82,
       "user_fees_usd": 98.82,
       "basis": "confirmed_settlement"
@@ -2941,6 +3253,7 @@
       "date": "2025-06-20",
       "service_month": "2025-06",
       "offload_gb": 1231,
+      "offload_basis": "measured",
       "fees_usd": 108.72,
       "user_fees_usd": 108.72,
       "basis": "confirmed_settlement"
@@ -2949,6 +3262,7 @@
       "date": "2025-06-21",
       "service_month": "2025-06",
       "offload_gb": 1088,
+      "offload_basis": "measured",
       "fees_usd": 96.09,
       "user_fees_usd": 96.09,
       "basis": "confirmed_settlement"
@@ -2957,6 +3271,7 @@
       "date": "2025-06-22",
       "service_month": "2025-06",
       "offload_gb": 933,
+      "offload_basis": "measured",
       "fees_usd": 82.4,
       "user_fees_usd": 82.4,
       "basis": "confirmed_settlement"
@@ -2965,6 +3280,7 @@
       "date": "2025-06-23",
       "service_month": "2025-06",
       "offload_gb": 835,
+      "offload_basis": "measured",
       "fees_usd": 73.74,
       "user_fees_usd": 73.74,
       "basis": "confirmed_settlement"
@@ -2973,6 +3289,7 @@
       "date": "2025-06-24",
       "service_month": "2025-06",
       "offload_gb": 806,
+      "offload_basis": "measured",
       "fees_usd": 71.18,
       "user_fees_usd": 71.18,
       "basis": "confirmed_settlement"
@@ -2981,6 +3298,7 @@
       "date": "2025-06-25",
       "service_month": "2025-06",
       "offload_gb": 780,
+      "offload_basis": "measured",
       "fees_usd": 68.89,
       "user_fees_usd": 68.89,
       "basis": "confirmed_settlement"
@@ -2989,6 +3307,7 @@
       "date": "2025-06-26",
       "service_month": "2025-06",
       "offload_gb": 786,
+      "offload_basis": "measured",
       "fees_usd": 69.42,
       "user_fees_usd": 69.42,
       "basis": "confirmed_settlement"
@@ -2997,6 +3316,7 @@
       "date": "2025-06-27",
       "service_month": "2025-06",
       "offload_gb": 1097,
+      "offload_basis": "measured",
       "fees_usd": 96.88,
       "user_fees_usd": 96.88,
       "basis": "confirmed_settlement"
@@ -3005,6 +3325,7 @@
       "date": "2025-06-28",
       "service_month": "2025-06",
       "offload_gb": 1145,
+      "offload_basis": "measured",
       "fees_usd": 101.12,
       "user_fees_usd": 101.12,
       "basis": "confirmed_settlement"
@@ -3013,6 +3334,7 @@
       "date": "2025-06-29",
       "service_month": "2025-06",
       "offload_gb": 1065,
+      "offload_basis": "measured",
       "fees_usd": 94.06,
       "user_fees_usd": 94.06,
       "basis": "confirmed_settlement"
@@ -3021,6 +3343,7 @@
       "date": "2025-06-30",
       "service_month": "2025-06",
       "offload_gb": 836,
+      "offload_basis": "measured",
       "fees_usd": 73.83,
       "user_fees_usd": 73.83,
       "basis": "confirmed_settlement"
@@ -3029,6 +3352,7 @@
       "date": "2025-07-01",
       "service_month": "2025-07",
       "offload_gb": 977,
+      "offload_basis": "measured",
       "fees_usd": 86.55,
       "user_fees_usd": 86.55,
       "basis": "confirmed_settlement"
@@ -3037,6 +3361,7 @@
       "date": "2025-07-02",
       "service_month": "2025-07",
       "offload_gb": 1190,
+      "offload_basis": "measured",
       "fees_usd": 105.42,
       "user_fees_usd": 105.42,
       "basis": "confirmed_settlement"
@@ -3045,6 +3370,7 @@
       "date": "2025-07-03",
       "service_month": "2025-07",
       "offload_gb": 1003,
+      "offload_basis": "measured",
       "fees_usd": 88.85,
       "user_fees_usd": 88.85,
       "basis": "confirmed_settlement"
@@ -3053,6 +3379,7 @@
       "date": "2025-07-04",
       "service_month": "2025-07",
       "offload_gb": 1092,
+      "offload_basis": "measured",
       "fees_usd": 96.74,
       "user_fees_usd": 96.74,
       "basis": "confirmed_settlement"
@@ -3061,6 +3388,7 @@
       "date": "2025-07-05",
       "service_month": "2025-07",
       "offload_gb": 1454,
+      "offload_basis": "measured",
       "fees_usd": 128.81,
       "user_fees_usd": 128.81,
       "basis": "confirmed_settlement"
@@ -3069,6 +3397,7 @@
       "date": "2025-07-06",
       "service_month": "2025-07",
       "offload_gb": 1632,
+      "offload_basis": "measured",
       "fees_usd": 144.57,
       "user_fees_usd": 144.57,
       "basis": "confirmed_settlement"
@@ -3077,6 +3406,7 @@
       "date": "2025-07-07",
       "service_month": "2025-07",
       "offload_gb": 2499,
+      "offload_basis": "measured",
       "fees_usd": 221.38,
       "user_fees_usd": 221.38,
       "basis": "confirmed_settlement"
@@ -3085,6 +3415,7 @@
       "date": "2025-07-08",
       "service_month": "2025-07",
       "offload_gb": 1559,
+      "offload_basis": "measured",
       "fees_usd": 138.11,
       "user_fees_usd": 138.11,
       "basis": "confirmed_settlement"
@@ -3093,6 +3424,7 @@
       "date": "2025-07-09",
       "service_month": "2025-07",
       "offload_gb": 1547,
+      "offload_basis": "measured",
       "fees_usd": 137.04,
       "user_fees_usd": 137.04,
       "basis": "confirmed_settlement"
@@ -3101,6 +3433,7 @@
       "date": "2025-07-10",
       "service_month": "2025-07",
       "offload_gb": 1437,
+      "offload_basis": "measured",
       "fees_usd": 127.3,
       "user_fees_usd": 127.3,
       "basis": "confirmed_settlement"
@@ -3109,6 +3442,7 @@
       "date": "2025-07-11",
       "service_month": "2025-07",
       "offload_gb": 1522,
+      "offload_basis": "measured",
       "fees_usd": 134.83,
       "user_fees_usd": 134.83,
       "basis": "confirmed_settlement"
@@ -3117,6 +3451,7 @@
       "date": "2025-07-12",
       "service_month": "2025-07",
       "offload_gb": 1997,
+      "offload_basis": "measured",
       "fees_usd": 176.91,
       "user_fees_usd": 176.91,
       "basis": "confirmed_settlement"
@@ -3125,6 +3460,7 @@
       "date": "2025-07-13",
       "service_month": "2025-07",
       "offload_gb": 2230,
+      "offload_basis": "measured",
       "fees_usd": 197.55,
       "user_fees_usd": 197.55,
       "basis": "confirmed_settlement"
@@ -3133,6 +3469,7 @@
       "date": "2025-07-14",
       "service_month": "2025-07",
       "offload_gb": 2167,
+      "offload_basis": "measured",
       "fees_usd": 191.97,
       "user_fees_usd": 191.97,
       "basis": "confirmed_settlement"
@@ -3141,6 +3478,7 @@
       "date": "2025-07-15",
       "service_month": "2025-07",
       "offload_gb": 2330,
+      "offload_basis": "measured",
       "fees_usd": 206.41,
       "user_fees_usd": 206.41,
       "basis": "confirmed_settlement"
@@ -3149,6 +3487,7 @@
       "date": "2025-07-16",
       "service_month": "2025-07",
       "offload_gb": 2513,
+      "offload_basis": "measured",
       "fees_usd": 222.62,
       "user_fees_usd": 222.62,
       "basis": "confirmed_settlement"
@@ -3157,6 +3496,7 @@
       "date": "2025-07-17",
       "service_month": "2025-07",
       "offload_gb": 1849,
+      "offload_basis": "measured",
       "fees_usd": 163.8,
       "user_fees_usd": 163.8,
       "basis": "confirmed_settlement"
@@ -3165,6 +3505,7 @@
       "date": "2025-07-18",
       "service_month": "2025-07",
       "offload_gb": 1523,
+      "offload_basis": "measured",
       "fees_usd": 134.92,
       "user_fees_usd": 134.92,
       "basis": "confirmed_settlement"
@@ -3173,6 +3514,7 @@
       "date": "2025-07-19",
       "service_month": "2025-07",
       "offload_gb": 1886,
+      "offload_basis": "measured",
       "fees_usd": 167.08,
       "user_fees_usd": 167.08,
       "basis": "confirmed_settlement"
@@ -3181,6 +3523,7 @@
       "date": "2025-07-20",
       "service_month": "2025-07",
       "offload_gb": 2093,
+      "offload_basis": "measured",
       "fees_usd": 185.41,
       "user_fees_usd": 185.41,
       "basis": "confirmed_settlement"
@@ -3189,6 +3532,7 @@
       "date": "2025-07-21",
       "service_month": "2025-07",
       "offload_gb": 1314,
+      "offload_basis": "measured",
       "fees_usd": 116.4,
       "user_fees_usd": 116.4,
       "basis": "confirmed_settlement"
@@ -3197,6 +3541,7 @@
       "date": "2025-07-22",
       "service_month": "2025-07",
       "offload_gb": 1184,
+      "offload_basis": "measured",
       "fees_usd": 104.89,
       "user_fees_usd": 104.89,
       "basis": "confirmed_settlement"
@@ -3205,6 +3550,7 @@
       "date": "2025-07-23",
       "service_month": "2025-07",
       "offload_gb": 1086,
+      "offload_basis": "measured",
       "fees_usd": 96.21,
       "user_fees_usd": 96.21,
       "basis": "confirmed_settlement"
@@ -3213,6 +3559,7 @@
       "date": "2025-07-24",
       "service_month": "2025-07",
       "offload_gb": 1019,
+      "offload_basis": "measured",
       "fees_usd": 90.27,
       "user_fees_usd": 90.27,
       "basis": "confirmed_settlement"
@@ -3221,6 +3568,7 @@
       "date": "2025-07-25",
       "service_month": "2025-07",
       "offload_gb": 1330,
+      "offload_basis": "measured",
       "fees_usd": 117.82,
       "user_fees_usd": 117.82,
       "basis": "confirmed_settlement"
@@ -3229,6 +3577,7 @@
       "date": "2025-07-26",
       "service_month": "2025-07",
       "offload_gb": 1752,
+      "offload_basis": "measured",
       "fees_usd": 155.21,
       "user_fees_usd": 155.21,
       "basis": "confirmed_settlement"
@@ -3237,6 +3586,7 @@
       "date": "2025-07-27",
       "service_month": "2025-07",
       "offload_gb": 1416,
+      "offload_basis": "measured",
       "fees_usd": 125.44,
       "user_fees_usd": 125.44,
       "basis": "confirmed_settlement"
@@ -3245,6 +3595,7 @@
       "date": "2025-07-28",
       "service_month": "2025-07",
       "offload_gb": 1248,
+      "offload_basis": "measured",
       "fees_usd": 110.56,
       "user_fees_usd": 110.56,
       "basis": "confirmed_settlement"
@@ -3253,6 +3604,7 @@
       "date": "2025-07-29",
       "service_month": "2025-07",
       "offload_gb": 1293,
+      "offload_basis": "measured",
       "fees_usd": 114.54,
       "user_fees_usd": 114.54,
       "basis": "confirmed_settlement"
@@ -3261,6 +3613,7 @@
       "date": "2025-07-30",
       "service_month": "2025-07",
       "offload_gb": 1304,
+      "offload_basis": "measured",
       "fees_usd": 115.52,
       "user_fees_usd": 115.52,
       "basis": "confirmed_settlement"
@@ -3269,6 +3622,7 @@
       "date": "2025-07-31",
       "service_month": "2025-07",
       "offload_gb": 1520,
+      "offload_basis": "measured",
       "fees_usd": 134.65,
       "user_fees_usd": 134.65,
       "basis": "confirmed_settlement"
@@ -3277,6 +3631,7 @@
       "date": "2025-08-01",
       "service_month": "2025-08",
       "offload_gb": 1854,
+      "offload_basis": "measured",
       "fees_usd": 134.53,
       "user_fees_usd": 134.53,
       "basis": "confirmed_settlement"
@@ -3285,6 +3640,7 @@
       "date": "2025-08-02",
       "service_month": "2025-08",
       "offload_gb": 2021,
+      "offload_basis": "measured",
       "fees_usd": 146.64,
       "user_fees_usd": 146.64,
       "basis": "confirmed_settlement"
@@ -3293,6 +3649,7 @@
       "date": "2025-08-03",
       "service_month": "2025-08",
       "offload_gb": 1969,
+      "offload_basis": "measured",
       "fees_usd": 142.87,
       "user_fees_usd": 142.87,
       "basis": "confirmed_settlement"
@@ -3301,6 +3658,7 @@
       "date": "2025-08-04",
       "service_month": "2025-08",
       "offload_gb": 1473,
+      "offload_basis": "measured",
       "fees_usd": 106.88,
       "user_fees_usd": 106.88,
       "basis": "confirmed_settlement"
@@ -3309,6 +3667,7 @@
       "date": "2025-08-05",
       "service_month": "2025-08",
       "offload_gb": 1454,
+      "offload_basis": "measured",
       "fees_usd": 105.5,
       "user_fees_usd": 105.5,
       "basis": "confirmed_settlement"
@@ -3317,6 +3676,7 @@
       "date": "2025-08-06",
       "service_month": "2025-08",
       "offload_gb": 1439,
+      "offload_basis": "measured",
       "fees_usd": 104.41,
       "user_fees_usd": 104.41,
       "basis": "confirmed_settlement"
@@ -3325,6 +3685,7 @@
       "date": "2025-08-07",
       "service_month": "2025-08",
       "offload_gb": 1561,
+      "offload_basis": "measured",
       "fees_usd": 113.27,
       "user_fees_usd": 113.27,
       "basis": "confirmed_settlement"
@@ -3333,6 +3694,7 @@
       "date": "2025-08-08",
       "service_month": "2025-08",
       "offload_gb": 1531,
+      "offload_basis": "measured",
       "fees_usd": 111.09,
       "user_fees_usd": 111.09,
       "basis": "confirmed_settlement"
@@ -3341,6 +3703,7 @@
       "date": "2025-08-09",
       "service_month": "2025-08",
       "offload_gb": 1715,
+      "offload_basis": "measured",
       "fees_usd": 124.44,
       "user_fees_usd": 124.44,
       "basis": "confirmed_settlement"
@@ -3349,6 +3712,7 @@
       "date": "2025-08-10",
       "service_month": "2025-08",
       "offload_gb": 1563,
+      "offload_basis": "measured",
       "fees_usd": 113.41,
       "user_fees_usd": 113.41,
       "basis": "confirmed_settlement"
@@ -3357,6 +3721,7 @@
       "date": "2025-08-11",
       "service_month": "2025-08",
       "offload_gb": 1636,
+      "offload_basis": "measured",
       "fees_usd": 118.71,
       "user_fees_usd": 118.71,
       "basis": "confirmed_settlement"
@@ -3365,6 +3730,7 @@
       "date": "2025-08-12",
       "service_month": "2025-08",
       "offload_gb": 1923,
+      "offload_basis": "measured",
       "fees_usd": 139.53,
       "user_fees_usd": 139.53,
       "basis": "confirmed_settlement"
@@ -3373,6 +3739,7 @@
       "date": "2025-08-13",
       "service_month": "2025-08",
       "offload_gb": 1985,
+      "offload_basis": "measured",
       "fees_usd": 144.03,
       "user_fees_usd": 144.03,
       "basis": "confirmed_settlement"
@@ -3381,6 +3748,7 @@
       "date": "2025-08-14",
       "service_month": "2025-08",
       "offload_gb": 1230,
+      "offload_basis": "measured",
       "fees_usd": 89.25,
       "user_fees_usd": 89.25,
       "basis": "confirmed_settlement"
@@ -3389,6 +3757,7 @@
       "date": "2025-08-15",
       "service_month": "2025-08",
       "offload_gb": 1396,
+      "offload_basis": "measured",
       "fees_usd": 101.29,
       "user_fees_usd": 101.29,
       "basis": "confirmed_settlement"
@@ -3397,6 +3766,7 @@
       "date": "2025-08-16",
       "service_month": "2025-08",
       "offload_gb": 2060,
+      "offload_basis": "measured",
       "fees_usd": 149.47,
       "user_fees_usd": 149.47,
       "basis": "confirmed_settlement"
@@ -3405,6 +3775,7 @@
       "date": "2025-08-17",
       "service_month": "2025-08",
       "offload_gb": 1636,
+      "offload_basis": "measured",
       "fees_usd": 118.71,
       "user_fees_usd": 118.71,
       "basis": "confirmed_settlement"
@@ -3413,6 +3784,7 @@
       "date": "2025-08-18",
       "service_month": "2025-08",
       "offload_gb": 1293,
+      "offload_basis": "measured",
       "fees_usd": 93.82,
       "user_fees_usd": 93.82,
       "basis": "confirmed_settlement"
@@ -3421,6 +3793,7 @@
       "date": "2025-08-19",
       "service_month": "2025-08",
       "offload_gb": 1556,
+      "offload_basis": "measured",
       "fees_usd": 112.9,
       "user_fees_usd": 112.9,
       "basis": "confirmed_settlement"
@@ -3429,6 +3802,7 @@
       "date": "2025-08-20",
       "service_month": "2025-08",
       "offload_gb": 1611,
+      "offload_basis": "measured",
       "fees_usd": 116.89,
       "user_fees_usd": 116.89,
       "basis": "confirmed_settlement"
@@ -3437,6 +3811,7 @@
       "date": "2025-08-21",
       "service_month": "2025-08",
       "offload_gb": 1379,
+      "offload_basis": "measured",
       "fees_usd": 100.06,
       "user_fees_usd": 100.06,
       "basis": "confirmed_settlement"
@@ -3445,6 +3820,7 @@
       "date": "2025-08-22",
       "service_month": "2025-08",
       "offload_gb": 1723,
+      "offload_basis": "measured",
       "fees_usd": 125.02,
       "user_fees_usd": 125.02,
       "basis": "confirmed_settlement"
@@ -3453,6 +3829,7 @@
       "date": "2025-08-23",
       "service_month": "2025-08",
       "offload_gb": 1951,
+      "offload_basis": "measured",
       "fees_usd": 141.57,
       "user_fees_usd": 141.57,
       "basis": "confirmed_settlement"
@@ -3461,6 +3838,7 @@
       "date": "2025-08-24",
       "service_month": "2025-08",
       "offload_gb": 1753,
+      "offload_basis": "measured",
       "fees_usd": 127.2,
       "user_fees_usd": 127.2,
       "basis": "confirmed_settlement"
@@ -3469,6 +3847,7 @@
       "date": "2025-08-25",
       "service_month": "2025-08",
       "offload_gb": 1236,
+      "offload_basis": "measured",
       "fees_usd": 89.68,
       "user_fees_usd": 89.68,
       "basis": "confirmed_settlement"
@@ -3477,6 +3856,7 @@
       "date": "2025-08-26",
       "service_month": "2025-08",
       "offload_gb": 1272,
+      "offload_basis": "measured",
       "fees_usd": 92.3,
       "user_fees_usd": 92.3,
       "basis": "confirmed_settlement"
@@ -3485,6 +3865,7 @@
       "date": "2025-08-27",
       "service_month": "2025-08",
       "offload_gb": 1349,
+      "offload_basis": "measured",
       "fees_usd": 97.88,
       "user_fees_usd": 97.88,
       "basis": "confirmed_settlement"
@@ -3493,6 +3874,7 @@
       "date": "2025-08-28",
       "service_month": "2025-08",
       "offload_gb": 1558,
+      "offload_basis": "measured",
       "fees_usd": 113.05,
       "user_fees_usd": 113.05,
       "basis": "confirmed_settlement"
@@ -3501,6 +3883,7 @@
       "date": "2025-08-29",
       "service_month": "2025-08",
       "offload_gb": 1834,
+      "offload_basis": "measured",
       "fees_usd": 133.08,
       "user_fees_usd": 133.08,
       "basis": "confirmed_settlement"
@@ -3509,6 +3892,7 @@
       "date": "2025-08-30",
       "service_month": "2025-08",
       "offload_gb": 2408,
+      "offload_basis": "measured",
       "fees_usd": 174.73,
       "user_fees_usd": 174.73,
       "basis": "confirmed_settlement"
@@ -3517,6 +3901,7 @@
       "date": "2025-08-31",
       "service_month": "2025-08",
       "offload_gb": 2272,
+      "offload_basis": "measured",
       "fees_usd": 164.86,
       "user_fees_usd": 164.86,
       "basis": "confirmed_settlement"
@@ -3525,6 +3910,7 @@
       "date": "2025-09-01",
       "service_month": "2025-09",
       "offload_gb": 1764,
+      "offload_basis": "measured",
       "fees_usd": 157.38,
       "user_fees_usd": 157.38,
       "basis": "confirmed_settlement"
@@ -3533,6 +3919,7 @@
       "date": "2025-09-02",
       "service_month": "2025-09",
       "offload_gb": 1401,
+      "offload_basis": "measured",
       "fees_usd": 125,
       "user_fees_usd": 125,
       "basis": "confirmed_settlement"
@@ -3541,6 +3928,7 @@
       "date": "2025-09-03",
       "service_month": "2025-09",
       "offload_gb": 1529,
+      "offload_basis": "measured",
       "fees_usd": 136.42,
       "user_fees_usd": 136.42,
       "basis": "confirmed_settlement"
@@ -3549,6 +3937,7 @@
       "date": "2025-09-04",
       "service_month": "2025-09",
       "offload_gb": 1702,
+      "offload_basis": "measured",
       "fees_usd": 151.85,
       "user_fees_usd": 151.85,
       "basis": "confirmed_settlement"
@@ -3557,6 +3946,7 @@
       "date": "2025-09-05",
       "service_month": "2025-09",
       "offload_gb": 1880,
+      "offload_basis": "measured",
       "fees_usd": 167.73,
       "user_fees_usd": 167.73,
       "basis": "confirmed_settlement"
@@ -3565,6 +3955,7 @@
       "date": "2025-09-06",
       "service_month": "2025-09",
       "offload_gb": 2060,
+      "offload_basis": "measured",
       "fees_usd": 183.79,
       "user_fees_usd": 183.79,
       "basis": "confirmed_settlement"
@@ -3573,6 +3964,7 @@
       "date": "2025-09-07",
       "service_month": "2025-09",
       "offload_gb": 2234,
+      "offload_basis": "measured",
       "fees_usd": 199.31,
       "user_fees_usd": 199.31,
       "basis": "confirmed_settlement"
@@ -3581,6 +3973,7 @@
       "date": "2025-09-08",
       "service_month": "2025-09",
       "offload_gb": 1769,
+      "offload_basis": "measured",
       "fees_usd": 157.83,
       "user_fees_usd": 157.83,
       "basis": "confirmed_settlement"
@@ -3589,6 +3982,7 @@
       "date": "2025-09-09",
       "service_month": "2025-09",
       "offload_gb": 1762,
+      "offload_basis": "measured",
       "fees_usd": 157.2,
       "user_fees_usd": 157.2,
       "basis": "confirmed_settlement"
@@ -3597,6 +3991,7 @@
       "date": "2025-09-10",
       "service_month": "2025-09",
       "offload_gb": 1911,
+      "offload_basis": "measured",
       "fees_usd": 170.5,
       "user_fees_usd": 170.5,
       "basis": "confirmed_settlement"
@@ -3605,6 +4000,7 @@
       "date": "2025-09-11",
       "service_month": "2025-09",
       "offload_gb": 1816,
+      "offload_basis": "measured",
       "fees_usd": 162.02,
       "user_fees_usd": 162.02,
       "basis": "confirmed_settlement"
@@ -3613,6 +4009,7 @@
       "date": "2025-09-12",
       "service_month": "2025-09",
       "offload_gb": 2259,
+      "offload_basis": "measured",
       "fees_usd": 201.54,
       "user_fees_usd": 201.54,
       "basis": "confirmed_settlement"
@@ -3621,6 +4018,7 @@
       "date": "2025-09-13",
       "service_month": "2025-09",
       "offload_gb": 2449,
+      "offload_basis": "measured",
       "fees_usd": 218.5,
       "user_fees_usd": 218.5,
       "basis": "confirmed_settlement"
@@ -3629,6 +4027,7 @@
       "date": "2025-09-14",
       "service_month": "2025-09",
       "offload_gb": 2551,
+      "offload_basis": "measured",
       "fees_usd": 227.6,
       "user_fees_usd": 227.6,
       "basis": "confirmed_settlement"
@@ -3637,6 +4036,7 @@
       "date": "2025-09-15",
       "service_month": "2025-09",
       "offload_gb": 1743,
+      "offload_basis": "measured",
       "fees_usd": 155.51,
       "user_fees_usd": 155.51,
       "basis": "confirmed_settlement"
@@ -3645,6 +4045,7 @@
       "date": "2025-09-16",
       "service_month": "2025-09",
       "offload_gb": 1800,
+      "offload_basis": "measured",
       "fees_usd": 160.59,
       "user_fees_usd": 160.59,
       "basis": "confirmed_settlement"
@@ -3653,6 +4054,7 @@
       "date": "2025-09-17",
       "service_month": "2025-09",
       "offload_gb": 1920,
+      "offload_basis": "measured",
       "fees_usd": 171.3,
       "user_fees_usd": 171.3,
       "basis": "confirmed_settlement"
@@ -3661,6 +4063,7 @@
       "date": "2025-09-18",
       "service_month": "2025-09",
       "offload_gb": 1903,
+      "offload_basis": "measured",
       "fees_usd": 169.78,
       "user_fees_usd": 169.78,
       "basis": "confirmed_settlement"
@@ -3669,6 +4072,7 @@
       "date": "2025-09-19",
       "service_month": "2025-09",
       "offload_gb": 2218,
+      "offload_basis": "measured",
       "fees_usd": 197.89,
       "user_fees_usd": 197.89,
       "basis": "confirmed_settlement"
@@ -3677,6 +4081,7 @@
       "date": "2025-09-20",
       "service_month": "2025-09",
       "offload_gb": 2469,
+      "offload_basis": "measured",
       "fees_usd": 220.28,
       "user_fees_usd": 220.28,
       "basis": "confirmed_settlement"
@@ -3685,6 +4090,7 @@
       "date": "2025-09-21",
       "service_month": "2025-09",
       "offload_gb": 2276,
+      "offload_basis": "measured",
       "fees_usd": 203.06,
       "user_fees_usd": 203.06,
       "basis": "confirmed_settlement"
@@ -3693,6 +4099,7 @@
       "date": "2025-09-22",
       "service_month": "2025-09",
       "offload_gb": 1574,
+      "offload_basis": "measured",
       "fees_usd": 140.43,
       "user_fees_usd": 140.43,
       "basis": "confirmed_settlement"
@@ -3701,6 +4108,7 @@
       "date": "2025-09-23",
       "service_month": "2025-09",
       "offload_gb": 1648,
+      "offload_basis": "measured",
       "fees_usd": 147.03,
       "user_fees_usd": 147.03,
       "basis": "confirmed_settlement"
@@ -3709,6 +4117,7 @@
       "date": "2025-09-24",
       "service_month": "2025-09",
       "offload_gb": 1654,
+      "offload_basis": "measured",
       "fees_usd": 147.57,
       "user_fees_usd": 147.57,
       "basis": "confirmed_settlement"
@@ -3717,6 +4126,7 @@
       "date": "2025-09-25",
       "service_month": "2025-09",
       "offload_gb": 1923,
+      "offload_basis": "measured",
       "fees_usd": 171.57,
       "user_fees_usd": 171.57,
       "basis": "confirmed_settlement"
@@ -3725,6 +4135,7 @@
       "date": "2025-09-26",
       "service_month": "2025-09",
       "offload_gb": 2267,
+      "offload_basis": "measured",
       "fees_usd": 202.26,
       "user_fees_usd": 202.26,
       "basis": "confirmed_settlement"
@@ -3733,6 +4144,7 @@
       "date": "2025-09-27",
       "service_month": "2025-09",
       "offload_gb": 3007,
+      "offload_basis": "measured",
       "fees_usd": 268.28,
       "user_fees_usd": 268.28,
       "basis": "confirmed_settlement"
@@ -3741,6 +4153,7 @@
       "date": "2025-09-28",
       "service_month": "2025-09",
       "offload_gb": 2815,
+      "offload_basis": "measured",
       "fees_usd": 251.15,
       "user_fees_usd": 251.15,
       "basis": "confirmed_settlement"
@@ -3749,6 +4162,7 @@
       "date": "2025-09-29",
       "service_month": "2025-09",
       "offload_gb": 2027,
+      "offload_basis": "measured",
       "fees_usd": 180.85,
       "user_fees_usd": 180.85,
       "basis": "confirmed_settlement"
@@ -3757,6 +4171,7 @@
       "date": "2025-09-30",
       "service_month": "2025-09",
       "offload_gb": 1869,
+      "offload_basis": "measured",
       "fees_usd": 166.75,
       "user_fees_usd": 166.75,
       "basis": "confirmed_settlement"
@@ -3765,6 +4180,7 @@
       "date": "2025-10-01",
       "service_month": "2025-10",
       "offload_gb": 2139,
+      "offload_basis": "measured",
       "fees_usd": 197.99,
       "user_fees_usd": 197.99,
       "basis": "confirmed_settlement"
@@ -3773,6 +4189,7 @@
       "date": "2025-10-02",
       "service_month": "2025-10",
       "offload_gb": 2018,
+      "offload_basis": "measured",
       "fees_usd": 186.79,
       "user_fees_usd": 186.79,
       "basis": "confirmed_settlement"
@@ -3781,6 +4198,7 @@
       "date": "2025-10-03",
       "service_month": "2025-10",
       "offload_gb": 2388,
+      "offload_basis": "measured",
       "fees_usd": 221.04,
       "user_fees_usd": 221.04,
       "basis": "confirmed_settlement"
@@ -3789,6 +4207,7 @@
       "date": "2025-10-04",
       "service_month": "2025-10",
       "offload_gb": 3508,
+      "offload_basis": "measured",
       "fees_usd": 324.71,
       "user_fees_usd": 324.71,
       "basis": "confirmed_settlement"
@@ -3797,6 +4216,7 @@
       "date": "2025-10-05",
       "service_month": "2025-10",
       "offload_gb": 3052,
+      "offload_basis": "measured",
       "fees_usd": 282.5,
       "user_fees_usd": 282.5,
       "basis": "confirmed_settlement"
@@ -3805,6 +4225,7 @@
       "date": "2025-10-06",
       "service_month": "2025-10",
       "offload_gb": 2187,
+      "offload_basis": "measured",
       "fees_usd": 202.43,
       "user_fees_usd": 202.43,
       "basis": "confirmed_settlement"
@@ -3813,6 +4234,7 @@
       "date": "2025-10-07",
       "service_month": "2025-10",
       "offload_gb": 1953,
+      "offload_basis": "measured",
       "fees_usd": 180.77,
       "user_fees_usd": 180.77,
       "basis": "confirmed_settlement"
@@ -3821,6 +4243,7 @@
       "date": "2025-10-08",
       "service_month": "2025-10",
       "offload_gb": 2207,
+      "offload_basis": "measured",
       "fees_usd": 204.28,
       "user_fees_usd": 204.28,
       "basis": "confirmed_settlement"
@@ -3829,6 +4252,7 @@
       "date": "2025-10-09",
       "service_month": "2025-10",
       "offload_gb": 2319,
+      "offload_basis": "measured",
       "fees_usd": 214.65,
       "user_fees_usd": 214.65,
       "basis": "confirmed_settlement"
@@ -3837,6 +4261,7 @@
       "date": "2025-10-10",
       "service_month": "2025-10",
       "offload_gb": 2909,
+      "offload_basis": "measured",
       "fees_usd": 269.26,
       "user_fees_usd": 269.26,
       "basis": "confirmed_settlement"
@@ -3845,6 +4270,7 @@
       "date": "2025-10-11",
       "service_month": "2025-10",
       "offload_gb": 3542,
+      "offload_basis": "measured",
       "fees_usd": 327.85,
       "user_fees_usd": 327.85,
       "basis": "confirmed_settlement"
@@ -3853,6 +4279,7 @@
       "date": "2025-10-12",
       "service_month": "2025-10",
       "offload_gb": 3215,
+      "offload_basis": "measured",
       "fees_usd": 297.59,
       "user_fees_usd": 297.59,
       "basis": "confirmed_settlement"
@@ -3861,6 +4288,7 @@
       "date": "2025-10-13",
       "service_month": "2025-10",
       "offload_gb": 2425,
+      "offload_basis": "measured",
       "fees_usd": 224.46,
       "user_fees_usd": 224.46,
       "basis": "confirmed_settlement"
@@ -3869,6 +4297,7 @@
       "date": "2025-10-14",
       "service_month": "2025-10",
       "offload_gb": 2130,
+      "offload_basis": "measured",
       "fees_usd": 197.16,
       "user_fees_usd": 197.16,
       "basis": "confirmed_settlement"
@@ -3877,6 +4306,7 @@
       "date": "2025-10-15",
       "service_month": "2025-10",
       "offload_gb": 2198,
+      "offload_basis": "measured",
       "fees_usd": 203.45,
       "user_fees_usd": 203.45,
       "basis": "confirmed_settlement"
@@ -3885,6 +4315,7 @@
       "date": "2025-10-16",
       "service_month": "2025-10",
       "offload_gb": 2617,
+      "offload_basis": "measured",
       "fees_usd": 242.23,
       "user_fees_usd": 242.23,
       "basis": "confirmed_settlement"
@@ -3893,6 +4324,7 @@
       "date": "2025-10-17",
       "service_month": "2025-10",
       "offload_gb": 2989,
+      "offload_basis": "measured",
       "fees_usd": 276.67,
       "user_fees_usd": 276.67,
       "basis": "confirmed_settlement"
@@ -3901,6 +4333,7 @@
       "date": "2025-10-18",
       "service_month": "2025-10",
       "offload_gb": 3469,
+      "offload_basis": "measured",
       "fees_usd": 321.1,
       "user_fees_usd": 321.1,
       "basis": "confirmed_settlement"
@@ -3909,6 +4342,7 @@
       "date": "2025-10-19",
       "service_month": "2025-10",
       "offload_gb": 3767,
+      "offload_basis": "measured",
       "fees_usd": 348.68,
       "user_fees_usd": 348.68,
       "basis": "confirmed_settlement"
@@ -3917,6 +4351,7 @@
       "date": "2025-10-20",
       "service_month": "2025-10",
       "offload_gb": 2791,
+      "offload_basis": "measured",
       "fees_usd": 258.34,
       "user_fees_usd": 258.34,
       "basis": "confirmed_settlement"
@@ -3925,6 +4360,7 @@
       "date": "2025-10-21",
       "service_month": "2025-10",
       "offload_gb": 2100,
+      "offload_basis": "measured",
       "fees_usd": 194.38,
       "user_fees_usd": 194.38,
       "basis": "confirmed_settlement"
@@ -3933,6 +4369,7 @@
       "date": "2025-10-22",
       "service_month": "2025-10",
       "offload_gb": 2328,
+      "offload_basis": "measured",
       "fees_usd": 215.48,
       "user_fees_usd": 215.48,
       "basis": "confirmed_settlement"
@@ -3941,6 +4378,7 @@
       "date": "2025-10-23",
       "service_month": "2025-10",
       "offload_gb": 2408,
+      "offload_basis": "measured",
       "fees_usd": 222.89,
       "user_fees_usd": 222.89,
       "basis": "confirmed_settlement"
@@ -3949,6 +4387,7 @@
       "date": "2025-10-24",
       "service_month": "2025-10",
       "offload_gb": 2655,
+      "offload_basis": "measured",
       "fees_usd": 245.75,
       "user_fees_usd": 245.75,
       "basis": "confirmed_settlement"
@@ -3957,6 +4396,7 @@
       "date": "2025-10-25",
       "service_month": "2025-10",
       "offload_gb": 3287,
+      "offload_basis": "measured",
       "fees_usd": 304.25,
       "user_fees_usd": 304.25,
       "basis": "confirmed_settlement"
@@ -3965,6 +4405,7 @@
       "date": "2025-10-26",
       "service_month": "2025-10",
       "offload_gb": 3658,
+      "offload_basis": "measured",
       "fees_usd": 338.59,
       "user_fees_usd": 338.59,
       "basis": "confirmed_settlement"
@@ -3973,6 +4414,7 @@
       "date": "2025-10-27",
       "service_month": "2025-10",
       "offload_gb": 2567,
+      "offload_basis": "measured",
       "fees_usd": 237.61,
       "user_fees_usd": 237.61,
       "basis": "confirmed_settlement"
@@ -3981,6 +4423,7 @@
       "date": "2025-10-28",
       "service_month": "2025-10",
       "offload_gb": 1954,
+      "offload_basis": "measured",
       "fees_usd": 180.87,
       "user_fees_usd": 180.87,
       "basis": "confirmed_settlement"
@@ -3989,6 +4432,7 @@
       "date": "2025-10-29",
       "service_month": "2025-10",
       "offload_gb": 1785,
+      "offload_basis": "measured",
       "fees_usd": 165.22,
       "user_fees_usd": 165.22,
       "basis": "confirmed_settlement"
@@ -3997,6 +4441,7 @@
       "date": "2025-10-30",
       "service_month": "2025-10",
       "offload_gb": 1959,
+      "offload_basis": "measured",
       "fees_usd": 181.33,
       "user_fees_usd": 181.33,
       "basis": "confirmed_settlement"
@@ -4005,6 +4450,7 @@
       "date": "2025-10-31",
       "service_month": "2025-10",
       "offload_gb": 2207,
+      "offload_basis": "measured",
       "fees_usd": 204.28,
       "user_fees_usd": 204.28,
       "basis": "confirmed_settlement"
@@ -4013,6 +4459,7 @@
       "date": "2025-11-01",
       "service_month": "2025-11",
       "offload_gb": 3505,
+      "offload_basis": "measured",
       "fees_usd": 215.17,
       "user_fees_usd": 215.17,
       "basis": "confirmed_settlement"
@@ -4021,6 +4468,7 @@
       "date": "2025-11-02",
       "service_month": "2025-11",
       "offload_gb": 2985,
+      "offload_basis": "measured",
       "fees_usd": 183.24,
       "user_fees_usd": 183.24,
       "basis": "confirmed_settlement"
@@ -4029,6 +4477,7 @@
       "date": "2025-11-03",
       "service_month": "2025-11",
       "offload_gb": 2654,
+      "offload_basis": "measured",
       "fees_usd": 162.92,
       "user_fees_usd": 162.92,
       "basis": "confirmed_settlement"
@@ -4037,6 +4486,7 @@
       "date": "2025-11-04",
       "service_month": "2025-11",
       "offload_gb": 2791,
+      "offload_basis": "measured",
       "fees_usd": 171.33,
       "user_fees_usd": 171.33,
       "basis": "confirmed_settlement"
@@ -4045,6 +4495,7 @@
       "date": "2025-11-05",
       "service_month": "2025-11",
       "offload_gb": 2253,
+      "offload_basis": "measured",
       "fees_usd": 138.31,
       "user_fees_usd": 138.31,
       "basis": "confirmed_settlement"
@@ -4053,6 +4504,7 @@
       "date": "2025-11-06",
       "service_month": "2025-11",
       "offload_gb": 2484,
+      "offload_basis": "measured",
       "fees_usd": 152.49,
       "user_fees_usd": 152.49,
       "basis": "confirmed_settlement"
@@ -4061,6 +4513,7 @@
       "date": "2025-11-07",
       "service_month": "2025-11",
       "offload_gb": 2862,
+      "offload_basis": "measured",
       "fees_usd": 175.69,
       "user_fees_usd": 175.69,
       "basis": "confirmed_settlement"
@@ -4069,6 +4522,7 @@
       "date": "2025-11-08",
       "service_month": "2025-11",
       "offload_gb": 4099,
+      "offload_basis": "measured",
       "fees_usd": 251.63,
       "user_fees_usd": 251.63,
       "basis": "confirmed_settlement"
@@ -4077,6 +4531,7 @@
       "date": "2025-11-09",
       "service_month": "2025-11",
       "offload_gb": 4138,
+      "offload_basis": "measured",
       "fees_usd": 254.03,
       "user_fees_usd": 254.03,
       "basis": "confirmed_settlement"
@@ -4085,6 +4540,7 @@
       "date": "2025-11-10",
       "service_month": "2025-11",
       "offload_gb": 2422,
+      "offload_basis": "measured",
       "fees_usd": 148.68,
       "user_fees_usd": 148.68,
       "basis": "confirmed_settlement"
@@ -4093,6 +4549,7 @@
       "date": "2025-11-11",
       "service_month": "2025-11",
       "offload_gb": 2389,
+      "offload_basis": "measured",
       "fees_usd": 146.66,
       "user_fees_usd": 146.66,
       "basis": "confirmed_settlement"
@@ -4101,6 +4558,7 @@
       "date": "2025-11-12",
       "service_month": "2025-11",
       "offload_gb": 2369,
+      "offload_basis": "measured",
       "fees_usd": 145.43,
       "user_fees_usd": 145.43,
       "basis": "confirmed_settlement"
@@ -4109,6 +4567,7 @@
       "date": "2025-11-13",
       "service_month": "2025-11",
       "offload_gb": 2515,
+      "offload_basis": "measured",
       "fees_usd": 154.39,
       "user_fees_usd": 154.39,
       "basis": "confirmed_settlement"
@@ -4117,6 +4576,7 @@
       "date": "2025-11-14",
       "service_month": "2025-11",
       "offload_gb": 2798,
+      "offload_basis": "measured",
       "fees_usd": 171.76,
       "user_fees_usd": 171.76,
       "basis": "confirmed_settlement"
@@ -4125,6 +4585,7 @@
       "date": "2025-11-15",
       "service_month": "2025-11",
       "offload_gb": 3678,
+      "offload_basis": "measured",
       "fees_usd": 225.79,
       "user_fees_usd": 225.79,
       "basis": "confirmed_settlement"
@@ -4133,6 +4594,7 @@
       "date": "2025-11-16",
       "service_month": "2025-11",
       "offload_gb": 3848,
+      "offload_basis": "measured",
       "fees_usd": 236.22,
       "user_fees_usd": 236.22,
       "basis": "confirmed_settlement"
@@ -4141,6 +4603,7 @@
       "date": "2025-11-17",
       "service_month": "2025-11",
       "offload_gb": 2444,
+      "offload_basis": "measured",
       "fees_usd": 150.03,
       "user_fees_usd": 150.03,
       "basis": "confirmed_settlement"
@@ -4149,6 +4612,7 @@
       "date": "2025-11-18",
       "service_month": "2025-11",
       "offload_gb": 2058,
+      "offload_basis": "measured",
       "fees_usd": 126.34,
       "user_fees_usd": 126.34,
       "basis": "confirmed_settlement"
@@ -4157,6 +4621,7 @@
       "date": "2025-11-19",
       "service_month": "2025-11",
       "offload_gb": 2107,
+      "offload_basis": "measured",
       "fees_usd": 129.35,
       "user_fees_usd": 129.35,
       "basis": "confirmed_settlement"
@@ -4165,6 +4630,7 @@
       "date": "2025-11-20",
       "service_month": "2025-11",
       "offload_gb": 2124,
+      "offload_basis": "measured",
       "fees_usd": 130.39,
       "user_fees_usd": 130.39,
       "basis": "confirmed_settlement"
@@ -4173,6 +4639,7 @@
       "date": "2025-11-21",
       "service_month": "2025-11",
       "offload_gb": 2558,
+      "offload_basis": "measured",
       "fees_usd": 157.03,
       "user_fees_usd": 157.03,
       "basis": "confirmed_settlement"
@@ -4181,6 +4648,7 @@
       "date": "2025-11-22",
       "service_month": "2025-11",
       "offload_gb": 3198,
+      "offload_basis": "measured",
       "fees_usd": 196.32,
       "user_fees_usd": 196.32,
       "basis": "confirmed_settlement"
@@ -4189,6 +4657,7 @@
       "date": "2025-11-23",
       "service_month": "2025-11",
       "offload_gb": 3419,
+      "offload_basis": "measured",
       "fees_usd": 209.89,
       "user_fees_usd": 209.89,
       "basis": "confirmed_settlement"
@@ -4197,6 +4666,7 @@
       "date": "2025-11-24",
       "service_month": "2025-11",
       "offload_gb": 2838,
+      "offload_basis": "measured",
       "fees_usd": 174.22,
       "user_fees_usd": 174.22,
       "basis": "confirmed_settlement"
@@ -4205,6 +4675,7 @@
       "date": "2025-11-25",
       "service_month": "2025-11",
       "offload_gb": 2212,
+      "offload_basis": "measured",
       "fees_usd": 135.79,
       "user_fees_usd": 135.79,
       "basis": "confirmed_settlement"
@@ -4213,6 +4684,7 @@
       "date": "2025-11-26",
       "service_month": "2025-11",
       "offload_gb": 775,
+      "offload_basis": "measured",
       "fees_usd": 47.58,
       "user_fees_usd": 47.58,
       "basis": "confirmed_settlement"
@@ -4221,6 +4693,7 @@
       "date": "2025-11-27",
       "service_month": "2025-11",
       "offload_gb": 1380,
+      "offload_basis": "measured",
       "fees_usd": 84.72,
       "user_fees_usd": 84.72,
       "basis": "confirmed_settlement"
@@ -4229,6 +4702,7 @@
       "date": "2025-11-28",
       "service_month": "2025-11",
       "offload_gb": 1926,
+      "offload_basis": "measured",
       "fees_usd": 118.23,
       "user_fees_usd": 118.23,
       "basis": "confirmed_settlement"
@@ -4237,6 +4711,7 @@
       "date": "2025-11-29",
       "service_month": "2025-11",
       "offload_gb": 3629,
+      "offload_basis": "measured",
       "fees_usd": 222.78,
       "user_fees_usd": 222.78,
       "basis": "confirmed_settlement"
@@ -4245,6 +4720,7 @@
       "date": "2025-11-30",
       "service_month": "2025-11",
       "offload_gb": 3460,
+      "offload_basis": "measured",
       "fees_usd": 212.4,
       "user_fees_usd": 212.4,
       "basis": "confirmed_settlement"
@@ -4253,6 +4729,7 @@
       "date": "2025-12-01",
       "service_month": "2025-12",
       "offload_gb": 2100,
+      "offload_basis": "measured",
       "fees_usd": 187.56,
       "user_fees_usd": 187.56,
       "basis": "confirmed_settlement"
@@ -4261,6 +4738,7 @@
       "date": "2025-12-02",
       "service_month": "2025-12",
       "offload_gb": 2111,
+      "offload_basis": "measured",
       "fees_usd": 188.54,
       "user_fees_usd": 188.54,
       "basis": "confirmed_settlement"
@@ -4269,6 +4747,7 @@
       "date": "2025-12-03",
       "service_month": "2025-12",
       "offload_gb": 2520,
+      "offload_basis": "measured",
       "fees_usd": 225.07,
       "user_fees_usd": 225.07,
       "basis": "confirmed_settlement"
@@ -4277,6 +4756,7 @@
       "date": "2025-12-04",
       "service_month": "2025-12",
       "offload_gb": 2888,
+      "offload_basis": "measured",
       "fees_usd": 257.94,
       "user_fees_usd": 257.94,
       "basis": "confirmed_settlement"
@@ -4285,6 +4765,7 @@
       "date": "2025-12-05",
       "service_month": "2025-12",
       "offload_gb": 3096,
+      "offload_basis": "measured",
       "fees_usd": 276.52,
       "user_fees_usd": 276.52,
       "basis": "confirmed_settlement"
@@ -4293,6 +4774,7 @@
       "date": "2025-12-06",
       "service_month": "2025-12",
       "offload_gb": 3660,
+      "offload_basis": "measured",
       "fees_usd": 326.89,
       "user_fees_usd": 326.89,
       "basis": "confirmed_settlement"
@@ -4301,6 +4783,7 @@
       "date": "2025-12-07",
       "service_month": "2025-12",
       "offload_gb": 3934,
+      "offload_basis": "measured",
       "fees_usd": 351.37,
       "user_fees_usd": 351.37,
       "basis": "confirmed_settlement"
@@ -4309,6 +4792,7 @@
       "date": "2025-12-08",
       "service_month": "2025-12",
       "offload_gb": 2822,
+      "offload_basis": "measured",
       "fees_usd": 252.05,
       "user_fees_usd": 252.05,
       "basis": "confirmed_settlement"
@@ -4317,6 +4801,7 @@
       "date": "2025-12-09",
       "service_month": "2025-12",
       "offload_gb": 2474,
+      "offload_basis": "measured",
       "fees_usd": 220.97,
       "user_fees_usd": 220.97,
       "basis": "confirmed_settlement"
@@ -4325,6 +4810,7 @@
       "date": "2025-12-10",
       "service_month": "2025-12",
       "offload_gb": 2559,
+      "offload_basis": "measured",
       "fees_usd": 228.56,
       "user_fees_usd": 228.56,
       "basis": "confirmed_settlement"
@@ -4333,6 +4819,7 @@
       "date": "2025-12-11",
       "service_month": "2025-12",
       "offload_gb": 2619,
+      "offload_basis": "measured",
       "fees_usd": 233.92,
       "user_fees_usd": 233.92,
       "basis": "confirmed_settlement"
@@ -4341,6 +4828,7 @@
       "date": "2025-12-12",
       "service_month": "2025-12",
       "offload_gb": 3424,
+      "offload_basis": "measured",
       "fees_usd": 305.81,
       "user_fees_usd": 305.81,
       "basis": "confirmed_settlement"
@@ -4349,6 +4837,7 @@
       "date": "2025-12-13",
       "service_month": "2025-12",
       "offload_gb": 3753,
+      "offload_basis": "measured",
       "fees_usd": 335.2,
       "user_fees_usd": 335.2,
       "basis": "confirmed_settlement"
@@ -4357,6 +4846,7 @@
       "date": "2025-12-14",
       "service_month": "2025-12",
       "offload_gb": 4045,
+      "offload_basis": "measured",
       "fees_usd": 361.28,
       "user_fees_usd": 361.28,
       "basis": "confirmed_settlement"
@@ -4365,6 +4855,7 @@
       "date": "2025-12-15",
       "service_month": "2025-12",
       "offload_gb": 2711,
+      "offload_basis": "measured",
       "fees_usd": 242.13,
       "user_fees_usd": 242.13,
       "basis": "confirmed_settlement"
@@ -4373,6 +4864,7 @@
       "date": "2025-12-16",
       "service_month": "2025-12",
       "offload_gb": 2369,
+      "offload_basis": "measured",
       "fees_usd": 211.59,
       "user_fees_usd": 211.59,
       "basis": "confirmed_settlement"
@@ -4381,6 +4873,7 @@
       "date": "2025-12-17",
       "service_month": "2025-12",
       "offload_gb": 2666,
+      "offload_basis": "measured",
       "fees_usd": 238.11,
       "user_fees_usd": 238.11,
       "basis": "confirmed_settlement"
@@ -4389,6 +4882,7 @@
       "date": "2025-12-18",
       "service_month": "2025-12",
       "offload_gb": 2744,
+      "offload_basis": "measured",
       "fees_usd": 245.08,
       "user_fees_usd": 245.08,
       "basis": "confirmed_settlement"
@@ -4397,6 +4891,7 @@
       "date": "2025-12-19",
       "service_month": "2025-12",
       "offload_gb": 3047,
+      "offload_basis": "measured",
       "fees_usd": 272.14,
       "user_fees_usd": 272.14,
       "basis": "confirmed_settlement"
@@ -4405,6 +4900,7 @@
       "date": "2025-12-20",
       "service_month": "2025-12",
       "offload_gb": 3668,
+      "offload_basis": "measured",
       "fees_usd": 327.61,
       "user_fees_usd": 327.61,
       "basis": "confirmed_settlement"
@@ -4413,6 +4909,7 @@
       "date": "2025-12-21",
       "service_month": "2025-12",
       "offload_gb": 2638,
+      "offload_basis": "measured",
       "fees_usd": 235.61,
       "user_fees_usd": 235.61,
       "basis": "confirmed_settlement"
@@ -4421,6 +4918,7 @@
       "date": "2025-12-22",
       "service_month": "2025-12",
       "offload_gb": 3068,
+      "offload_basis": "measured",
       "fees_usd": 274.02,
       "user_fees_usd": 274.02,
       "basis": "confirmed_settlement"
@@ -4429,6 +4927,7 @@
       "date": "2025-12-23",
       "service_month": "2025-12",
       "offload_gb": 2716,
+      "offload_basis": "measured",
       "fees_usd": 242.58,
       "user_fees_usd": 242.58,
       "basis": "confirmed_settlement"
@@ -4437,6 +4936,7 @@
       "date": "2025-12-24",
       "service_month": "2025-12",
       "offload_gb": 2626,
+      "offload_basis": "measured",
       "fees_usd": 234.54,
       "user_fees_usd": 234.54,
       "basis": "confirmed_settlement"
@@ -4445,6 +4945,7 @@
       "date": "2025-12-25",
       "service_month": "2025-12",
       "offload_gb": 1449,
+      "offload_basis": "measured",
       "fees_usd": 129.42,
       "user_fees_usd": 129.42,
       "basis": "confirmed_settlement"
@@ -4453,6 +4954,7 @@
       "date": "2025-12-26",
       "service_month": "2025-12",
       "offload_gb": 2278,
+      "offload_basis": "measured",
       "fees_usd": 203.46,
       "user_fees_usd": 203.46,
       "basis": "confirmed_settlement"
@@ -4461,6 +4963,7 @@
       "date": "2025-12-27",
       "service_month": "2025-12",
       "offload_gb": 3119,
+      "offload_basis": "measured",
       "fees_usd": 278.57,
       "user_fees_usd": 278.57,
       "basis": "confirmed_settlement"
@@ -4469,6 +4972,7 @@
       "date": "2025-12-28",
       "service_month": "2025-12",
       "offload_gb": 2893,
+      "offload_basis": "measured",
       "fees_usd": 258.39,
       "user_fees_usd": 258.39,
       "basis": "confirmed_settlement"
@@ -4477,6 +4981,7 @@
       "date": "2025-12-29",
       "service_month": "2025-12",
       "offload_gb": 1971,
+      "offload_basis": "measured",
       "fees_usd": 176.04,
       "user_fees_usd": 176.04,
       "basis": "confirmed_settlement"
@@ -4485,6 +4990,7 @@
       "date": "2025-12-30",
       "service_month": "2025-12",
       "offload_gb": 2962,
+      "offload_basis": "measured",
       "fees_usd": 264.55,
       "user_fees_usd": 264.55,
       "basis": "confirmed_settlement"
@@ -4493,6 +4999,7 @@
       "date": "2025-12-31",
       "service_month": "2025-12",
       "offload_gb": 3134,
+      "offload_basis": "measured",
       "fees_usd": 279.91,
       "user_fees_usd": 279.91,
       "basis": "confirmed_settlement"
@@ -4501,6 +5008,7 @@
       "date": "2026-01-01",
       "service_month": "2026-01",
       "offload_gb": 3763,
+      "offload_basis": "measured",
       "fees_usd": 452.71,
       "user_fees_usd": 452.71,
       "basis": "confirmed_settlement"
@@ -4509,6 +5017,7 @@
       "date": "2026-01-02",
       "service_month": "2026-01",
       "offload_gb": 3115,
+      "offload_basis": "measured",
       "fees_usd": 374.76,
       "user_fees_usd": 374.76,
       "basis": "confirmed_settlement"
@@ -4517,6 +5026,7 @@
       "date": "2026-01-03",
       "service_month": "2026-01",
       "offload_gb": 2903,
+      "offload_basis": "measured",
       "fees_usd": 349.25,
       "user_fees_usd": 349.25,
       "basis": "confirmed_settlement"
@@ -4525,6 +5035,7 @@
       "date": "2026-01-04",
       "service_month": "2026-01",
       "offload_gb": 2917,
+      "offload_basis": "measured",
       "fees_usd": 350.93,
       "user_fees_usd": 350.93,
       "basis": "confirmed_settlement"
@@ -4533,6 +5044,7 @@
       "date": "2026-01-05",
       "service_month": "2026-01",
       "offload_gb": 2103,
+      "offload_basis": "measured",
       "fees_usd": 253,
       "user_fees_usd": 253,
       "basis": "confirmed_settlement"
@@ -4541,6 +5053,7 @@
       "date": "2026-01-06",
       "service_month": "2026-01",
       "offload_gb": 1931,
+      "offload_basis": "measured",
       "fees_usd": 232.31,
       "user_fees_usd": 232.31,
       "basis": "confirmed_settlement"
@@ -4549,6 +5062,7 @@
       "date": "2026-01-07",
       "service_month": "2026-01",
       "offload_gb": 1986,
+      "offload_basis": "measured",
       "fees_usd": 238.93,
       "user_fees_usd": 238.93,
       "basis": "confirmed_settlement"
@@ -4557,6 +5071,7 @@
       "date": "2026-01-08",
       "service_month": "2026-01",
       "offload_gb": 2112,
+      "offload_basis": "measured",
       "fees_usd": 254.09,
       "user_fees_usd": 254.09,
       "basis": "confirmed_settlement"
@@ -4565,6 +5080,7 @@
       "date": "2026-01-09",
       "service_month": "2026-01",
       "offload_gb": 2305,
+      "offload_basis": "measured",
       "fees_usd": 277.31,
       "user_fees_usd": 277.31,
       "basis": "confirmed_settlement"
@@ -4573,6 +5089,7 @@
       "date": "2026-01-10",
       "service_month": "2026-01",
       "offload_gb": 3021,
+      "offload_basis": "measured",
       "fees_usd": 363.45,
       "user_fees_usd": 363.45,
       "basis": "confirmed_settlement"
@@ -4581,6 +5098,7 @@
       "date": "2026-01-11",
       "service_month": "2026-01",
       "offload_gb": 3659,
+      "offload_basis": "measured",
       "fees_usd": 440.2,
       "user_fees_usd": 440.2,
       "basis": "confirmed_settlement"
@@ -4589,6 +5107,7 @@
       "date": "2026-01-12",
       "service_month": "2026-01",
       "offload_gb": 2375,
+      "offload_basis": "measured",
       "fees_usd": 285.73,
       "user_fees_usd": 285.73,
       "basis": "confirmed_settlement"
@@ -4597,6 +5116,7 @@
       "date": "2026-01-13",
       "service_month": "2026-01",
       "offload_gb": 2240,
+      "offload_basis": "measured",
       "fees_usd": 269.49,
       "user_fees_usd": 269.49,
       "basis": "confirmed_settlement"
@@ -4605,6 +5125,7 @@
       "date": "2026-01-14",
       "service_month": "2026-01",
       "offload_gb": 2316,
+      "offload_basis": "measured",
       "fees_usd": 278.63,
       "user_fees_usd": 278.63,
       "basis": "confirmed_settlement"
@@ -4613,6 +5134,7 @@
       "date": "2026-01-15",
       "service_month": "2026-01",
       "offload_gb": 2053,
+      "offload_basis": "measured",
       "fees_usd": 246.99,
       "user_fees_usd": 246.99,
       "basis": "confirmed_settlement"
@@ -4621,6 +5143,7 @@
       "date": "2026-01-16",
       "service_month": "2026-01",
       "offload_gb": 2898,
+      "offload_basis": "measured",
       "fees_usd": 348.65,
       "user_fees_usd": 348.65,
       "basis": "confirmed_settlement"
@@ -4629,6 +5152,7 @@
       "date": "2026-01-17",
       "service_month": "2026-01",
       "offload_gb": 3790,
+      "offload_basis": "measured",
       "fees_usd": 455.96,
       "user_fees_usd": 455.96,
       "basis": "confirmed_settlement"
@@ -4637,6 +5161,7 @@
       "date": "2026-01-18",
       "service_month": "2026-01",
       "offload_gb": 3984,
+      "offload_basis": "measured",
       "fees_usd": 479.3,
       "user_fees_usd": 479.3,
       "basis": "confirmed_settlement"
@@ -4645,6 +5170,7 @@
       "date": "2026-01-19",
       "service_month": "2026-01",
       "offload_gb": 2800,
+      "offload_basis": "measured",
       "fees_usd": 336.86,
       "user_fees_usd": 336.86,
       "basis": "confirmed_settlement"
@@ -4653,6 +5179,7 @@
       "date": "2026-01-20",
       "service_month": "2026-01",
       "offload_gb": 2198,
+      "offload_basis": "measured",
       "fees_usd": 264.43,
       "user_fees_usd": 264.43,
       "basis": "confirmed_settlement"
@@ -4661,6 +5188,7 @@
       "date": "2026-01-21",
       "service_month": "2026-01",
       "offload_gb": 2079,
+      "offload_basis": "measured",
       "fees_usd": 250.12,
       "user_fees_usd": 250.12,
       "basis": "confirmed_settlement"
@@ -4669,6 +5197,7 @@
       "date": "2026-01-22",
       "service_month": "2026-01",
       "offload_gb": 2278,
+      "offload_basis": "measured",
       "fees_usd": 274.06,
       "user_fees_usd": 274.06,
       "basis": "confirmed_settlement"
@@ -4677,6 +5206,7 @@
       "date": "2026-01-23",
       "service_month": "2026-01",
       "offload_gb": 2433,
+      "offload_basis": "measured",
       "fees_usd": 292.71,
       "user_fees_usd": 292.71,
       "basis": "confirmed_settlement"
@@ -4685,6 +5215,7 @@
       "date": "2026-01-24",
       "service_month": "2026-01",
       "offload_gb": 2903,
+      "offload_basis": "measured",
       "fees_usd": 349.25,
       "user_fees_usd": 349.25,
       "basis": "confirmed_settlement"
@@ -4693,6 +5224,7 @@
       "date": "2026-01-25",
       "service_month": "2026-01",
       "offload_gb": 2283,
+      "offload_basis": "measured",
       "fees_usd": 274.66,
       "user_fees_usd": 274.66,
       "basis": "confirmed_settlement"
@@ -4701,6 +5233,7 @@
       "date": "2026-01-26",
       "service_month": "2026-01",
       "offload_gb": 1617,
+      "offload_basis": "measured",
       "fees_usd": 194.54,
       "user_fees_usd": 194.54,
       "basis": "confirmed_settlement"
@@ -4709,6 +5242,7 @@
       "date": "2026-01-27",
       "service_month": "2026-01",
       "offload_gb": 1859,
+      "offload_basis": "measured",
       "fees_usd": 223.65,
       "user_fees_usd": 223.65,
       "basis": "confirmed_settlement"
@@ -4717,6 +5251,7 @@
       "date": "2026-01-28",
       "service_month": "2026-01",
       "offload_gb": 2095,
+      "offload_basis": "measured",
       "fees_usd": 252.04,
       "user_fees_usd": 252.04,
       "basis": "confirmed_settlement"
@@ -4725,6 +5260,7 @@
       "date": "2026-01-29",
       "service_month": "2026-01",
       "offload_gb": 2437,
+      "offload_basis": "measured",
       "fees_usd": 293.19,
       "user_fees_usd": 293.19,
       "basis": "confirmed_settlement"
@@ -4733,6 +5269,7 @@
       "date": "2026-01-30",
       "service_month": "2026-01",
       "offload_gb": 2839,
+      "offload_basis": "measured",
       "fees_usd": 341.55,
       "user_fees_usd": 341.55,
       "basis": "confirmed_settlement"
@@ -4741,6 +5278,7 @@
       "date": "2026-01-31",
       "service_month": "2026-01",
       "offload_gb": 3396,
+      "offload_basis": "measured",
       "fees_usd": 408.56,
       "user_fees_usd": 408.56,
       "basis": "confirmed_settlement"
@@ -4749,6 +5287,7 @@
       "date": "2026-02-01",
       "service_month": "2026-02",
       "offload_gb": 3105,
+      "offload_basis": "measured",
       "fees_usd": 345.3,
       "user_fees_usd": 345.3,
       "basis": "confirmed_settlement"
@@ -4757,6 +5296,7 @@
       "date": "2026-02-02",
       "service_month": "2026-02",
       "offload_gb": 2259,
+      "offload_basis": "measured",
       "fees_usd": 251.22,
       "user_fees_usd": 251.22,
       "basis": "confirmed_settlement"
@@ -4765,6 +5305,7 @@
       "date": "2026-02-03",
       "service_month": "2026-02",
       "offload_gb": 2084,
+      "offload_basis": "measured",
       "fees_usd": 231.76,
       "user_fees_usd": 231.76,
       "basis": "confirmed_settlement"
@@ -4773,6 +5314,7 @@
       "date": "2026-02-04",
       "service_month": "2026-02",
       "offload_gb": 2412,
+      "offload_basis": "measured",
       "fees_usd": 268.23,
       "user_fees_usd": 268.23,
       "basis": "confirmed_settlement"
@@ -4781,6 +5323,7 @@
       "date": "2026-02-05",
       "service_month": "2026-02",
       "offload_gb": 2610,
+      "offload_basis": "measured",
       "fees_usd": 290.25,
       "user_fees_usd": 290.25,
       "basis": "confirmed_settlement"
@@ -4789,6 +5332,7 @@
       "date": "2026-02-06",
       "service_month": "2026-02",
       "offload_gb": 3016,
+      "offload_basis": "measured",
       "fees_usd": 335.4,
       "user_fees_usd": 335.4,
       "basis": "confirmed_settlement"
@@ -4797,6 +5341,7 @@
       "date": "2026-02-07",
       "service_month": "2026-02",
       "offload_gb": 3336,
+      "offload_basis": "measured",
       "fees_usd": 370.99,
       "user_fees_usd": 370.99,
       "basis": "confirmed_settlement"
@@ -4805,6 +5350,7 @@
       "date": "2026-02-08",
       "service_month": "2026-02",
       "offload_gb": 3413,
+      "offload_basis": "measured",
       "fees_usd": 379.55,
       "user_fees_usd": 379.55,
       "basis": "confirmed_settlement"
@@ -4813,6 +5359,7 @@
       "date": "2026-02-09",
       "service_month": "2026-02",
       "offload_gb": 2435,
+      "offload_basis": "measured",
       "fees_usd": 270.79,
       "user_fees_usd": 270.79,
       "basis": "confirmed_settlement"
@@ -4821,6 +5368,7 @@
       "date": "2026-02-10",
       "service_month": "2026-02",
       "offload_gb": 2296,
+      "offload_basis": "measured",
       "fees_usd": 255.33,
       "user_fees_usd": 255.33,
       "basis": "confirmed_settlement"
@@ -4829,6 +5377,7 @@
       "date": "2026-02-11",
       "service_month": "2026-02",
       "offload_gb": 2991,
+      "offload_basis": "measured",
       "fees_usd": 332.62,
       "user_fees_usd": 332.62,
       "basis": "confirmed_settlement"
@@ -4837,6 +5386,7 @@
       "date": "2026-02-12",
       "service_month": "2026-02",
       "offload_gb": 3295,
+      "offload_basis": "measured",
       "fees_usd": 366.43,
       "user_fees_usd": 366.43,
       "basis": "confirmed_settlement"
@@ -4845,6 +5395,7 @@
       "date": "2026-02-13",
       "service_month": "2026-02",
       "offload_gb": 4791,
+      "offload_basis": "measured",
       "fees_usd": 532.79,
       "user_fees_usd": 532.79,
       "basis": "confirmed_settlement"
@@ -4853,6 +5404,7 @@
       "date": "2026-02-14",
       "service_month": "2026-02",
       "offload_gb": 5866,
+      "offload_basis": "measured",
       "fees_usd": 652.34,
       "user_fees_usd": 652.34,
       "basis": "confirmed_settlement"
@@ -4861,6 +5413,7 @@
       "date": "2026-02-15",
       "service_month": "2026-02",
       "offload_gb": 6272,
+      "offload_basis": "measured",
       "fees_usd": 697.49,
       "user_fees_usd": 697.49,
       "basis": "confirmed_settlement"
@@ -4869,6 +5422,7 @@
       "date": "2026-02-16",
       "service_month": "2026-02",
       "offload_gb": 4900,
+      "offload_basis": "measured",
       "fees_usd": 544.92,
       "user_fees_usd": 544.92,
       "basis": "confirmed_settlement"
@@ -4877,6 +5431,7 @@
       "date": "2026-02-17",
       "service_month": "2026-02",
       "offload_gb": 4047,
+      "offload_basis": "measured",
       "fees_usd": 450.06,
       "user_fees_usd": 450.06,
       "basis": "confirmed_settlement"
@@ -4885,6 +5440,7 @@
       "date": "2026-02-18",
       "service_month": "2026-02",
       "offload_gb": 3804,
+      "offload_basis": "measured",
       "fees_usd": 423.03,
       "user_fees_usd": 423.03,
       "basis": "confirmed_settlement"
@@ -4893,6 +5449,7 @@
       "date": "2026-02-19",
       "service_month": "2026-02",
       "offload_gb": 3526,
+      "offload_basis": "measured",
       "fees_usd": 392.12,
       "user_fees_usd": 392.12,
       "basis": "confirmed_settlement"
@@ -4901,6 +5458,7 @@
       "date": "2026-02-20",
       "service_month": "2026-02",
       "offload_gb": 4080,
+      "offload_basis": "measured",
       "fees_usd": 453.73,
       "user_fees_usd": 453.73,
       "basis": "confirmed_settlement"
@@ -4909,6 +5467,7 @@
       "date": "2026-02-21",
       "service_month": "2026-02",
       "offload_gb": 5107,
+      "offload_basis": "measured",
       "fees_usd": 567.94,
       "user_fees_usd": 567.94,
       "basis": "confirmed_settlement"
@@ -4917,6 +5476,7 @@
       "date": "2026-02-22",
       "service_month": "2026-02",
       "offload_gb": 6107,
+      "offload_basis": "measured",
       "fees_usd": 679.14,
       "user_fees_usd": 679.14,
       "basis": "confirmed_settlement"
@@ -4925,6 +5485,7 @@
       "date": "2026-02-23",
       "service_month": "2026-02",
       "offload_gb": 3500,
+      "offload_basis": "measured",
       "fees_usd": 389.23,
       "user_fees_usd": 389.23,
       "basis": "confirmed_settlement"
@@ -4933,6 +5494,7 @@
       "date": "2026-02-24",
       "service_month": "2026-02",
       "offload_gb": 2874,
+      "offload_basis": "measured",
       "fees_usd": 319.61,
       "user_fees_usd": 319.61,
       "basis": "confirmed_settlement"
@@ -4941,6 +5503,7 @@
       "date": "2026-02-25",
       "service_month": "2026-02",
       "offload_gb": 3342,
+      "offload_basis": "measured",
       "fees_usd": 371.65,
       "user_fees_usd": 371.65,
       "basis": "confirmed_settlement"
@@ -4949,6 +5512,7 @@
       "date": "2026-02-26",
       "service_month": "2026-02",
       "offload_gb": 4214,
+      "offload_basis": "measured",
       "fees_usd": 468.63,
       "user_fees_usd": 468.63,
       "basis": "confirmed_settlement"
@@ -4957,6 +5521,7 @@
       "date": "2026-02-27",
       "service_month": "2026-02",
       "offload_gb": 5162,
+      "offload_basis": "measured",
       "fees_usd": 574.05,
       "user_fees_usd": 574.05,
       "basis": "confirmed_settlement"
@@ -4965,6 +5530,7 @@
       "date": "2026-02-28",
       "service_month": "2026-02",
       "offload_gb": 6305,
+      "offload_basis": "measured",
       "fees_usd": 701.16,
       "user_fees_usd": 701.16,
       "basis": "confirmed_settlement"
@@ -4973,6 +5539,7 @@
       "date": "2026-03-01",
       "service_month": "2026-03",
       "offload_gb": 5690,
+      "offload_basis": "measured",
       "fees_usd": 553.5,
       "user_fees_usd": 553.5,
       "basis": "confirmed_settlement"
@@ -4981,6 +5548,7 @@
       "date": "2026-03-02",
       "service_month": "2026-03",
       "offload_gb": 4184,
+      "offload_basis": "measured",
       "fees_usd": 407,
       "user_fees_usd": 407,
       "basis": "confirmed_settlement"
@@ -4989,6 +5557,7 @@
       "date": "2026-03-03",
       "service_month": "2026-03",
       "offload_gb": 3526,
+      "offload_basis": "measured",
       "fees_usd": 342.99,
       "user_fees_usd": 342.99,
       "basis": "confirmed_settlement"
@@ -4997,6 +5566,7 @@
       "date": "2026-03-04",
       "service_month": "2026-03",
       "offload_gb": 3779,
+      "offload_basis": "measured",
       "fees_usd": 367.6,
       "user_fees_usd": 367.6,
       "basis": "confirmed_settlement"
@@ -5005,6 +5575,7 @@
       "date": "2026-03-05",
       "service_month": "2026-03",
       "offload_gb": 4070,
+      "offload_basis": "measured",
       "fees_usd": 395.91,
       "user_fees_usd": 395.91,
       "basis": "confirmed_settlement"
@@ -5013,6 +5584,7 @@
       "date": "2026-03-06",
       "service_month": "2026-03",
       "offload_gb": 4759,
+      "offload_basis": "measured",
       "fees_usd": 462.93,
       "user_fees_usd": 462.93,
       "basis": "confirmed_settlement"
@@ -5021,6 +5593,7 @@
       "date": "2026-03-07",
       "service_month": "2026-03",
       "offload_gb": 5814,
+      "offload_basis": "measured",
       "fees_usd": 565.56,
       "user_fees_usd": 565.56,
       "basis": "confirmed_settlement"
@@ -5029,6 +5602,7 @@
       "date": "2026-03-08",
       "service_month": "2026-03",
       "offload_gb": 6570,
+      "offload_basis": "measured",
       "fees_usd": 639.1,
       "user_fees_usd": 639.1,
       "basis": "confirmed_settlement"
@@ -5037,6 +5611,7 @@
       "date": "2026-03-09",
       "service_month": "2026-03",
       "offload_gb": 4665,
+      "offload_basis": "measured",
       "fees_usd": 453.79,
       "user_fees_usd": 453.79,
       "basis": "confirmed_settlement"
@@ -5045,6 +5620,7 @@
       "date": "2026-03-10",
       "service_month": "2026-03",
       "offload_gb": 3972,
+      "offload_basis": "measured",
       "fees_usd": 386.38,
       "user_fees_usd": 386.38,
       "basis": "confirmed_settlement"
@@ -5053,6 +5629,7 @@
       "date": "2026-03-11",
       "service_month": "2026-03",
       "offload_gb": 4277,
+      "offload_basis": "measured",
       "fees_usd": 416.05,
       "user_fees_usd": 416.05,
       "basis": "confirmed_settlement"
@@ -5061,6 +5638,7 @@
       "date": "2026-03-12",
       "service_month": "2026-03",
       "offload_gb": 4634,
+      "offload_basis": "measured",
       "fees_usd": 450.78,
       "user_fees_usd": 450.78,
       "basis": "confirmed_settlement"
@@ -5069,6 +5647,7 @@
       "date": "2026-03-13",
       "service_month": "2026-03",
       "offload_gb": 5576,
+      "offload_basis": "measured",
       "fees_usd": 542.41,
       "user_fees_usd": 542.41,
       "basis": "confirmed_settlement"
@@ -5077,6 +5656,7 @@
       "date": "2026-03-14",
       "service_month": "2026-03",
       "offload_gb": 6454,
+      "offload_basis": "measured",
       "fees_usd": 627.82,
       "user_fees_usd": 627.82,
       "basis": "confirmed_settlement"
@@ -5085,6 +5665,7 @@
       "date": "2026-03-15",
       "service_month": "2026-03",
       "offload_gb": 7264,
+      "offload_basis": "measured",
       "fees_usd": 706.61,
       "user_fees_usd": 706.61,
       "basis": "confirmed_settlement"
@@ -5093,6 +5674,7 @@
       "date": "2026-03-16",
       "service_month": "2026-03",
       "offload_gb": 4330,
+      "offload_basis": "measured",
       "fees_usd": 421.2,
       "user_fees_usd": 421.2,
       "basis": "confirmed_settlement"
@@ -5101,6 +5683,7 @@
       "date": "2026-03-17",
       "service_month": "2026-03",
       "offload_gb": 3966,
+      "offload_basis": "measured",
       "fees_usd": 385.8,
       "user_fees_usd": 385.8,
       "basis": "confirmed_settlement"
@@ -5109,6 +5692,7 @@
       "date": "2026-03-18",
       "service_month": "2026-03",
       "offload_gb": 4814,
+      "offload_basis": "measured",
       "fees_usd": 468.29,
       "user_fees_usd": 468.29,
       "basis": "confirmed_settlement"
@@ -5117,6 +5701,7 @@
       "date": "2026-03-19",
       "service_month": "2026-03",
       "offload_gb": 4352,
+      "offload_basis": "measured",
       "fees_usd": 423.34,
       "user_fees_usd": 423.34,
       "basis": "confirmed_settlement"
@@ -5125,6 +5710,7 @@
       "date": "2026-03-20",
       "service_month": "2026-03",
       "offload_gb": 5415,
+      "offload_basis": "measured",
       "fees_usd": 526.75,
       "user_fees_usd": 526.75,
       "basis": "confirmed_settlement"
@@ -5133,6 +5719,7 @@
       "date": "2026-03-21",
       "service_month": "2026-03",
       "offload_gb": 6305,
+      "offload_basis": "measured",
       "fees_usd": 613.32,
       "user_fees_usd": 613.32,
       "basis": "confirmed_settlement"
@@ -5141,6 +5728,7 @@
       "date": "2026-03-22",
       "service_month": "2026-03",
       "offload_gb": 5960,
+      "offload_basis": "measured",
       "fees_usd": 579.76,
       "user_fees_usd": 579.76,
       "basis": "confirmed_settlement"
@@ -5149,6 +5737,7 @@
       "date": "2026-03-23",
       "service_month": "2026-03",
       "offload_gb": 4895,
+      "offload_basis": "measured",
       "fees_usd": 476.16,
       "user_fees_usd": 476.16,
       "basis": "confirmed_settlement"
@@ -5157,6 +5746,7 @@
       "date": "2026-03-24",
       "service_month": "2026-03",
       "offload_gb": 4066,
+      "offload_basis": "measured",
       "fees_usd": 395.52,
       "user_fees_usd": 395.52,
       "basis": "confirmed_settlement"
@@ -5165,6 +5755,7 @@
       "date": "2026-03-25",
       "service_month": "2026-03",
       "offload_gb": 4489,
+      "offload_basis": "measured",
       "fees_usd": 436.67,
       "user_fees_usd": 436.67,
       "basis": "confirmed_settlement"
@@ -5173,6 +5764,7 @@
       "date": "2026-03-26",
       "service_month": "2026-03",
       "offload_gb": 4552,
+      "offload_basis": "measured",
       "fees_usd": 442.8,
       "user_fees_usd": 442.8,
       "basis": "confirmed_settlement"
@@ -5181,6 +5773,7 @@
       "date": "2026-03-27",
       "service_month": "2026-03",
       "offload_gb": 3965,
+      "offload_basis": "measured",
       "fees_usd": 385.7,
       "user_fees_usd": 385.7,
       "basis": "confirmed_settlement"
@@ -5189,6 +5782,7 @@
       "date": "2026-03-28",
       "service_month": "2026-03",
       "offload_gb": 6656,
+      "offload_basis": "measured",
       "fees_usd": 647.47,
       "user_fees_usd": 647.47,
       "basis": "confirmed_settlement"
@@ -5197,6 +5791,7 @@
       "date": "2026-03-29",
       "service_month": "2026-03",
       "offload_gb": 6575,
+      "offload_basis": "measured",
       "fees_usd": 639.59,
       "user_fees_usd": 639.59,
       "basis": "confirmed_settlement"
@@ -5205,6 +5800,7 @@
       "date": "2026-03-30",
       "service_month": "2026-03",
       "offload_gb": 4400,
+      "offload_basis": "measured",
       "fees_usd": 428.01,
       "user_fees_usd": 428.01,
       "basis": "confirmed_settlement"
@@ -5213,6 +5809,7 @@
       "date": "2026-03-31",
       "service_month": "2026-03",
       "offload_gb": 3785,
+      "offload_basis": "measured",
       "fees_usd": 368.19,
       "user_fees_usd": 368.19,
       "basis": "confirmed_settlement"
@@ -5221,6 +5818,7 @@
       "date": "2026-04-01",
       "service_month": "2026-04",
       "offload_gb": 4105,
+      "offload_basis": "measured",
       "fees_usd": 589.08,
       "user_fees_usd": 589.08,
       "basis": "official_projection"
@@ -5229,6 +5827,7 @@
       "date": "2026-04-02",
       "service_month": "2026-04",
       "offload_gb": 4228,
+      "offload_basis": "measured",
       "fees_usd": 606.73,
       "user_fees_usd": 606.73,
       "basis": "official_projection"
@@ -5237,6 +5836,7 @@
       "date": "2026-04-03",
       "service_month": "2026-04",
       "offload_gb": 5650,
+      "offload_basis": "measured",
       "fees_usd": 810.8,
       "user_fees_usd": 810.8,
       "basis": "official_projection"
@@ -5245,6 +5845,7 @@
       "date": "2026-04-04",
       "service_month": "2026-04",
       "offload_gb": 4877,
+      "offload_basis": "measured",
       "fees_usd": 699.87,
       "user_fees_usd": 699.87,
       "basis": "official_projection"
@@ -5253,6 +5854,7 @@
       "date": "2026-04-05",
       "service_month": "2026-04",
       "offload_gb": 6800,
+      "offload_basis": "measured",
       "fees_usd": 975.82,
       "user_fees_usd": 975.82,
       "basis": "official_projection"
@@ -5261,6 +5863,7 @@
       "date": "2026-04-06",
       "service_month": "2026-04",
       "offload_gb": 4189,
+      "offload_basis": "measured",
       "fees_usd": 601.14,
       "user_fees_usd": 601.14,
       "basis": "official_projection"
@@ -5269,6 +5872,7 @@
       "date": "2026-04-07",
       "service_month": "2026-04",
       "offload_gb": 4426,
+      "offload_basis": "measured",
       "fees_usd": 635.15,
       "user_fees_usd": 635.15,
       "basis": "official_projection"
@@ -5277,6 +5881,7 @@
       "date": "2026-04-08",
       "service_month": "2026-04",
       "offload_gb": 4632,
+      "offload_basis": "measured",
       "fees_usd": 664.71,
       "user_fees_usd": 664.71,
       "basis": "official_projection"
@@ -5285,6 +5890,7 @@
       "date": "2026-04-09",
       "service_month": "2026-04",
       "offload_gb": 4997,
+      "offload_basis": "measured",
       "fees_usd": 717.09,
       "user_fees_usd": 717.09,
       "basis": "official_projection"
@@ -5293,6 +5899,7 @@
       "date": "2026-04-10",
       "service_month": "2026-04",
       "offload_gb": 5789,
+      "offload_basis": "measured",
       "fees_usd": 830.74,
       "user_fees_usd": 830.74,
       "basis": "official_projection"
@@ -5301,6 +5908,7 @@
       "date": "2026-04-11",
       "service_month": "2026-04",
       "offload_gb": 5628,
+      "offload_basis": "measured",
       "fees_usd": 807.64,
       "user_fees_usd": 807.64,
       "basis": "official_projection"
@@ -5309,6 +5917,7 @@
       "date": "2026-04-12",
       "service_month": "2026-04",
       "offload_gb": 7916,
+      "offload_basis": "measured",
       "fees_usd": 1135.97,
       "user_fees_usd": 1135.97,
       "basis": "official_projection"
@@ -5317,6 +5926,7 @@
       "date": "2026-04-13",
       "service_month": "2026-04",
       "offload_gb": 4397,
+      "offload_basis": "measured",
       "fees_usd": 630.99,
       "user_fees_usd": 630.99,
       "basis": "official_projection"
@@ -5325,6 +5935,7 @@
       "date": "2026-04-14",
       "service_month": "2026-04",
       "offload_gb": 3951,
+      "offload_basis": "measured",
       "fees_usd": 566.98,
       "user_fees_usd": 566.98,
       "basis": "official_projection"
@@ -5333,6 +5944,7 @@
       "date": "2026-04-15",
       "service_month": "2026-04",
       "offload_gb": 4714,
+      "offload_basis": "measured",
       "fees_usd": 676.48,
       "user_fees_usd": 676.48,
       "basis": "official_projection"
@@ -5341,6 +5953,7 @@
       "date": "2026-04-16",
       "service_month": "2026-04",
       "offload_gb": 5319,
+      "offload_basis": "measured",
       "fees_usd": 763.3,
       "user_fees_usd": 763.3,
       "basis": "official_projection"
@@ -5349,6 +5962,7 @@
       "date": "2026-04-17",
       "service_month": "2026-04",
       "offload_gb": 6837,
+      "offload_basis": "measured",
       "fees_usd": 981.13,
       "user_fees_usd": 981.13,
       "basis": "official_projection"
@@ -5357,6 +5971,7 @@
       "date": "2026-04-18",
       "service_month": "2026-04",
       "offload_gb": 8518,
+      "offload_basis": "measured",
       "fees_usd": 1222.36,
       "user_fees_usd": 1222.36,
       "basis": "official_projection"
@@ -5365,6 +5980,7 @@
       "date": "2026-04-19",
       "service_month": "2026-04",
       "offload_gb": 8646,
+      "offload_basis": "measured",
       "fees_usd": 1240.73,
       "user_fees_usd": 1240.73,
       "basis": "official_projection"
@@ -5373,6 +5989,7 @@
       "date": "2026-04-20",
       "service_month": "2026-04",
       "offload_gb": 4981,
+      "offload_basis": "measured",
       "fees_usd": 714.79,
       "user_fees_usd": 714.79,
       "basis": "official_projection"
@@ -5381,6 +5998,7 @@
       "date": "2026-04-21",
       "service_month": "2026-04",
       "offload_gb": 4240,
+      "offload_basis": "measured",
       "fees_usd": 608.45,
       "user_fees_usd": 608.45,
       "basis": "official_projection"
@@ -5389,6 +6007,7 @@
       "date": "2026-04-22",
       "service_month": "2026-04",
       "offload_gb": 4587,
+      "offload_basis": "measured",
       "fees_usd": 658.25,
       "user_fees_usd": 658.25,
       "basis": "official_projection"
@@ -5397,6 +6016,7 @@
       "date": "2026-04-23",
       "service_month": "2026-04",
       "offload_gb": 5017,
+      "offload_basis": "measured",
       "fees_usd": 719.96,
       "user_fees_usd": 719.96,
       "basis": "official_projection"
@@ -5405,6 +6025,7 @@
       "date": "2026-04-24",
       "service_month": "2026-04",
       "offload_gb": 6655,
+      "offload_basis": "measured",
       "fees_usd": 955.02,
       "user_fees_usd": 955.02,
       "basis": "official_projection"
@@ -5413,6 +6034,7 @@
       "date": "2026-04-25",
       "service_month": "2026-04",
       "offload_gb": 8728,
+      "offload_basis": "measured",
       "fees_usd": 1252.5,
       "user_fees_usd": 1252.5,
       "basis": "official_projection"
@@ -5421,6 +6043,7 @@
       "date": "2026-04-26",
       "service_month": "2026-04",
       "offload_gb": 8798,
+      "offload_basis": "measured",
       "fees_usd": 1262.54,
       "user_fees_usd": 1262.54,
       "basis": "official_projection"
@@ -5429,6 +6052,7 @@
       "date": "2026-04-27",
       "service_month": "2026-04",
       "offload_gb": 5331,
+      "offload_basis": "measured",
       "fees_usd": 765.02,
       "user_fees_usd": 765.02,
       "basis": "official_projection"
@@ -5437,6 +6061,7 @@
       "date": "2026-04-28",
       "service_month": "2026-04",
       "offload_gb": 4854,
+      "offload_basis": "measured",
       "fees_usd": 696.57,
       "user_fees_usd": 696.57,
       "basis": "official_projection"
@@ -5445,6 +6070,7 @@
       "date": "2026-04-29",
       "service_month": "2026-04",
       "offload_gb": 5083,
+      "offload_basis": "measured",
       "fees_usd": 729.43,
       "user_fees_usd": 729.43,
       "basis": "official_projection"
@@ -5453,6 +6079,7 @@
       "date": "2026-04-30",
       "service_month": "2026-04",
       "offload_gb": 5082,
+      "offload_basis": "measured",
       "fees_usd": 729.29,
       "user_fees_usd": 729.29,
       "basis": "official_projection"
@@ -5461,6 +6088,7 @@
       "date": "2026-05-01",
       "service_month": "2026-05",
       "offload_gb": 6066,
+      "offload_basis": "measured",
       "fees_usd": 945.65,
       "user_fees_usd": 945.65,
       "basis": "official_projection_partially_confirmed"
@@ -5469,6 +6097,7 @@
       "date": "2026-05-02",
       "service_month": "2026-05",
       "offload_gb": 7853,
+      "offload_basis": "measured",
       "fees_usd": 1224.23,
       "user_fees_usd": 1224.23,
       "basis": "official_projection_partially_confirmed"
@@ -5477,6 +6106,7 @@
       "date": "2026-05-03",
       "service_month": "2026-05",
       "offload_gb": 8789,
+      "offload_basis": "measured",
       "fees_usd": 1370.14,
       "user_fees_usd": 1370.14,
       "basis": "official_projection_partially_confirmed"
@@ -5485,6 +6115,7 @@
       "date": "2026-05-04",
       "service_month": "2026-05",
       "offload_gb": 5281,
+      "offload_basis": "measured",
       "fees_usd": 823.27,
       "user_fees_usd": 823.27,
       "basis": "official_projection_partially_confirmed"
@@ -5493,6 +6124,7 @@
       "date": "2026-05-05",
       "service_month": "2026-05",
       "offload_gb": 5263,
+      "offload_basis": "measured",
       "fees_usd": 820.46,
       "user_fees_usd": 820.46,
       "basis": "official_projection_partially_confirmed"
@@ -5501,6 +6133,7 @@
       "date": "2026-05-06",
       "service_month": "2026-05",
       "offload_gb": 6022,
+      "offload_basis": "measured",
       "fees_usd": 938.79,
       "user_fees_usd": 938.79,
       "basis": "official_projection_partially_confirmed"
@@ -5509,6 +6142,7 @@
       "date": "2026-05-07",
       "service_month": "2026-05",
       "offload_gb": 5311,
+      "offload_basis": "measured",
       "fees_usd": 827.95,
       "user_fees_usd": 827.95,
       "basis": "official_projection_partially_confirmed"
@@ -5517,6 +6151,7 @@
       "date": "2026-05-08",
       "service_month": "2026-05",
       "offload_gb": 6629,
+      "offload_basis": "measured",
       "fees_usd": 1033.41,
       "user_fees_usd": 1033.41,
       "basis": "official_projection_partially_confirmed"
@@ -5525,6 +6160,7 @@
       "date": "2026-05-09",
       "service_month": "2026-05",
       "offload_gb": 8497,
+      "offload_basis": "measured",
       "fees_usd": 1324.62,
       "user_fees_usd": 1324.62,
       "basis": "official_projection_partially_confirmed"
@@ -5533,6 +6169,7 @@
       "date": "2026-05-10",
       "service_month": "2026-05",
       "offload_gb": 9145,
+      "offload_basis": "measured",
       "fees_usd": 1425.64,
       "user_fees_usd": 1425.64,
       "basis": "official_projection_partially_confirmed"
@@ -5541,6 +6178,7 @@
       "date": "2026-05-11",
       "service_month": "2026-05",
       "offload_gb": 4903,
+      "offload_basis": "measured",
       "fees_usd": 764.34,
       "user_fees_usd": 764.34,
       "basis": "official_projection_partially_confirmed"
@@ -5549,6 +6187,7 @@
       "date": "2026-05-12",
       "service_month": "2026-05",
       "offload_gb": 4752,
+      "offload_basis": "measured",
       "fees_usd": 740.8,
       "user_fees_usd": 740.8,
       "basis": "official_projection_partially_confirmed"
@@ -5557,6 +6196,7 @@
       "date": "2026-05-13",
       "service_month": "2026-05",
       "offload_gb": 5085,
+      "offload_basis": "measured",
       "fees_usd": 792.71,
       "user_fees_usd": 792.71,
       "basis": "official_projection_partially_confirmed"
@@ -5565,6 +6205,7 @@
       "date": "2026-05-14",
       "service_month": "2026-05",
       "offload_gb": 5620,
+      "offload_basis": "measured",
       "fees_usd": 876.12,
       "user_fees_usd": 876.12,
       "basis": "official_projection_partially_confirmed"
@@ -5573,6 +6214,7 @@
       "date": "2026-05-15",
       "service_month": "2026-05",
       "offload_gb": 6731,
+      "offload_basis": "measured",
       "fees_usd": 1049.31,
       "user_fees_usd": 1049.31,
       "basis": "official_projection_partially_confirmed"
@@ -5581,6 +6223,7 @@
       "date": "2026-05-16",
       "service_month": "2026-05",
       "offload_gb": 8552,
+      "offload_basis": "measured",
       "fees_usd": 1333.2,
       "user_fees_usd": 1333.2,
       "basis": "official_projection_partially_confirmed"
@@ -5589,6 +6232,7 @@
       "date": "2026-05-17",
       "service_month": "2026-05",
       "offload_gb": 9336,
+      "offload_basis": "measured",
       "fees_usd": 1455.41,
       "user_fees_usd": 1455.41,
       "basis": "official_projection_partially_confirmed"
@@ -5597,6 +6241,7 @@
       "date": "2026-05-18",
       "service_month": "2026-05",
       "offload_gb": 5877,
+      "offload_basis": "measured",
       "fees_usd": 916.18,
       "user_fees_usd": 916.18,
       "basis": "official_projection_partially_confirmed"
@@ -5605,6 +6250,7 @@
       "date": "2026-05-19",
       "service_month": "2026-05",
       "offload_gb": 5450,
+      "offload_basis": "measured",
       "fees_usd": 849.62,
       "user_fees_usd": 849.62,
       "basis": "official_projection_partially_confirmed"
@@ -5613,6 +6259,7 @@
       "date": "2026-05-20",
       "service_month": "2026-05",
       "offload_gb": 5479,
+      "offload_basis": "measured",
       "fees_usd": 854.14,
       "user_fees_usd": 854.14,
       "basis": "official_projection_partially_confirmed"
@@ -5621,6 +6268,7 @@
       "date": "2026-05-21",
       "service_month": "2026-05",
       "offload_gb": 6045,
+      "offload_basis": "measured",
       "fees_usd": 942.37,
       "user_fees_usd": 942.37,
       "basis": "official_projection_partially_confirmed"
@@ -5629,6 +6277,7 @@
       "date": "2026-05-22",
       "service_month": "2026-05",
       "offload_gb": 6394,
+      "offload_basis": "measured",
       "fees_usd": 996.78,
       "user_fees_usd": 996.78,
       "basis": "official_projection_partially_confirmed"
@@ -5637,6 +6286,7 @@
       "date": "2026-05-23",
       "service_month": "2026-05",
       "offload_gb": 8066,
+      "offload_basis": "measured",
       "fees_usd": 1257.43,
       "user_fees_usd": 1257.43,
       "basis": "official_projection_partially_confirmed"
@@ -5645,6 +6295,7 @@
       "date": "2026-05-24",
       "service_month": "2026-05",
       "offload_gb": 8773,
+      "offload_basis": "measured",
       "fees_usd": 1367.65,
       "user_fees_usd": 1367.65,
       "basis": "official_projection_partially_confirmed"
@@ -5653,6 +6304,7 @@
       "date": "2026-05-25",
       "service_month": "2026-05",
       "offload_gb": 6716,
+      "offload_basis": "measured",
       "fees_usd": 1046.98,
       "user_fees_usd": 1046.98,
       "basis": "official_projection_partially_confirmed"
@@ -5661,6 +6313,7 @@
       "date": "2026-05-26",
       "service_month": "2026-05",
       "offload_gb": 5202,
+      "offload_basis": "measured",
       "fees_usd": 810.95,
       "user_fees_usd": 810.95,
       "basis": "official_projection_partially_confirmed"
@@ -5669,6 +6322,7 @@
       "date": "2026-05-27",
       "service_month": "2026-05",
       "offload_gb": 5824,
+      "offload_basis": "measured",
       "fees_usd": 907.92,
       "user_fees_usd": 907.92,
       "basis": "official_projection_partially_confirmed"
@@ -5677,6 +6331,7 @@
       "date": "2026-05-28",
       "service_month": "2026-05",
       "offload_gb": 6256,
+      "offload_basis": "measured",
       "fees_usd": 975.27,
       "user_fees_usd": 975.27,
       "basis": "official_projection_partially_confirmed"
@@ -5685,6 +6340,7 @@
       "date": "2026-05-29",
       "service_month": "2026-05",
       "offload_gb": 7320,
+      "offload_basis": "measured",
       "fees_usd": 1141.14,
       "user_fees_usd": 1141.14,
       "basis": "official_projection_partially_confirmed"
@@ -5693,6 +6349,7 @@
       "date": "2026-05-30",
       "service_month": "2026-05",
       "offload_gb": 8640,
+      "offload_basis": "measured",
       "fees_usd": 1346.91,
       "user_fees_usd": 1346.91,
       "basis": "official_projection_partially_confirmed"
@@ -5701,6 +6358,7 @@
       "date": "2026-05-31",
       "service_month": "2026-05",
       "offload_gb": 10257,
+      "offload_basis": "measured",
       "fees_usd": 1598.99,
       "user_fees_usd": 1598.99,
       "basis": "official_projection_partially_confirmed"
@@ -5709,6 +6367,7 @@
       "date": "2026-06-01",
       "service_month": "2026-06",
       "offload_gb": 6189,
+      "offload_basis": "measured",
       "fees_usd": 952.77,
       "user_fees_usd": 952.77,
       "basis": "official_projection"
@@ -5717,6 +6376,7 @@
       "date": "2026-06-02",
       "service_month": "2026-06",
       "offload_gb": 5504,
+      "offload_basis": "measured",
       "fees_usd": 847.31,
       "user_fees_usd": 847.31,
       "basis": "official_projection"
@@ -5725,6 +6385,7 @@
       "date": "2026-06-03",
       "service_month": "2026-06",
       "offload_gb": 6019,
+      "offload_basis": "measured",
       "fees_usd": 926.6,
       "user_fees_usd": 926.6,
       "basis": "official_projection"
@@ -5733,6 +6394,7 @@
       "date": "2026-06-04",
       "service_month": "2026-06",
       "offload_gb": 6969,
+      "offload_basis": "measured",
       "fees_usd": 1072.84,
       "user_fees_usd": 1072.84,
       "basis": "official_projection"
@@ -5741,6 +6403,7 @@
       "date": "2026-06-05",
       "service_month": "2026-06",
       "offload_gb": 6949,
+      "offload_basis": "measured",
       "fees_usd": 1069.76,
       "user_fees_usd": 1069.76,
       "basis": "official_projection"
@@ -5749,6 +6412,7 @@
       "date": "2026-06-06",
       "service_month": "2026-06",
       "offload_gb": 9118,
+      "offload_basis": "measured",
       "fees_usd": 1403.67,
       "user_fees_usd": 1403.67,
       "basis": "official_projection"
@@ -5757,6 +6421,7 @@
       "date": "2026-06-07",
       "service_month": "2026-06",
       "offload_gb": 9361,
+      "offload_basis": "measured",
       "fees_usd": 1441.08,
       "user_fees_usd": 1441.08,
       "basis": "official_projection"
@@ -5765,6 +6430,7 @@
       "date": "2026-06-08",
       "service_month": "2026-06",
       "offload_gb": 6215,
+      "offload_basis": "measured",
       "fees_usd": 956.77,
       "user_fees_usd": 956.77,
       "basis": "official_projection"
@@ -5773,6 +6439,7 @@
       "date": "2026-06-09",
       "service_month": "2026-06",
       "offload_gb": 5953,
+      "offload_basis": "measured",
       "fees_usd": 916.43,
       "user_fees_usd": 916.43,
       "basis": "official_projection"
@@ -5781,6 +6448,7 @@
       "date": "2026-06-10",
       "service_month": "2026-06",
       "offload_gb": 5883,
+      "offload_basis": "measured",
       "fees_usd": 905.66,
       "user_fees_usd": 905.66,
       "basis": "official_projection"
@@ -5789,6 +6457,7 @@
       "date": "2026-06-11",
       "service_month": "2026-06",
       "offload_gb": 7608,
+      "offload_basis": "measured",
       "fees_usd": 1171.21,
       "user_fees_usd": 1171.21,
       "basis": "official_projection"
@@ -5797,6 +6466,7 @@
       "date": "2026-06-12",
       "service_month": "2026-06",
       "offload_gb": 6971,
+      "offload_basis": "measured",
       "fees_usd": 1073.15,
       "user_fees_usd": 1073.15,
       "basis": "official_projection"
@@ -5805,6 +6475,7 @@
       "date": "2026-06-13",
       "service_month": "2026-06",
       "offload_gb": 8607,
+      "offload_basis": "measured",
       "fees_usd": 1325.01,
       "user_fees_usd": 1325.01,
       "basis": "official_projection"
@@ -5813,6 +6484,7 @@
       "date": "2026-06-14",
       "service_month": "2026-06",
       "offload_gb": 10011,
+      "offload_basis": "measured",
       "fees_usd": 1541.14,
       "user_fees_usd": 1541.14,
       "basis": "official_projection"
@@ -5821,6 +6493,7 @@
       "date": "2026-06-15",
       "service_month": "2026-06",
       "offload_gb": 6317,
+      "offload_basis": "measured",
       "fees_usd": 972.47,
       "user_fees_usd": 972.47,
       "basis": "official_projection"
@@ -5829,6 +6502,7 @@
       "date": "2026-06-16",
       "service_month": "2026-06",
       "offload_gb": 5386,
+      "offload_basis": "measured",
       "fees_usd": 829.15,
       "user_fees_usd": 829.15,
       "basis": "official_projection"
@@ -5837,6 +6511,7 @@
       "date": "2026-06-17",
       "service_month": "2026-06",
       "offload_gb": 6045,
+      "offload_basis": "measured",
       "fees_usd": 930.6,
       "user_fees_usd": 930.6,
       "basis": "official_projection"
@@ -5845,6 +6520,7 @@
       "date": "2026-06-18",
       "service_month": "2026-06",
       "offload_gb": 6336,
+      "offload_basis": "measured",
       "fees_usd": 975.4,
       "user_fees_usd": 975.4,
       "basis": "official_projection"
@@ -5853,6 +6529,7 @@
       "date": "2026-06-19",
       "service_month": "2026-06",
       "offload_gb": 7692,
+      "offload_basis": "measured",
       "fees_usd": 1184.15,
       "user_fees_usd": 1184.15,
       "basis": "official_projection"
@@ -5861,6 +6538,7 @@
       "date": "2026-06-20",
       "service_month": "2026-06",
       "offload_gb": 9288,
+      "offload_basis": "measured",
       "fees_usd": 1429.84,
       "user_fees_usd": 1429.84,
       "basis": "official_projection"
@@ -5869,6 +6547,7 @@
       "date": "2026-06-21",
       "service_month": "2026-06",
       "offload_gb": 9144,
+      "offload_basis": "measured",
       "fees_usd": 1407.67,
       "user_fees_usd": 1407.67,
       "basis": "official_projection"
@@ -5877,6 +6556,7 @@
       "date": "2026-06-22",
       "service_month": "2026-06",
       "offload_gb": 5797,
+      "offload_basis": "measured",
       "fees_usd": 892.42,
       "user_fees_usd": 892.42,
       "basis": "official_projection"
@@ -5885,6 +6565,7 @@
       "date": "2026-06-23",
       "service_month": "2026-06",
       "offload_gb": 5422,
+      "offload_basis": "measured",
       "fees_usd": 834.69,
       "user_fees_usd": 834.69,
       "basis": "official_projection"
@@ -5893,6 +6574,7 @@
       "date": "2026-06-24",
       "service_month": "2026-06",
       "offload_gb": 5663,
+      "offload_basis": "measured",
       "fees_usd": 871.79,
       "user_fees_usd": 871.79,
       "basis": "official_projection"
@@ -5901,6 +6583,7 @@
       "date": "2026-06-25",
       "service_month": "2026-06",
       "offload_gb": 6360,
+      "offload_basis": "measured",
       "fees_usd": 979.09,
       "user_fees_usd": 979.09,
       "basis": "official_projection"
@@ -5909,6 +6592,7 @@
       "date": "2026-06-26",
       "service_month": "2026-06",
       "offload_gb": 7023,
+      "offload_basis": "measured",
       "fees_usd": 1081.16,
       "user_fees_usd": 1081.16,
       "basis": "official_projection"
@@ -5917,6 +6601,7 @@
       "date": "2026-06-27",
       "service_month": "2026-06",
       "offload_gb": 8140,
+      "offload_basis": "measured",
       "fees_usd": 1253.11,
       "user_fees_usd": 1253.11,
       "basis": "official_projection"
@@ -5925,6 +6610,7 @@
       "date": "2026-06-28",
       "service_month": "2026-06",
       "offload_gb": 9056,
+      "offload_basis": "measured",
       "fees_usd": 1394.13,
       "user_fees_usd": 1394.13,
       "basis": "official_projection"
@@ -5933,6 +6619,7 @@
       "date": "2026-06-29",
       "service_month": "2026-06",
       "offload_gb": 5787,
+      "offload_basis": "measured",
       "fees_usd": 890.88,
       "user_fees_usd": 890.88,
       "basis": "official_projection"
@@ -5941,6 +6628,7 @@
       "date": "2026-06-30",
       "service_month": "2026-06",
       "offload_gb": 5094,
+      "offload_basis": "measured",
       "fees_usd": 784.2,
       "user_fees_usd": 784.2,
       "basis": "official_projection"
@@ -5949,6 +6637,7 @@
       "date": "2026-07-01",
       "service_month": "2026-07",
       "offload_gb": 6259,
+      "offload_basis": "measured",
       "fees_usd": 965.21,
       "user_fees_usd": 965.21,
       "basis": "confirmed_settlement"
@@ -5957,6 +6646,7 @@
       "date": "2026-07-02",
       "service_month": "2026-07",
       "offload_gb": 6807,
+      "offload_basis": "measured",
       "fees_usd": 1049.71,
       "user_fees_usd": 1049.71,
       "basis": "confirmed_settlement"
@@ -5965,6 +6655,7 @@
       "date": "2026-07-03",
       "service_month": "2026-07",
       "offload_gb": 7275,
+      "offload_basis": "measured",
       "fees_usd": 1121.88,
       "user_fees_usd": 1121.88,
       "basis": "confirmed_settlement"
@@ -5973,6 +6664,7 @@
       "date": "2026-07-04",
       "service_month": "2026-07",
       "offload_gb": 9314,
+      "offload_basis": "measured",
       "fees_usd": 1436.32,
       "user_fees_usd": 1436.32,
       "basis": "confirmed_settlement"
@@ -5981,6 +6673,7 @@
       "date": "2026-07-05",
       "service_month": "2026-07",
       "offload_gb": 8393,
+      "offload_basis": "measured",
       "fees_usd": 1294.29,
       "user_fees_usd": 1294.29,
       "basis": "confirmed_settlement"
@@ -5989,6 +6682,7 @@
       "date": "2026-07-06",
       "service_month": "2026-07",
       "offload_gb": 7100,
+      "offload_basis": "measured",
       "fees_usd": 1094.9,
       "user_fees_usd": 1094.9,
       "basis": "confirmed_settlement"
@@ -5997,6 +6691,7 @@
       "date": "2026-07-07",
       "service_month": "2026-07",
       "offload_gb": 6569,
+      "offload_basis": "measured",
       "fees_usd": 1013.01,
       "user_fees_usd": 1013.01,
       "basis": "confirmed_settlement"
@@ -6005,6 +6700,7 @@
       "date": "2026-07-08",
       "service_month": "2026-07",
       "offload_gb": 5734,
+      "offload_basis": "measured",
       "fees_usd": 884.25,
       "user_fees_usd": 884.25,
       "basis": "confirmed_settlement"
@@ -6013,6 +6709,7 @@
       "date": "2026-07-09",
       "service_month": "2026-07",
       "offload_gb": 6518,
+      "offload_basis": "measured",
       "fees_usd": 1005.15,
       "user_fees_usd": 1005.15,
       "basis": "confirmed_settlement"
@@ -6021,6 +6718,7 @@
       "date": "2026-07-10",
       "service_month": "2026-07",
       "offload_gb": 7095,
+      "offload_basis": "measured",
       "fees_usd": 1094.13,
       "user_fees_usd": 1094.13,
       "basis": "confirmed_settlement"
@@ -6029,6 +6727,7 @@
       "date": "2026-07-11",
       "service_month": "2026-07",
       "offload_gb": 8681,
+      "offload_basis": "measured",
       "fees_usd": 1338.7,
       "user_fees_usd": 1338.7,
       "basis": "confirmed_settlement"
@@ -6037,6 +6736,7 @@
       "date": "2026-07-12",
       "service_month": "2026-07",
       "offload_gb": 10262,
+      "offload_basis": "measured",
       "fees_usd": 1582.51,
       "user_fees_usd": 1582.51,
       "basis": "confirmed_settlement"
@@ -6045,6 +6745,7 @@
       "date": "2026-07-13",
       "service_month": "2026-07",
       "offload_gb": 6476,
+      "offload_basis": "measured",
       "fees_usd": 998.67,
       "user_fees_usd": 998.67,
       "basis": "confirmed_settlement"
@@ -6053,6 +6754,7 @@
       "date": "2026-07-14",
       "service_month": "2026-07",
       "offload_gb": 5906,
+      "offload_basis": "measured",
       "fees_usd": 910.77,
       "user_fees_usd": 910.77,
       "basis": "confirmed_settlement"
@@ -6061,6 +6763,7 @@
       "date": "2026-07-15",
       "service_month": "2026-07",
       "offload_gb": 5846,
+      "offload_basis": "measured",
       "fees_usd": 901.52,
       "user_fees_usd": 901.52,
       "basis": "confirmed_settlement"
@@ -6069,6 +6772,7 @@
       "date": "2026-07-16",
       "service_month": "2026-07",
       "offload_gb": 6739,
+      "offload_basis": "measured",
       "fees_usd": 1039.23,
       "user_fees_usd": 1039.23,
       "basis": "confirmed_settlement"
@@ -6077,6 +6781,7 @@
       "date": "2026-07-17",
       "service_month": "2026-07",
       "offload_gb": 7721,
+      "offload_basis": "measured",
       "fees_usd": 1190.66,
       "user_fees_usd": 1190.66,
       "basis": "confirmed_settlement"
@@ -6085,6 +6790,7 @@
       "date": "2026-07-18",
       "service_month": "2026-07",
       "offload_gb": 9619,
+      "offload_basis": "measured",
       "fees_usd": 1483.35,
       "user_fees_usd": 1483.35,
       "basis": "confirmed_settlement"
@@ -6093,6 +6799,7 @@
       "date": "2026-07-19",
       "service_month": "2026-07",
       "offload_gb": 11405,
+      "offload_basis": "measured",
       "fees_usd": 1758.78,
       "user_fees_usd": 1758.78,
       "basis": "confirmed_settlement"
@@ -6101,6 +6808,7 @@
       "date": "2026-07-20",
       "service_month": "2026-07",
       "offload_gb": 6425,
+      "offload_basis": "measured",
       "fees_usd": 990.8,
       "user_fees_usd": 990.8,
       "basis": "confirmed_settlement"
@@ -6109,6 +6817,7 @@
       "date": "2026-07-21",
       "service_month": "2026-07",
       "offload_gb": 5253,
+      "offload_basis": "measured",
       "fees_usd": 810.07,
       "user_fees_usd": 810.07,
       "basis": "confirmed_settlement"
@@ -6117,6 +6826,7 @@
       "date": "2026-07-22",
       "service_month": "2026-07",
       "offload_gb": 5165,
+      "offload_basis": "measured",
       "fees_usd": 796.5,
       "user_fees_usd": 796.5,
       "basis": "confirmed_settlement"
@@ -6125,6 +6835,7 @@
       "date": "2026-07-23",
       "service_month": "2026-07",
       "offload_gb": 5832,
+      "offload_basis": "measured",
       "fees_usd": 899.36,
       "user_fees_usd": 899.36,
       "basis": "confirmed_settlement"
@@ -6133,6 +6844,7 @@
       "date": "2026-07-24",
       "service_month": "2026-07",
       "offload_gb": 6328,
+      "offload_basis": "measured",
       "fees_usd": 975.85,
       "user_fees_usd": 975.85,
       "basis": "confirmed_settlement"
@@ -6141,6 +6853,7 @@
       "date": "2026-07-25",
       "service_month": "2026-07",
       "offload_gb": 8041,
+      "offload_basis": "measured",
       "fees_usd": 1240.01,
       "user_fees_usd": 1240.01,
       "basis": "confirmed_settlement"
@@ -6149,6 +6862,7 @@
       "date": "2026-07-26",
       "service_month": "2026-07",
       "offload_gb": 8453,
+      "offload_basis": "measured",
       "fees_usd": 1303.54,
       "user_fees_usd": 1303.54,
       "basis": "confirmed_settlement"
@@ -6157,6 +6871,7 @@
       "date": "2026-07-27",
       "service_month": "2026-07",
       "offload_gb": 5543,
+      "offload_basis": "measured",
       "fees_usd": 854.79,
       "user_fees_usd": 854.79,
       "basis": "confirmed_settlement"
@@ -6165,6 +6880,7 @@
       "date": "2026-07-28",
       "service_month": "2026-07",
       "offload_gb": 5049,
+      "offload_basis": "measured",
       "fees_usd": 778.61,
       "user_fees_usd": 778.61,
       "basis": "confirmed_settlement"
@@ -6173,6 +6889,7 @@
       "date": "2026-07-29",
       "service_month": "2026-07",
       "offload_gb": 5564,
+      "offload_basis": "measured",
       "fees_usd": 858.03,
       "user_fees_usd": 858.03,
       "basis": "confirmed_settlement"
@@ -6181,6 +6898,7 @@
       "date": "2026-07-30",
       "service_month": "2026-07",
       "offload_gb": 6162,
+      "offload_basis": "measured",
       "fees_usd": 950.25,
       "user_fees_usd": 950.25,
       "basis": "confirmed_settlement"
@@ -6189,6 +6907,7 @@
       "date": "2026-07-31",
       "service_month": "2026-07",
       "offload_gb": 6926,
+      "offload_basis": "measured",
       "fees_usd": 1068.06,
       "user_fees_usd": 1068.06,
       "basis": "confirmed_settlement"
@@ -6197,6 +6916,7 @@
       "date": "2026-08-01",
       "service_month": "2026-08",
       "offload_gb": 8003,
+      "offload_basis": "measured",
       "fees_usd": 1225.4,
       "user_fees_usd": 1225.4,
       "basis": "official_projection"
@@ -6205,6 +6925,7 @@
       "date": "2026-08-02",
       "service_month": "2026-08",
       "offload_gb": 9294,
+      "offload_basis": "measured",
       "fees_usd": 1423.08,
       "user_fees_usd": 1423.08,
       "basis": "official_projection"
@@ -6213,6 +6934,7 @@
       "date": "2026-08-03",
       "service_month": "2026-08",
       "offload_gb": 6037,
+      "offload_basis": "measured",
       "fees_usd": 924.37,
       "user_fees_usd": 924.37,
       "basis": "official_projection"
@@ -6221,6 +6943,7 @@
       "date": "2026-08-04",
       "service_month": "2026-08",
       "offload_gb": 5525,
+      "offload_basis": "measured",
       "fees_usd": 845.98,
       "user_fees_usd": 845.98,
       "basis": "official_projection"
@@ -6229,6 +6952,7 @@
       "date": "2026-08-05",
       "service_month": "2026-08",
       "offload_gb": 5769,
+      "offload_basis": "measured",
       "fees_usd": 883.34,
       "user_fees_usd": 883.34,
       "basis": "official_projection"
@@ -6237,6 +6961,7 @@
       "date": "2026-08-06",
       "service_month": "2026-08",
       "offload_gb": 6058,
+      "offload_basis": "measured",
       "fees_usd": 927.59,
       "user_fees_usd": 927.59,
       "basis": "official_projection"
@@ -6245,6 +6970,7 @@
       "date": "2026-08-07",
       "service_month": "2026-08",
       "offload_gb": 6737,
+      "offload_basis": "measured",
       "fees_usd": 1031.55,
       "user_fees_usd": 1031.55,
       "basis": "official_projection"
@@ -6253,6 +6979,7 @@
       "date": "2026-08-08",
       "service_month": "2026-08",
       "offload_gb": 8919,
+      "offload_basis": "measured",
       "fees_usd": 1365.66,
       "user_fees_usd": 1365.66,
       "basis": "official_projection"
@@ -6261,6 +6988,7 @@
       "date": "2026-08-09",
       "service_month": "2026-08",
       "offload_gb": 9431,
+      "offload_basis": "measured",
       "fees_usd": 1444.05,
       "user_fees_usd": 1444.05,
       "basis": "official_projection"
@@ -6269,6 +6997,7 @@
       "date": "2026-08-10",
       "service_month": "2026-08",
       "offload_gb": 6454,
+      "offload_basis": "measured",
       "fees_usd": 988.22,
       "user_fees_usd": 988.22,
       "basis": "official_projection"
@@ -6277,6 +7006,7 @@
       "date": "2026-08-11",
       "service_month": "2026-08",
       "offload_gb": 5667,
+      "offload_basis": "measured",
       "fees_usd": 867.72,
       "user_fees_usd": 867.72,
       "basis": "official_projection"
@@ -6285,6 +7015,7 @@
       "date": "2026-08-12",
       "service_month": "2026-08",
       "offload_gb": 5797,
+      "offload_basis": "measured",
       "fees_usd": 887.62,
       "user_fees_usd": 887.62,
       "basis": "official_projection"
@@ -6293,6 +7024,7 @@
       "date": "2026-08-13",
       "service_month": "2026-08",
       "offload_gb": 6272,
+      "offload_basis": "measured",
       "fees_usd": 960.36,
       "user_fees_usd": 960.36,
       "basis": "official_projection"
@@ -6301,6 +7033,7 @@
       "date": "2026-08-14",
       "service_month": "2026-08",
       "offload_gb": 6937,
+      "offload_basis": "measured",
       "fees_usd": 1062.18,
       "user_fees_usd": 1062.18,
       "basis": "official_projection"
@@ -6309,6 +7042,7 @@
       "date": "2026-08-15",
       "service_month": "2026-08",
       "offload_gb": 8480,
+      "offload_basis": "measured",
       "fees_usd": 1298.44,
       "user_fees_usd": 1298.44,
       "basis": "official_projection"
@@ -6317,6 +7051,7 @@
       "date": "2026-08-16",
       "service_month": "2026-08",
       "offload_gb": 9135,
+      "offload_basis": "measured",
       "fees_usd": 1398.73,
       "user_fees_usd": 1398.73,
       "basis": "official_projection"
@@ -6325,6 +7060,7 @@
       "date": "2026-08-17",
       "service_month": "2026-08",
       "offload_gb": 6083,
+      "offload_basis": "measured",
       "fees_usd": 931.42,
       "user_fees_usd": 931.42,
       "basis": "official_projection"
@@ -6333,6 +7069,7 @@
       "date": "2026-08-18",
       "service_month": "2026-08",
       "offload_gb": 5345,
+      "offload_basis": "measured",
       "fees_usd": 818.41,
       "user_fees_usd": 818.41,
       "basis": "official_projection"
@@ -6341,6 +7078,7 @@
       "date": "2026-08-19",
       "service_month": "2026-08",
       "offload_gb": 5693,
+      "offload_basis": "measured",
       "fees_usd": 871.7,
       "user_fees_usd": 871.7,
       "basis": "official_projection"
@@ -6349,6 +7087,7 @@
       "date": "2026-08-20",
       "service_month": "2026-08",
       "offload_gb": 5779,
+      "offload_basis": "measured",
       "fees_usd": 884.87,
       "user_fees_usd": 884.87,
       "basis": "official_projection"
@@ -6357,6 +7096,7 @@
       "date": "2026-08-21",
       "service_month": "2026-08",
       "offload_gb": 6539,
+      "offload_basis": "measured",
       "fees_usd": 1001.24,
       "user_fees_usd": 1001.24,
       "basis": "official_projection"
@@ -6365,6 +7105,7 @@
       "date": "2026-08-22",
       "service_month": "2026-08",
       "offload_gb": 8020,
+      "offload_basis": "measured",
       "fees_usd": 1228.01,
       "user_fees_usd": 1228.01,
       "basis": "official_projection"
@@ -6373,6 +7114,7 @@
       "date": "2026-08-23",
       "service_month": "2026-08",
       "offload_gb": 8905,
+      "offload_basis": "measured",
       "fees_usd": 1363.51,
       "user_fees_usd": 1363.51,
       "basis": "official_projection"
@@ -6381,6 +7123,7 @@
       "date": "2026-08-24",
       "service_month": "2026-08",
       "offload_gb": 5566,
+      "offload_basis": "measured",
       "fees_usd": 852.25,
       "user_fees_usd": 852.25,
       "basis": "official_projection"
@@ -6389,6 +7132,7 @@
       "date": "2026-08-25",
       "service_month": "2026-08",
       "offload_gb": 4869,
+      "offload_basis": "measured",
       "fees_usd": 745.53,
       "user_fees_usd": 745.53,
       "basis": "official_projection"
@@ -6397,6 +7141,7 @@
       "date": "2026-08-26",
       "service_month": "2026-08",
       "offload_gb": 5318,
+      "offload_basis": "measured",
       "fees_usd": 814.28,
       "user_fees_usd": 814.28,
       "basis": "official_projection"
@@ -6405,6 +7150,7 @@
       "date": "2026-08-27",
       "service_month": "2026-08",
       "offload_gb": 5517,
+      "offload_basis": "measured",
       "fees_usd": 844.75,
       "user_fees_usd": 844.75,
       "basis": "official_projection"
@@ -6413,6 +7159,7 @@
       "date": "2026-08-28",
       "service_month": "2026-08",
       "offload_gb": 6753,
+      "offload_basis": "measured",
       "fees_usd": 1034,
       "user_fees_usd": 1034,
       "basis": "official_projection"
@@ -6421,6 +7168,7 @@
       "date": "2026-08-29",
       "service_month": "2026-08",
       "offload_gb": 8684,
+      "offload_basis": "measured",
       "fees_usd": 1329.68,
       "user_fees_usd": 1329.68,
       "basis": "official_projection"
@@ -6429,6 +7177,7 @@
       "date": "2026-08-30",
       "service_month": "2026-08",
       "offload_gb": 9307,
+      "offload_basis": "measured",
       "fees_usd": 1425.07,
       "user_fees_usd": 1425.07,
       "basis": "official_projection"
@@ -6437,6 +7186,7 @@
       "date": "2026-08-31",
       "service_month": "2026-08",
       "offload_gb": 6297,
+      "offload_basis": "measured",
       "fees_usd": 964.18,
       "user_fees_usd": 964.18,
       "basis": "official_projection"
@@ -6445,6 +7195,7 @@
       "date": "2026-09-01",
       "service_month": "2026-09",
       "offload_gb": 5599,
+      "offload_basis": "measured",
       "fees_usd": 857.31,
       "user_fees_usd": 857.31,
       "basis": "provisional_live_offload",
@@ -6455,6 +7206,7 @@
       "date": "2026-09-02",
       "service_month": "2026-09",
       "offload_gb": 6067,
+      "offload_basis": "measured",
       "fees_usd": 928.97,
       "user_fees_usd": 928.97,
       "basis": "provisional_live_offload",
@@ -6465,6 +7217,7 @@
       "date": "2026-09-03",
       "service_month": "2026-09",
       "offload_gb": 6333,
+      "offload_basis": "measured",
       "fees_usd": 969.7,
       "user_fees_usd": 969.7,
       "basis": "provisional_live_offload",
@@ -6475,6 +7228,7 @@
       "date": "2026-09-04",
       "service_month": "2026-09",
       "offload_gb": 7806,
+      "offload_basis": "measured",
       "fees_usd": 1195.24,
       "user_fees_usd": 1195.24,
       "basis": "provisional_live_offload",
@@ -6485,6 +7239,7 @@
       "date": "2026-09-05",
       "service_month": "2026-09",
       "offload_gb": 10367,
+      "offload_basis": "measured",
       "fees_usd": 1587.37,
       "user_fees_usd": 1587.37,
       "basis": "provisional_live_offload",
@@ -6495,6 +7250,7 @@
       "date": "2026-09-06",
       "service_month": "2026-09",
       "offload_gb": 10426,
+      "offload_basis": "measured",
       "fees_usd": 1596.41,
       "user_fees_usd": 1596.41,
       "basis": "provisional_live_offload",
@@ -6505,6 +7261,7 @@
       "date": "2026-09-07",
       "service_month": "2026-09",
       "offload_gb": 7351,
+      "offload_basis": "measured",
       "fees_usd": 1125.57,
       "user_fees_usd": 1125.57,
       "basis": "provisional_live_offload",
@@ -6515,6 +7272,7 @@
       "date": "2026-09-08",
       "service_month": "2026-09",
       "offload_gb": 5967,
+      "offload_basis": "measured",
       "fees_usd": 913.65,
       "user_fees_usd": 913.65,
       "basis": "provisional_live_offload",
@@ -6525,6 +7283,7 @@
       "date": "2026-09-09",
       "service_month": "2026-09",
       "offload_gb": 5533,
+      "offload_basis": "measured",
       "fees_usd": 847.2,
       "user_fees_usd": 847.2,
       "basis": "provisional_live_offload",
@@ -6535,6 +7294,7 @@
       "date": "2026-09-10",
       "service_month": "2026-09",
       "offload_gb": 6306,
+      "offload_basis": "measured",
       "fees_usd": 965.56,
       "user_fees_usd": 965.56,
       "basis": "provisional_live_offload",
@@ -6545,6 +7305,7 @@
       "date": "2026-09-11",
       "service_month": "2026-09",
       "offload_gb": 7487,
+      "offload_basis": "measured",
       "fees_usd": 1146.39,
       "user_fees_usd": 1146.39,
       "basis": "provisional_live_offload",
@@ -6555,6 +7316,7 @@
       "date": "2026-09-12",
       "service_month": "2026-09",
       "offload_gb": 9252,
+      "offload_basis": "measured",
       "fees_usd": 1416.65,
       "user_fees_usd": 1416.65,
       "basis": "provisional_live_offload",
@@ -6565,6 +7327,7 @@
       "date": "2026-09-13",
       "service_month": "2026-09",
       "offload_gb": 10133,
+      "offload_basis": "measured",
       "fees_usd": 1551.54,
       "user_fees_usd": 1551.54,
       "basis": "provisional_live_offload",
@@ -6575,6 +7338,7 @@
       "date": "2026-09-14",
       "service_month": "2026-09",
       "offload_gb": 5523,
+      "offload_basis": "measured",
       "fees_usd": 845.67,
       "user_fees_usd": 845.67,
       "basis": "provisional_live_offload",
@@ -6585,6 +7349,7 @@
       "date": "2026-09-15",
       "service_month": "2026-09",
       "offload_gb": 5387,
+      "offload_basis": "measured",
       "fees_usd": 824.85,
       "user_fees_usd": 824.85,
       "basis": "provisional_live_offload",
@@ -6595,6 +7360,7 @@
       "date": "2026-09-16",
       "service_month": "2026-09",
       "offload_gb": 5521,
+      "offload_basis": "measured",
       "fees_usd": 845.36,
       "user_fees_usd": 845.36,
       "basis": "provisional_live_offload",
@@ -6605,6 +7371,7 @@
       "date": "2026-09-17",
       "service_month": "2026-09",
       "offload_gb": 5891,
+      "offload_basis": "measured",
       "fees_usd": 902.02,
       "user_fees_usd": 902.02,
       "basis": "provisional_live_offload",
@@ -6615,6 +7382,7 @@
       "date": "2026-09-18",
       "service_month": "2026-09",
       "offload_gb": 5694,
+      "offload_basis": "measured",
       "fees_usd": 871.85,
       "user_fees_usd": 871.85,
       "basis": "provisional_live_offload",
@@ -6625,6 +7393,7 @@
       "date": "2026-09-19",
       "service_month": "2026-09",
       "offload_gb": 10569,
+      "offload_basis": "measured",
       "fees_usd": 1618.3,
       "user_fees_usd": 1618.3,
       "basis": "provisional_live_offload",
@@ -6635,6 +7404,7 @@
       "date": "2026-09-20",
       "service_month": "2026-09",
       "offload_gb": 9432,
+      "offload_basis": "measured",
       "fees_usd": 1444.21,
       "user_fees_usd": 1444.21,
       "basis": "provisional_live_offload",
@@ -6645,6 +7415,7 @@
       "date": "2026-09-21",
       "service_month": "2026-09",
       "offload_gb": 5674,
+      "offload_basis": "measured",
       "fees_usd": 868.79,
       "user_fees_usd": 868.79,
       "basis": "provisional_live_offload",
@@ -6655,6 +7426,7 @@
       "date": "2026-09-22",
       "service_month": "2026-09",
       "offload_gb": 4554,
+      "offload_basis": "measured",
       "fees_usd": 697.3,
       "user_fees_usd": 697.3,
       "basis": "provisional_live_offload",
@@ -6665,6 +7437,7 @@
       "date": "2026-09-23",
       "service_month": "2026-09",
       "offload_gb": 4004,
+      "offload_basis": "measured",
       "fees_usd": 613.08,
       "user_fees_usd": 613.08,
       "basis": "provisional_live_offload",
@@ -6675,6 +7448,7 @@
       "date": "2026-09-24",
       "service_month": "2026-09",
       "offload_gb": 4133,
+      "offload_basis": "measured",
       "fees_usd": 632.84,
       "user_fees_usd": 632.84,
       "basis": "provisional_live_offload",
@@ -6685,6 +7459,7 @@
       "date": "2026-09-25",
       "service_month": "2026-09",
       "offload_gb": 4712,
+      "offload_basis": "measured",
       "fees_usd": 721.49,
       "user_fees_usd": 721.49,
       "basis": "provisional_live_offload",
@@ -6695,6 +7470,7 @@
       "date": "2026-09-26",
       "service_month": "2026-09",
       "offload_gb": 6117,
+      "offload_basis": "measured",
       "fees_usd": 936.62,
       "user_fees_usd": 936.62,
       "basis": "provisional_live_offload",
@@ -6705,8 +7481,86 @@
       "date": "2026-09-27",
       "service_month": "2026-09",
       "offload_gb": 6160,
+      "offload_basis": "measured",
       "fees_usd": 943.21,
       "user_fees_usd": 943.21,
+      "basis": "provisional_live_offload",
+      "rate_usd_per_api_gb": 0.153118,
+      "rate_source_month": "2026-08"
+    },
+    {
+      "date": "2026-09-28",
+      "service_month": "2026-09",
+      "offload_gb": 5050.571429,
+      "offload_basis": "imputed_trailing_7d_average",
+      "fees_usd": 773.33,
+      "user_fees_usd": 773.33,
+      "basis": "provisional_live_offload",
+      "rate_usd_per_api_gb": 0.153118,
+      "rate_source_month": "2026-08"
+    },
+    {
+      "date": "2026-09-29",
+      "service_month": "2026-09",
+      "offload_gb": 5050.571429,
+      "offload_basis": "imputed_trailing_7d_average",
+      "fees_usd": 773.33,
+      "user_fees_usd": 773.33,
+      "basis": "provisional_live_offload",
+      "rate_usd_per_api_gb": 0.153118,
+      "rate_source_month": "2026-08"
+    },
+    {
+      "date": "2026-09-30",
+      "service_month": "2026-09",
+      "offload_gb": 5050.571429,
+      "offload_basis": "imputed_trailing_7d_average",
+      "fees_usd": 773.33,
+      "user_fees_usd": 773.33,
+      "basis": "provisional_live_offload",
+      "rate_usd_per_api_gb": 0.153118,
+      "rate_source_month": "2026-08"
+    },
+    {
+      "date": "2026-10-01",
+      "service_month": "2026-10",
+      "offload_gb": 5050.571429,
+      "offload_basis": "imputed_trailing_7d_average",
+      "fees_usd": 773.33,
+      "user_fees_usd": 773.33,
+      "basis": "provisional_live_offload",
+      "rate_usd_per_api_gb": 0.153118,
+      "rate_source_month": "2026-08"
+    },
+    {
+      "date": "2026-10-02",
+      "service_month": "2026-10",
+      "offload_gb": 5050.571429,
+      "offload_basis": "imputed_trailing_7d_average",
+      "fees_usd": 773.33,
+      "user_fees_usd": 773.33,
+      "basis": "provisional_live_offload",
+      "rate_usd_per_api_gb": 0.153118,
+      "rate_source_month": "2026-08"
+    },
+    {
+      "date": "2026-10-03",
+      "service_month": "2026-10",
+      "offload_gb": 5050.571429,
+      "offload_basis": "imputed_trailing_7d_average",
+      "fees_usd": 773.33,
+      "user_fees_usd": 773.33,
+      "basis": "provisional_live_offload",
+      "rate_usd_per_api_gb": 0.153118,
+      "rate_source_month": "2026-08"
+    },
+    {
+      "date": "2026-10-04",
+      "service_month": "2026-10",
+      "offload_gb": 5050.571429,
+      "offload_basis": "imputed_trailing_7d_average",
+      "fees_usd": 773.33,
+      "user_fees_usd": 773.33,
       "basis": "provisional_live_offload",
       "rate_usd_per_api_gb": 0.153118,
       "rate_source_month": "2026-08"
@@ -6956,10 +7810,22 @@
     {
       "service_month": "2026-09",
       "basis": "provisional_live_offload",
-      "daily_shape": "measured_network_offload",
-      "offload_days": 27,
-      "api_offload_gb": 181998,
-      "accrual_total_usd": 27867.15,
+      "daily_shape": "measured_network_offload_with_short_outage_imputation",
+      "offload_days": 30,
+      "api_offload_gb": 197149.714286,
+      "accrual_total_usd": 30187.14,
+      "official_projected_revenue_usd": null,
+      "settlement_confirmed_usd": 0,
+      "rate_usd_per_api_gb": 0.153118,
+      "rate_source_month": "2026-08"
+    },
+    {
+      "service_month": "2026-10",
+      "basis": "provisional_live_offload",
+      "daily_shape": "measured_network_offload_with_short_outage_imputation",
+      "offload_days": 4,
+      "api_offload_gb": 20202.285714,
+      "accrual_total_usd": 3093.32,
       "official_projected_revenue_usd": null,
       "settlement_confirmed_usd": 0,
       "rate_usd_per_api_gb": 0.153118,

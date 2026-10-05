@@ -459,20 +459,46 @@ def main():
                     target_service["amount"] - already_recognized
                 )
 
-                if expected_remaining > TOLERANCE:
-                    variance_pct = (
-                        abs(payment["amount"] - expected_remaining)
-                        / expected_remaining
-                        * Decimal("100")
-                    )
-
-                    if variance_pct <= MAX_LAG_FALLBACK_VARIANCE_PCT:
+                if (
+                    expected_remaining > TOLERANCE
+                    and payment["amount"] > TOLERANCE
+                ):
+                    # A payment below the remaining projection is a valid
+                    # partial settlement under the established two-month lag.
+                    # Do not reject it merely because the projection has not
+                    # yet been paid in full.
+                    if payment["amount"] <= expected_remaining + TOLERANCE:
+                        remaining_after = max(
+                            Decimal("0"),
+                            expected_remaining - payment["amount"],
+                        )
                         lag_fallback = {
                             "month": target_key,
                             "amount": payment["amount"],
                             "expected_remaining": expected_remaining,
-                            "variance_pct": variance_pct,
+                            "remaining_after": remaining_after,
+                            "method": "two_month_lag_partial",
+                            "overage_pct": Decimal("0"),
                         }
+                    else:
+                        # A final settlement is allowed to exceed the earlier
+                        # projection only within a conservative bound. Larger
+                        # overages remain unattributed for manual review.
+                        overage_pct = (
+                            (payment["amount"] - expected_remaining)
+                            / expected_remaining
+                            * Decimal("100")
+                        )
+
+                        if overage_pct <= MAX_LAG_FALLBACK_VARIANCE_PCT:
+                            lag_fallback = {
+                                "month": target_key,
+                                "amount": payment["amount"],
+                                "expected_remaining": expected_remaining,
+                                "remaining_after": Decimal("0"),
+                                "method": "two_month_lag_bounded_variance",
+                                "overage_pct": overage_pct,
+                            }
 
             if lag_fallback is None:
                 unattributed.append(
@@ -507,7 +533,7 @@ def main():
             "source_sheet_column": payment["source_month"][:7],
             "service_months": [],
             "reconciliation_method": (
-                "two_month_lag_bounded_variance"
+                lag_fallback["method"]
                 if lag_fallback is not None
                 else "exact_contiguous_sum"
             ),
@@ -515,15 +541,32 @@ def main():
         }
 
         if lag_fallback is not None:
-            settlement["attribution_note"] = (
-                "No unique exact amount match was available. The payment was "
-                "attributed to the service month two calendar months before "
-                "the source/payment month because the payment differed from "
-                "the remaining official projection by no more than "
-                f"{MAX_LAG_FALLBACK_VARIANCE_PCT}%."
+            if lag_fallback["method"] == "two_month_lag_partial":
+                settlement["attribution_note"] = (
+                    "No unique exact amount match was available. The payment "
+                    "is treated as a partial settlement of the service month "
+                    "two calendar months before the source/payment month. "
+                    "Only the amount actually received is marked confirmed; "
+                    "the remaining projected balance stays unsettled."
+                )
+            else:
+                settlement["attribution_note"] = (
+                    "No unique exact amount match was available. The payment "
+                    "is attributed to the service month two calendar months "
+                    "before the source/payment month. A final amount above the "
+                    "earlier projection is accepted only because the overage "
+                    f"is within the {MAX_LAG_FALLBACK_VARIANCE_PCT}% "
+                    "automatic-reconciliation bound."
+                )
+
+            settlement["projection_remaining_before_usd"] = money(
+                lag_fallback["expected_remaining"]
             )
-            settlement["projection_variance_pct"] = float(
-                lag_fallback["variance_pct"].quantize(
+            settlement["projection_remaining_after_usd"] = money(
+                lag_fallback["remaining_after"]
+            )
+            settlement["projection_overage_pct"] = float(
+                lag_fallback["overage_pct"].quantize(
                     Decimal("0.001"),
                     rounding=ROUND_HALF_UP,
                 )
@@ -560,10 +603,7 @@ def main():
             )
 
         settlement["difference_usd"] = (
-            money(
-                payment["amount"]
-                - lag_fallback["expected_remaining"]
-            )
+            0.0
             if lag_fallback is not None
             else money(matched_total - payment["amount"])
         )
@@ -1018,22 +1058,24 @@ def main():
                 "When an official monthly projection or later carrier "
                 "settlement becomes available, the affected historical daily "
                 "values are recomputed. Exact amount reconciliation is "
-                "preferred. If no unique exact match exists, a payment may be "
-                "mapped to the service month two months earlier only when its "
-                "variance from that month's remaining official projection is "
-                "within 15%; otherwise it remains unattributed for review. "
-                "The confirmed monthly amount is then distributed in "
-                "proportion to actual daily offload, preserving the observed "
-                "traffic shape while forcing the daily values to sum exactly "
-                "to reconciled service-month revenue."
+                "preferred. If no unique exact match exists, the established "
+                "two-month payment cadence may be used: payments below the "
+                "remaining official projection are recorded as partial "
+                "settlements, while a final payment above the projection is "
+                "accepted automatically only when the overage is within 15%. "
+                "Anything outside those rules remains unattributed for review. "
+                "Confirmed amounts never get added on top of provisional "
+                "revenue; they replace confirmation status and, once a service "
+                "month is fully settled, its daily series is rescaled to the "
+                "actual confirmed total in proportion to daily offload."
             ),
             "partial_settlements": (
-                "A partial payment confirms part of a service month but is not "
-                "added on top of the month's provisional accrual. The confirmed "
-                "portion is tracked separately until the service month is fully "
-                "settled. The $12,000 receipt reported in the July 2026 source "
-                "column is attributed to May 2026; the remaining May balance "
-                "stays unsettled."
+                "A partial carrier payment confirms only the amount actually "
+                "received for its reconciled service month and is not added "
+                "on top of that month's provisional accrual. The remaining "
+                "official projected balance stays unsettled. Source revisions "
+                "are respected on each rebuild, so a later dated payment can "
+                "supersede an earlier provisional or ambiguous source entry."
             ),
             "missing_offload": (
                 "Missing offload observations are never filled with zero. If "

@@ -1,19 +1,33 @@
 name: Check DeFiLlama revenue
+
 on:
   workflow_dispatch:
   push:
     paths:
+      - "scripts/build_defillama_revenue.py"
       - "scripts/check_defillama_feed.py"
+      - "data/xnet_revenue_monthly.json"
+      - "data/xnet_offload_api.json"
+      - "data/xnet_defillama_revenue.json"
       - ".github/workflows/check-defillama.yml"
+
 permissions:
   contents: read
+
 jobs:
   check:
     runs-on: ubuntu-latest
     timeout-minutes: 5
+
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: python scripts/check_defillama_feed.py
+
+      - name: Rebuild feed from checked-out sources
+        run: python scripts/build_defillama_revenue.py
+
+      - name: Validate local feed and report DeFiLlama ingestion
+        run: python scripts/check_defillama_feed.py

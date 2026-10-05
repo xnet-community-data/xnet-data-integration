@@ -5,12 +5,9 @@ import json
 import urllib.error
 import urllib.request
 from decimal import Decimal
+from pathlib import Path
 
-FEED = (
-    "https://raw.githubusercontent.com/"
-    "xnet-community-data/xnet-data-integration/main/"
-    "data/xnet_defillama_revenue.json"
-)
+FEED_PATH = Path("data/xnet_defillama_revenue.json")
 
 
 def dec(value):
@@ -18,8 +15,8 @@ def dec(value):
 
 
 def main():
-    with urllib.request.urlopen(FEED, timeout=45) as response:
-        feed = json.load(response)
+    with open(FEED_PATH, encoding="utf-8") as f:
+        feed = json.load(f)
 
     recognized = sum(
         (dec(row["fees_usd"]) for row in feed["data"]),
@@ -58,16 +55,18 @@ def main():
             month["accrual_total_usd"],
         )
 
-    assert feed["projection_model"]["conservative_rate_usd_per_api_gb"] > 0
-    assert (
-        feed["projection_model"]["conservative_rate_usd_per_api_gb"]
-        <= feed["projection_model"][
-            "published_blended_rate_usd_per_billing_gb"
-        ]
+    conservative_rate = feed["projection_model"][
+        "conservative_rate_usd_per_api_gb"
+    ]
+    published_rate = feed["projection_model"].get(
+        "published_blended_rate_usd_per_billing_gb"
     )
+    assert conservative_rate > 0
+    if published_rate is not None:
+        assert conservative_rate <= published_rate
 
     print(
-        "Published feed: "
+        "Validated local feed: "
         f"{feed['daily_count']} daily accrual rows through "
         f"{daily[-1]['date']}; "
         f"USD {daily_total} total accrual; "

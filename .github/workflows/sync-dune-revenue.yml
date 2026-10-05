@@ -1,10 +1,12 @@
 name: Sync XNET revenue to Dune
 
 on:
-  workflow_run:
-    workflows: ["Sync XNET revenue data"]
-    types: [completed]
-    branches: [main]
+  schedule:
+    # Independent from the revenue-source job. The source mirror runs at
+    # 21:15 UTC; this consumes the latest successfully published main state at
+    # 21:30 UTC. If the source job fails, Dune keeps last-good data instead of
+    # inheriting that failure.
+    - cron: "30 21 * * *"
   workflow_dispatch:
   push:
     branches: [main]
@@ -17,14 +19,14 @@ on:
 permissions:
   contents: write
 
-# Only Dune state writers share this lock. The DeFiLlama feed does not.
+# Only Dune state writers share this lock. The revenue/DeFiLlama writer uses
+# a different lock and schedule so neither pipeline can cascade-fail the other.
 concurrency:
   group: xnet-live-state
   cancel-in-progress: false
 
 jobs:
   sync:
-    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

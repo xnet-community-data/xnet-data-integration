@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import calendar
 import json
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
 
@@ -338,6 +338,81 @@ unattributed_payments = D(
 
 
 # --------------------------------------------------
+# Rolling daily fee accrual
+# --------------------------------------------------
+
+daily_rows = [
+    row
+    for row in defi.get("daily_data", [])
+    if row.get("date")
+]
+
+if not daily_rows:
+    raise RuntimeError(
+        "DeFiLlama daily accrual feed is empty"
+    )
+
+daily_rows.sort(
+    key=lambda row: row["date"]
+)
+
+accrual_as_of = date.fromisoformat(
+    daily_rows[-1]["date"]
+)
+
+
+def rolling_fee_total(days):
+    start = (
+        accrual_as_of
+        - timedelta(days=days - 1)
+    )
+
+    return sum(
+        (
+            D(row.get("fees_usd"))
+            for row in daily_rows
+            if start
+            <= date.fromisoformat(row["date"])
+            <= accrual_as_of
+        ),
+        Decimal("0"),
+    )
+
+
+fees_24h = rolling_fee_total(1)
+fees_7d = rolling_fee_total(7)
+fees_30d = rolling_fee_total(30)
+
+recent_30d = [
+    row
+    for row in daily_rows
+    if (
+        accrual_as_of
+        - timedelta(days=29)
+    )
+    <= date.fromisoformat(row["date"])
+    <= accrual_as_of
+]
+
+recent_30d_is_provisional = any(
+    row.get("basis") != "confirmed_settlement"
+    or row.get("offload_basis")
+        == "imputed_trailing_7d_average"
+    for row in recent_30d
+)
+
+projection_model = (
+    defi.get("projection_model")
+    or {}
+)
+
+offload_source = (
+    defi.get("offload_source")
+    or {}
+)
+
+
+# --------------------------------------------------
 # Cross-source QA
 # --------------------------------------------------
 
@@ -548,6 +623,68 @@ state = {
             ),
     },
 
+    "live_fee_accrual": {
+        "as_of":
+            accrual_as_of.isoformat(),
+
+        "fees_24h_usd":
+            dec(fees_24h),
+
+        "fees_7d_usd":
+            dec(fees_7d),
+
+        "fees_30d_usd":
+            dec(fees_30d),
+
+        "avg_daily_fees_7d_usd":
+            dec(
+                fees_7d
+                / Decimal("7")
+            ),
+
+        "avg_daily_fees_30d_usd":
+            dec(
+                fees_30d
+                / Decimal("30")
+            ),
+
+        "provisional":
+            recent_30d_is_provisional,
+
+        "accounting_basis":
+            defi.get(
+                "accounting_basis"
+            ),
+
+        "rate_source_month":
+            projection_model.get(
+                "rate_source_month"
+            ),
+
+        "conservative_rate_usd_per_api_gb":
+            projection_model.get(
+                "conservative_rate_usd_per_api_gb"
+            ),
+
+        "last_measured_offload_date":
+            offload_source.get(
+                "last_measured_date",
+                offload_source.get(
+                    "last_date"
+                ),
+            ),
+
+        "methodology":
+            (
+                "Rolling fee totals use the same daily "
+                "offload-shaped accrual series prepared "
+                "for DeFiLlama. Provisional days are "
+                "replaced or rescaled when official "
+                "monthly projections and carrier "
+                "settlements arrive."
+            ),
+    },
+
     "freshness": {
         "source_latest_month":
             latest_source["month"],
@@ -563,6 +700,9 @@ state = {
                 if latest_payment
                 else None
             ),
+
+        "fee_accrual_as_of":
+            accrual_as_of.isoformat(),
     },
 }
 

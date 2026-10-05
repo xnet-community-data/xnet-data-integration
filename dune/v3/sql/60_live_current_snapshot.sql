@@ -462,6 +462,59 @@ SELECT
         AS DOUBLE
     ) AS unattributed_payments_usd,
 
+    json_extract_scalar(
+        r.j,
+        '$.live_fee_accrual.as_of'
+    ) AS fee_accrual_as_of,
+
+    TRY_CAST(
+        json_extract_scalar(
+            r.j,
+            '$.live_fee_accrual.fees_24h_usd'
+        )
+        AS DOUBLE
+    ) AS estimated_fees_24h_usd,
+
+    TRY_CAST(
+        json_extract_scalar(
+            r.j,
+            '$.live_fee_accrual.fees_7d_usd'
+        )
+        AS DOUBLE
+    ) AS estimated_fees_7d_usd,
+
+    TRY_CAST(
+        json_extract_scalar(
+            r.j,
+            '$.live_fee_accrual.fees_30d_usd'
+        )
+        AS DOUBLE
+    ) AS estimated_fees_30d_usd,
+
+    TRY_CAST(
+        json_extract_scalar(
+            r.j,
+            '$.live_fee_accrual.avg_daily_fees_7d_usd'
+        )
+        AS DOUBLE
+    ) AS estimated_avg_daily_fees_7d_usd,
+
+    TRY_CAST(
+        json_extract_scalar(
+            r.j,
+            '$.live_fee_accrual.avg_daily_fees_30d_usd'
+        )
+        AS DOUBLE
+    ) AS estimated_avg_daily_fees_30d_usd,
+
+    TRY_CAST(
+        json_extract_scalar(
+            r.j,
+            '$.live_fee_accrual.provisional'
+        )
+        AS BOOLEAN
+    ) AS estimated_fees_provisional,
+
     -- VALUATION
 
     (
@@ -685,7 +738,7 @@ CROSS JOIN (
         5,
         'XNET Revenue Sheet',
         'revenue',
-        'Annualized Revenue Run Rate · P/S Ratio · WiFi Revenue (Projected) · WiFi Payment (Received) · Balance Outstanding to Transfer · BBB Daily Rate · Transferred to Buy & Burn'
+        'Annualized Revenue Run Rate · P/S Ratio · WiFi Revenue (Projected) · WiFi Payment (Received) · Estimated Fees 7D · Estimated Fees 30D · Balance Due to Buy/Burn · BBB Daily Rate · Transferred to Buy & Burn'
     )
 
 ) AS f(

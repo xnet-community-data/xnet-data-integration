@@ -101,6 +101,7 @@ def execute(spec, params=None, enforce_cap=True, timeout_seconds=None):
         "execution_cost_credits": float(cost), "completed_at_utc": stamp(),
         "execution_started_at": status.get("execution_started_at"),
         "execution_ended_at": status.get("execution_ended_at"),
+        "query_parameters": params or {},
         "result_metadata": status.get("result_metadata", {}), "billing": usage}
     print(f"Query {spec['query_id']} execution {execution_id}: {status['state']}, {float(cost):.6f} credits (limit {spec['max_run_credits']})", flush=True)
     if status["state"] != "QUERY_STATE_COMPLETED":

@@ -6,6 +6,7 @@ on:
     paths:
       - ".github/workflows/refresh-v3-history.yml"
       - "scripts/v3_refresh_dashboard.py"
+      - "scripts/v3_sync_network.py"
       - "scripts/v3_reduce_chain.py"
       - "scripts/v3_build_chain_snapshot.py"
       - "config/v3_refresh.json"
@@ -48,6 +49,8 @@ jobs:
         run: |
           git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
           python scripts/v3_hydrate_live_state.py
+      - name: Refresh live network APIs
+        run: python scripts/v3_sync_network.py
       - name: Refresh bounded sources and cached charts
         env:
           DUNE_API_KEY: ${{ secrets.DUNE_API_KEY }}

@@ -101,6 +101,7 @@ def execute(spec, params=None, enforce_cap=True, timeout_seconds=None):
         "execution_cost_credits": float(cost), "completed_at_utc": stamp(),
         "execution_started_at": status.get("execution_started_at"),
         "execution_ended_at": status.get("execution_ended_at"),
+        "query_parameters": params or {},
         "result_metadata": status.get("result_metadata", {}), "billing": usage}
     print(f"Query {spec['query_id']} execution {execution_id}: {status['state']}, {float(cost):.6f} credits (limit {spec['max_run_credits']})", flush=True)
     if status["state"] != "QUERY_STATE_COMPLETED":
@@ -246,9 +247,39 @@ def main():
                     )
                 )
 
-                if repair or due(
-                    previous_completed,
-                    cadence,
+                configured_lookback = int(
+                    spec.get(
+                        "lookback_hours",
+                        2,
+                    )
+                )
+
+                previous_lookback = int(
+                    (
+                        previous.get(
+                            "query_parameters",
+                            {},
+                        )
+                        or {}
+                    ).get(
+                        "lookback_hours",
+                        0,
+                    )
+                    or 0
+                )
+
+                lookback_changed = (
+                    previous_lookback
+                    != configured_lookback
+                )
+
+                if (
+                    lookback_changed
+                    or repair
+                    or due(
+                        previous_completed,
+                        cadence,
+                    )
                 ):
                     due_sources.append(
                         spec

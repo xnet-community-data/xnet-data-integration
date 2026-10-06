@@ -252,6 +252,22 @@ SELECT
         AS DOUBLE
     ) AS bbb_observed_spend_window_total_usd,
 
+    TRY_CAST(
+        json_extract_scalar(
+            c.j,
+            '$.bbb_observed_window_xnet_bought'
+        )
+        AS DOUBLE
+    ) AS bbb_observed_window_xnet_bought,
+
+    TRY_CAST(
+        json_extract_scalar(
+            c.j,
+            '$.bbb_observed_avg_buy_price_usd_per_xnet'
+        )
+        AS DOUBLE
+    ) AS bbb_observed_avg_buy_price_usd_per_xnet,
+
 
     TRY_CAST(
         json_extract_scalar(
@@ -733,6 +749,9 @@ SELECT
     cs.bbb_observed_spend_window_end
         AS bbb_daily_rate_window_end,
 
+    cs.bbb_observed_avg_buy_price_usd_per_xnet
+        AS bbb_avg_buy_price_usd_per_xnet,
+
 
     f.freshness_source,
 
@@ -834,7 +853,7 @@ CROSS JOIN (
         2,
         'Dune Solana',
         'chain',
-        'Circulating Supply · XNET Holders · XNET Burned · Buy & Burn Wallet Balance · BBB Avg Daily Spend'
+        'Circulating Supply · XNET Holders · XNET Burned · Buy & Burn Wallet Balance · BBB Avg Daily Spend · BBB Avg Buy Price'
     ),
 
     (

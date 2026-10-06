@@ -247,9 +247,39 @@ def main():
                     )
                 )
 
-                if repair or due(
-                    previous_completed,
-                    cadence,
+                configured_lookback = int(
+                    spec.get(
+                        "lookback_hours",
+                        2,
+                    )
+                )
+
+                previous_lookback = int(
+                    (
+                        previous.get(
+                            "query_parameters",
+                            {},
+                        )
+                        or {}
+                    ).get(
+                        "lookback_hours",
+                        0,
+                    )
+                    or 0
+                )
+
+                lookback_changed = (
+                    previous_lookback
+                    != configured_lookback
+                )
+
+                if (
+                    lookback_changed
+                    or repair
+                    or due(
+                        previous_completed,
+                        cadence,
+                    )
                 ):
                     due_sources.append(
                         spec

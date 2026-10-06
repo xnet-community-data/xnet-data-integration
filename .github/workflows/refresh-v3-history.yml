@@ -12,7 +12,9 @@ on:
       - "config/v3_refresh.json"
       - "config/v3_pipeline.json"
       - "scripts/v3_build_revenue_state.py"
+      - "scripts/v3_build_presentation_history.py"
       - "dune/v3/sql/60_live_current_snapshot.sql"
+      - "dune/v3/sql/71_commercial_history.sql"
       - "dune/v3/sql/62_bbb_dex_hot.sql"
   schedule:
     - cron: "7,22,37,52 * * * *"
@@ -36,11 +38,11 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Check out latest main
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: main
           fetch-depth: 0
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - name: Restore production state
@@ -64,7 +66,7 @@ jobs:
           fi
       - name: Preserve diagnostic state
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: xnet-v3-refresh-state
           path: |

@@ -218,7 +218,27 @@ def main():
         health = load(HEALTH, {})
         last = state.get("chain_completed_at_utc") or health.get("last_refresh_completed_utc")
         repair = due(state.get("chain_repaired_at_utc"), CONFIG["repair_cadence_minutes"])
-        if due(last, CONFIG["chain_cadence_minutes"]):
+
+        source_config_changed = any(
+            int(
+                (
+                    state.get("queries", {})
+                    .get(spec["key"], {})
+                    .get("query_parameters", {})
+                    or {}
+                ).get("lookback_hours", 0)
+                or 0
+            )
+            != int(spec.get("lookback_hours", 2))
+            for spec in CONFIG["sources"]
+            if spec.get("enabled", True)
+        )
+
+        if (
+            source_config_changed
+            or repair
+            or due(last, CONFIG["chain_cadence_minutes"])
+        ):
             remaining = (
                 CONFIG["max_repair_export_points"]
                 if repair

@@ -365,66 +365,69 @@ def bbb_scope_start():
 
 
 def bbb_observed_spend():
-    """Trailing observed BBB XNET-buy spend across up to seven completed UTC days."""
+    """Observed BBB buy spend and VWAP across up to seven complete UTC days."""
     path = ROOT / "data/derived/bbb_trades_daily.csv"
-    scope_start = bbb_scope_start()
 
-    if not path.exists() or not scope_start:
-        return {
-            "avg_daily_usd": None,
-            "window_days": 0,
-            "window_start": None,
-            "window_end": None,
-            "window_total_usd": None,
-            "trade_days": 0,
-        }
+    empty = {
+        "avg_daily_usd": None,
+        "avg_buy_price_usd_per_xnet": None,
+        "window_days": 0,
+        "window_start": None,
+        "window_end": None,
+        "window_total_usd": None,
+        "window_total_xnet_bought": None,
+        "trade_days": 0,
+    }
+
+    if not path.exists():
+        return empty
 
     health = load("xnet_chain_health.json")
     source = (
         health.get("sources", {})
         .get("bbb_dex", {})
     )
+
     completed_at = source.get("completed_at_utc")
-
-    if not completed_at:
-        return {
-            "avg_daily_usd": None,
-            "window_days": 0,
-            "window_start": None,
-            "window_end": None,
-            "window_total_usd": None,
-            "trade_days": 0,
-        }
-
-    coverage_start = date.fromisoformat(
-        str(scope_start)[:10]
+    lookback_hours = (
+        source.get("query_parameters", {})
+        .get("lookback_hours")
     )
 
-    # Only complete UTC days enter the average. A query completed on Oct 6
-    # proves coverage through Oct 5, not through the still-open Oct 6.
+    if not completed_at or not lookback_hours:
+        return empty
+
+    completed_dt = datetime.fromisoformat(
+        str(completed_at).replace("Z", "+00:00")
+    )
+
+    coverage_start_dt = (
+        completed_dt
+        - timedelta(hours=int(lookback_hours))
+    )
+
+    # Use only complete UTC calendar days that are fully inside the proven
+    # query coverage window. The current/open UTC day is always excluded.
+    first_full_day = coverage_start_dt.date()
+
+    if coverage_start_dt.time() != datetime.min.time():
+        first_full_day += timedelta(days=1)
+
     window_end = (
-        date.fromisoformat(
-            str(completed_at)[:10]
-        )
+        completed_dt.date()
         - timedelta(days=1)
     )
 
-    if window_end < coverage_start:
-        return {
-            "avg_daily_usd": None,
-            "window_days": 0,
-            "window_start": None,
-            "window_end": None,
-            "window_total_usd": None,
-            "trade_days": 0,
-        }
+    if window_end < first_full_day:
+        return empty
 
     window_start = max(
-        coverage_start,
+        first_full_day,
         window_end - timedelta(days=6),
     )
 
     buy_value_by_day = {}
+    xnet_bought_by_day = {}
 
     with path.open(newline="") as f:
         for row in csv.DictReader(f):
@@ -446,14 +449,15 @@ def bbb_observed_spend():
                 "bbb_buy_value_usd"
             )
 
-            # One-time migration fallback for the pre-split file. It is safe
-            # only when that day's canonical record contains no BBB sells.
+            # Migration fallback for pre-split rows is safe only where no
+            # sells occurred on that day.
             if buy_value in (None, ""):
                 if int(row.get("bbb_sell_count") or 0) != 0:
                     raise RuntimeError(
                         "BBB daily history needs buy/sell USD split before "
                         "observed spend can be calculated."
                     )
+
                 buy_value = row.get(
                     "trade_value_usd"
                 )
@@ -462,39 +466,59 @@ def bbb_observed_spend():
                 buy_value
             )
 
+            xnet_bought_by_day[day] = D(
+                row.get("gross_xnet_bought")
+            )
+
     window_days = (
         window_end - window_start
     ).days + 1
 
-    total = Decimal("0")
+    total_usd = Decimal("0")
+    total_xnet_bought = Decimal("0")
     trade_days = 0
 
     day = window_start
 
     while day <= window_end:
-        value = buy_value_by_day.get(
+        buy_usd = buy_value_by_day.get(
             day,
             Decimal("0"),
         )
 
-        total += value
+        xnet_bought = xnet_bought_by_day.get(
+            day,
+            Decimal("0"),
+        )
 
-        if value > 0:
+        total_usd += buy_usd
+        total_xnet_bought += xnet_bought
+
+        if buy_usd > 0:
             trade_days += 1
 
         day += timedelta(days=1)
 
-    average = (
-        total
+    avg_daily_usd = (
+        total_usd
         / Decimal(window_days)
     )
 
+    avg_buy_price = (
+        total_usd
+        / total_xnet_bought
+        if total_xnet_bought > 0
+        else None
+    )
+
     return {
-        "avg_daily_usd": average,
+        "avg_daily_usd": avg_daily_usd,
+        "avg_buy_price_usd_per_xnet": avg_buy_price,
         "window_days": window_days,
         "window_start": window_start.isoformat(),
         "window_end": window_end.isoformat(),
-        "window_total_usd": total,
+        "window_total_usd": total_usd,
+        "window_total_xnet_bought": total_xnet_bought,
         "trade_days": trade_days,
     }
 
@@ -520,7 +544,7 @@ observed_bbb_spend = bbb_observed_spend()
 
 
 snapshot = {
-    "schema_version": 2,
+    "schema_version": 3,
 
     "chain_collected_at_utc": load("xnet_chain_health.json").get("last_refresh_completed_utc"),
     "generated_at_utc":
@@ -617,6 +641,32 @@ snapshot = {
             else None
         ),
 
+    "bbb_observed_window_xnet_bought":
+        (
+            str(
+                observed_bbb_spend[
+                    "window_total_xnet_bought"
+                ]
+            )
+            if observed_bbb_spend[
+                "window_total_xnet_bought"
+            ] is not None
+            else None
+        ),
+
+    "bbb_observed_avg_buy_price_usd_per_xnet":
+        (
+            str(
+                observed_bbb_spend[
+                    "avg_buy_price_usd_per_xnet"
+                ]
+            )
+            if observed_bbb_spend[
+                "avg_buy_price_usd_per_xnet"
+            ] is not None
+            else None
+        ),
+
     "bbb_observed_spend_trade_days":
         observed_bbb_spend[
             "trade_days"
@@ -624,8 +674,8 @@ snapshot = {
 
     "bbb_observed_spend_methodology":
         (
-            "actual_bbb_xnet_buy_value_usd_equivalent_"
-            "avg_up_to_7_completed_utc_days"
+            "actual_bbb_xnet_buy_value_and_volume_weighted_price_"
+            "across_up_to_7_fully_covered_completed_utc_days"
         ),
 
     "latest_transfer_event_utc":

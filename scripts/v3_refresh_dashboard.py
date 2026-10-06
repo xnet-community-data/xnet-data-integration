@@ -293,12 +293,33 @@ def main():
                     != configured_lookback
                 )
 
+                preferred_hour = spec.get(
+                    "preferred_hour_utc"
+                )
+
+                in_preferred_hour = (
+                    preferred_hour is None
+                    or now().hour
+                    == int(preferred_hour)
+                )
+
+                repair_for_source = (
+                    repair
+                    and spec.get(
+                        "repair_on_global_cycle",
+                        True,
+                    )
+                )
+
                 if (
                     lookback_changed
-                    or repair
-                    or due(
-                        previous_completed,
-                        cadence,
+                    or repair_for_source
+                    or (
+                        in_preferred_hour
+                        and due(
+                            previous_completed,
+                            cadence,
+                        )
                     )
                 ):
                     due_sources.append(
@@ -316,7 +337,15 @@ def main():
                     "completed_at_utc"
                 )
 
-                if repair:
+                repair_for_source = (
+                    repair
+                    and spec.get(
+                        "repair_on_global_cycle",
+                        True,
+                    )
+                )
+
+                if repair_for_source:
                     lookback = int(
                         spec.get(
                             "repair_lookback_hours",
@@ -374,6 +403,97 @@ def main():
                             lookback,
                     },
                 )
+
+                if spec.get(
+                    "track_continuous_coverage",
+                    False,
+                ):
+                    completed_dt = (
+                        datetime.fromisoformat(
+                            record[
+                                "completed_at_utc"
+                            ].replace(
+                                "Z",
+                                "+00:00",
+                            )
+                        )
+                    )
+
+                    interval_start = (
+                        completed_dt
+                        - timedelta(
+                            hours=lookback
+                        )
+                    )
+                    interval_end = completed_dt
+
+                    previous_start = previous.get(
+                        "continuous_coverage_start_utc"
+                    )
+                    previous_end = previous.get(
+                        "continuous_coverage_end_utc"
+                    )
+
+                    if (
+                        previous_start
+                        and previous_end
+                    ):
+                        previous_start_dt = (
+                            datetime.fromisoformat(
+                                previous_start.replace(
+                                    "Z",
+                                    "+00:00",
+                                )
+                            )
+                        )
+                        previous_end_dt = (
+                            datetime.fromisoformat(
+                                previous_end.replace(
+                                    "Z",
+                                    "+00:00",
+                                )
+                            )
+                        )
+
+                        if (
+                            interval_start
+                            <= previous_end_dt
+                            + timedelta(minutes=5)
+                        ):
+                            interval_start = min(
+                                interval_start,
+                                previous_start_dt,
+                            )
+                            interval_end = max(
+                                interval_end,
+                                previous_end_dt,
+                            )
+
+                    record[
+                        "continuous_coverage_start_utc"
+                    ] = (
+                        interval_start
+                        .isoformat(
+                            timespec="seconds"
+                        )
+                        .replace(
+                            "+00:00",
+                            "Z",
+                        )
+                    )
+
+                    record[
+                        "continuous_coverage_end_utc"
+                    ] = (
+                        interval_end
+                        .isoformat(
+                            timespec="seconds"
+                        )
+                        .replace(
+                            "+00:00",
+                            "Z",
+                        )
+                    )
 
                 remaining = export_source(
                     record,

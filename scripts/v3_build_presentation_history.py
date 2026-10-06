@@ -195,6 +195,12 @@ for row in defi.get("settlements", []):
     if pdate and amount is not None:
         dated_cash_by_month[month_of(pdate)] += amount
 
+fiat_transfer_by_source_month = {
+    month_of(row["source_month"]): row
+    for row in defi.get("fiat_operator_transfers", [])
+    if row.get("source_month")
+}
+
 commercial_months = sorted(
     set(revenue_by_month)
     | set(dated_cash_by_month)
@@ -216,6 +222,12 @@ for month in commercial_months:
     transferred_bbb = D(src.get("transferred_to_buy_burn_usd"))
     fiat_operator_payout = D(
         src.get("transferred_to_fiat_operators_usd")
+    )
+    fiat_transfer = fiat_transfer_by_source_month.get(month)
+    fiat_service_month = (
+        month_of(fiat_transfer["service_month"])
+        if fiat_transfer and fiat_transfer.get("service_month")
+        else None
     )
 
     fiat_gross_allocation = None
@@ -291,6 +303,7 @@ for month in commercial_months:
                 float(fiat_operator_payout)
                 if fiat_operator_payout is not None
                 else None,
+            "fiat_service_month": fiat_service_month,
             "fiat_gross_allocation_usd":
                 float(fiat_gross_allocation)
                 if fiat_gross_allocation is not None

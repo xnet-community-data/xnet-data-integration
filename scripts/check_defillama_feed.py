@@ -102,7 +102,7 @@ def main():
 
         if fiat_gross:
             assert row["fiat_allocation_basis"] == (
-                "xip_13_1_net60_two_month_service_lag"
+                "xip_13_1_carrier_settlement_reconciliation"
             )
             assert fiat_gross == (
                 dec(row["fiat_operator_payout_usd"])
@@ -194,14 +194,34 @@ def main():
 
     for transfer in fiat:
         source_y, source_m = map(int, transfer["source_month"].split("-"))
-        absolute = source_y * 12 + (source_m - 1) - 2
-        service_y, service_zero_m = divmod(absolute, 12)
-        expected_service_month = (
-            f"{service_y:04d}-{service_zero_m + 1:02d}"
+        absolute = source_y * 12 + (source_m - 1) - 1
+        carrier_y, carrier_zero_m = divmod(absolute, 12)
+        expected_carrier_source_month = (
+            f"{carrier_y:04d}-{carrier_zero_m + 1:02d}"
         )
-        assert transfer["service_month"] == expected_service_month
+        assert (
+            transfer["carrier_settlement_source_month"]
+            == expected_carrier_source_month
+        )
+
+        carrier_settlements = [
+            row
+            for row in feed["settlements"]
+            if row["source_sheet_column"]
+            == expected_carrier_source_month
+        ]
+        assert len(carrier_settlements) == 1
+        carrier_settlement = carrier_settlements[0]
+        assert (
+            transfer["carrier_settlement_id"]
+            == carrier_settlement["settlement_id"]
+        )
+        assert len(carrier_settlement["service_months"]) == 1
+        assert transfer["service_month"] == (
+            carrier_settlement["service_months"][0]["service_month"]
+        )
         assert transfer["attribution_basis"] == (
-            "xip_13_1_net60_two_month_service_lag"
+            "xip_13_1_carrier_settlement_reconciliation"
         )
 
     assert daily_total == (

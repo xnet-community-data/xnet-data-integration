@@ -38,12 +38,11 @@ FIAT_OPERATOR_SHARE = Decimal("0.75")
 FIAT_BBB_SHARE = Decimal("0.05")
 FIAT_OPERATIONS_SHARE = Decimal("0.20")
 
-# XIP-13.1 is listed Passed in the official XIP index. It specifies monthly
-# fiat settlement in arrears on the existing NET60+ carrier timeline, an 80%
-# BuyBack Revenue Percentage, a 5% facilitation fee, and therefore a 75%
-# operator cash share. We use the observed two-month carrier cadence as the
-# deterministic service-period lag for fiat payouts.
-FIAT_SERVICE_LAG_MONTHS = 2
+# XIP-13.1 is listed Passed in the official XIP index. Fiat payouts are
+# recorded after the carrier settlement that funds them. Attribute each payout
+# to the service month already reconciled for the immediately preceding carrier
+# source month rather than subtracting months from the fiat row itself.
+FIAT_CARRIER_SOURCE_OFFSET_MONTHS = 1
 XIP_12_EFFECTIVE_DATE = "2025-05-22"
 XIP_INDEX_URL = "https://github.com/XNET-Foundation/XIP"
 XIP_12_URL = "https://github.com/XNET-Foundation/XIP/blob/main/XIP-12.md"
@@ -334,63 +333,6 @@ def main():
     )
     rows = source["data"]
 
-    fiat_operator_transfers = []
-    for row in rows:
-        payout = D(row.get("transferred_to_fiat_operators_usd"))
-        if payout is None or payout <= TOLERANCE:
-            continue
-
-        source_month = row["month"][:7]
-        service_month = shift_month(
-            source_month,
-            -FIAT_SERVICE_LAG_MONTHS,
-        )
-
-        gross = (
-            payout / FIAT_OPERATOR_SHARE
-        ).quantize(CENT, rounding=ROUND_HALF_UP)
-        bbb = (
-            gross * FIAT_BBB_SHARE
-        ).quantize(CENT, rounding=ROUND_HALF_UP)
-        operations = gross - payout - bbb
-
-        if operations < 0:
-            raise RuntimeError(
-                "Invalid fiat-deployer allocation: negative operations share"
-            )
-
-        fiat_operator_transfers.append(
-            {
-                "source_month": source_month,
-                "service_month": service_month,
-                "operator_payout_usd": money(payout),
-                "amount_usd": money(payout),
-                "gross_fiat_allocation_usd": money(gross),
-                "bbb_allocation_usd": money(bbb),
-                "operations_allocation_usd": money(operations),
-                "operator_share_pct": 75.0,
-                "bbb_share_pct": 5.0,
-                "operations_share_pct": 20.0,
-                "transfer_date": None,
-                "attribution_basis": (
-                    "xip_13_1_net60_two_month_service_lag"
-                ),
-                "status": "service_month_attributed_two_month_lag",
-                "policy_source": {
-                    "xip": "XIP-13.1",
-                    "status": "Passed in official XIP index",
-                    "url": XIP_13_1_URL,
-                    "index_url": XIP_INDEX_URL,
-                },
-                "token_emissions_treatment": (
-                    "XIP-13.1 assigns the corresponding fiat-option token "
-                    "emissions to the Burn facility. The USD revenue sheet "
-                    "does not identify a token amount, so no token quantity "
-                    "is inferred in this feed."
-                ),
-            }
-        )
-
     services = [
         {
             "month": row["month"],
@@ -662,6 +604,97 @@ def main():
             else money(matched_total - payment["amount"])
         )
         settlements.append(settlement)
+
+    # Fiat payouts are posted in the source sheet after the carrier settlement
+    # that funds them. Bind each fiat row to the immediately preceding carrier
+    # source month, then inherit the service month from that settlement's
+    # reconciliation. This keeps the attribution stable when later carrier
+    # payments arrive and fails closed if the expected settlement is missing.
+    fiat_operator_transfers = []
+    for row in rows:
+        payout = D(row.get("transferred_to_fiat_operators_usd"))
+        if payout is None or payout <= TOLERANCE:
+            continue
+
+        source_month = row["month"][:7]
+        carrier_source_month = shift_month(
+            source_month,
+            -FIAT_CARRIER_SOURCE_OFFSET_MONTHS,
+        )
+        carrier_settlements = [
+            settlement
+            for settlement in settlements
+            if settlement["source_sheet_column"] == carrier_source_month
+        ]
+
+        if len(carrier_settlements) != 1:
+            raise RuntimeError(
+                "Expected exactly one carrier settlement for fiat payout "
+                f"{source_month} via carrier source month "
+                f"{carrier_source_month}; found {len(carrier_settlements)}"
+            )
+
+        carrier_settlement = carrier_settlements[0]
+        service_months = carrier_settlement.get("service_months") or []
+        if len(service_months) != 1:
+            raise RuntimeError(
+                "Fiat payout requires one reconciled carrier service month: "
+                f"{carrier_settlement['settlement_id']} has "
+                f"{len(service_months)}"
+            )
+
+        service_month = service_months[0]["service_month"]
+
+        gross = (
+            payout / FIAT_OPERATOR_SHARE
+        ).quantize(CENT, rounding=ROUND_HALF_UP)
+        bbb = (
+            gross * FIAT_BBB_SHARE
+        ).quantize(CENT, rounding=ROUND_HALF_UP)
+        operations = gross - payout - bbb
+
+        if operations < 0:
+            raise RuntimeError(
+                "Invalid fiat-deployer allocation: negative operations share"
+            )
+
+        fiat_operator_transfers.append(
+            {
+                "source_month": source_month,
+                "carrier_settlement_source_month": carrier_source_month,
+                "carrier_settlement_id": carrier_settlement["settlement_id"],
+                "carrier_payment_received_date":
+                    carrier_settlement["payment_received_date"],
+                "service_month": service_month,
+                "operator_payout_usd": money(payout),
+                "amount_usd": money(payout),
+                "gross_fiat_allocation_usd": money(gross),
+                "bbb_allocation_usd": money(bbb),
+                "operations_allocation_usd": money(operations),
+                "operator_share_pct": 75.0,
+                "bbb_share_pct": 5.0,
+                "operations_share_pct": 20.0,
+                "transfer_date": None,
+                "attribution_basis": (
+                    "xip_13_1_carrier_settlement_reconciliation"
+                ),
+                "status": (
+                    "service_month_inherited_from_carrier_settlement"
+                ),
+                "policy_source": {
+                    "xip": "XIP-13.1",
+                    "status": "Passed in official XIP index",
+                    "url": XIP_13_1_URL,
+                    "index_url": XIP_INDEX_URL,
+                },
+                "token_emissions_treatment": (
+                    "XIP-13.1 assigns the corresponding fiat-option token "
+                    "emissions to the Burn facility. The USD revenue sheet "
+                    "does not identify a token amount, so no token quantity "
+                    "is inferred in this feed."
+                ),
+            }
+        )
 
     recognized.sort(key=lambda row: (row["date"], row["settlement_id"]))
 
@@ -1000,8 +1033,8 @@ def main():
     # Fees are gross carrier WiFi offload fees. Ordinary fees follow the
     # applicable XNET allocation policy. XIP-13.1 creates a fiat-operator
     # exception: 75% to the operator, 5% facilitation/BBB, and 20% operations.
-    # XIP-13.1 states monthly payment in arrears on the NET60+ carrier timeline,
-    # so a source-month fiat payout maps to service two calendar months earlier.
+    # XIP-13.1 uses the carrier settlement timeline. Fiat payouts inherit the
+    # service month from the reconciled carrier settlement that funds them.
 
     for row in daily_data:
         fee = Decimal(str(row["fees_usd"]))
@@ -1155,13 +1188,13 @@ def main():
             row["protocol_revenue_usd"] = money(protocol)
             row["revenue_usd"] = money(revenue)
             row["fiat_allocation_basis"] = (
-                "xip_13_1_net60_two_month_service_lag"
+                "xip_13_1_carrier_settlement_reconciliation"
             )
 
         for transfer in fiat_operator_transfers:
             if transfer["service_month"] == service_month:
                 transfer["daily_allocation_status"] = (
-                    "distributed_over_two_month_lag_service_offload"
+                    "distributed_over_reconciled_service_offload"
                 )
                 transfer["daily_allocation_first_date"] = matching[0]["date"]
                 transfer["daily_allocation_last_date"] = matching[-1]["date"]
@@ -1200,7 +1233,7 @@ def main():
             )
 
         month["fiat_allocation_basis"] = (
-            "xip_13_1_net60_two_month_service_lag"
+            "xip_13_1_carrier_settlement_reconciliation"
             if month["fiat_gross_allocation_usd"] > 0
             else None
         )

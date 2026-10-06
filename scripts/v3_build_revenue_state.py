@@ -164,55 +164,44 @@ latest_bbb_transfer = (
 # Latest fiat/operator transfer
 # --------------------------------------------------
 
-fiat_rows = [
-    r for r in eligible
-    if positive(
-        r.get(
-            "transferred_to_fiat_operators_usd"
-        )
-    )
+fiat_transfers = [
+    row
+    for row in defi.get("fiat_operator_transfers", [])
+    if positive(row.get("operator_payout_usd"))
 ]
 
-latest_fiat = (
+latest_fiat_transfer = (
     max(
-        fiat_rows,
-        key=lambda r: r["month"],
+        fiat_transfers,
+        key=lambda r: (
+            r.get("source_month") or "",
+            r.get("carrier_payment_received_date") or "",
+        ),
     )
-    if fiat_rows
+    if fiat_transfers
     else None
 )
 
 latest_fiat_operator_payout = (
-    D(
-        latest_fiat[
-            "transferred_to_fiat_operators_usd"
-        ]
-    )
-    if latest_fiat
+    D(latest_fiat_transfer["operator_payout_usd"])
+    if latest_fiat_transfer
     else None
 )
-
-latest_fiat_gross_allocation = None
-latest_fiat_bbb_allocation = None
-latest_fiat_operations_allocation = None
-
-if (
-    latest_fiat_operator_payout is not None
-    and latest_fiat_operator_payout > 0
-):
-    latest_fiat_gross_allocation = (
-        latest_fiat_operator_payout
-        / Decimal("0.75")
-    ).quantize(Decimal("0.01"))
-    latest_fiat_bbb_allocation = (
-        latest_fiat_gross_allocation
-        * Decimal("0.05")
-    ).quantize(Decimal("0.01"))
-    latest_fiat_operations_allocation = (
-        latest_fiat_gross_allocation
-        - latest_fiat_operator_payout
-        - latest_fiat_bbb_allocation
-    )
+latest_fiat_gross_allocation = (
+    D(latest_fiat_transfer["gross_fiat_allocation_usd"])
+    if latest_fiat_transfer
+    else None
+)
+latest_fiat_bbb_allocation = (
+    D(latest_fiat_transfer["bbb_allocation_usd"])
+    if latest_fiat_transfer
+    else None
+)
+latest_fiat_operations_allocation = (
+    D(latest_fiat_transfer["operations_allocation_usd"])
+    if latest_fiat_transfer
+    else None
+)
 
 
 # --------------------------------------------------
@@ -607,36 +596,36 @@ state = {
     "latest_fiat_operator_transfer": {
         "source_month":
             (
-                latest_fiat["month"]
-                if latest_fiat
+                latest_fiat_transfer["source_month"]
+                if latest_fiat_transfer
                 else None
             ),
 
         "operator_payout_usd":
             (
                 dec(latest_fiat_operator_payout)
-                if latest_fiat
+                if latest_fiat_transfer
                 else None
             ),
 
         "gross_fiat_allocation_usd":
             (
                 dec(latest_fiat_gross_allocation)
-                if latest_fiat
+                if latest_fiat_transfer
                 else None
             ),
 
         "bbb_allocation_usd":
             (
                 dec(latest_fiat_bbb_allocation)
-                if latest_fiat
+                if latest_fiat_transfer
                 else None
             ),
 
         "operations_allocation_usd":
             (
                 dec(latest_fiat_operations_allocation)
-                if latest_fiat
+                if latest_fiat_transfer
                 else None
             ),
 
@@ -649,8 +638,39 @@ state = {
         "operations_share_pct":
             20.0,
 
+        "service_month":
+            (
+                latest_fiat_transfer["service_month"]
+                if latest_fiat_transfer
+                else None
+            ),
+
+        "carrier_settlement_source_month":
+            (
+                latest_fiat_transfer.get(
+                    "carrier_settlement_source_month"
+                )
+                if latest_fiat_transfer
+                else None
+            ),
+
+        "carrier_settlement_id":
+            (
+                latest_fiat_transfer.get(
+                    "carrier_settlement_id"
+                )
+                if latest_fiat_transfer
+                else None
+            ),
+
         "service_period_attribution":
-            "source_month_provisional",
+            (
+                latest_fiat_transfer.get(
+                    "attribution_basis"
+                )
+                if latest_fiat_transfer
+                else None
+            ),
 
         "token_emissions_treatment":
             (

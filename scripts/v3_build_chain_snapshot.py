@@ -389,32 +389,66 @@ def bbb_observed_spend():
     )
 
     completed_at = source.get("completed_at_utc")
-    lookback_hours = (
-        source.get("query_parameters", {})
-        .get("lookback_hours")
-    )
 
-    if not completed_at or not lookback_hours:
+    if not completed_at:
         return empty
 
     completed_dt = datetime.fromisoformat(
         str(completed_at).replace("Z", "+00:00")
     )
 
-    coverage_start_dt = (
-        completed_dt
-        - timedelta(hours=int(lookback_hours))
+    continuous_start = source.get(
+        "continuous_coverage_start_utc"
+    )
+    continuous_end = source.get(
+        "continuous_coverage_end_utc"
     )
 
+    if continuous_start and continuous_end:
+        coverage_start_dt = datetime.fromisoformat(
+            str(continuous_start).replace(
+                "Z",
+                "+00:00",
+            )
+        )
+        coverage_end_dt = datetime.fromisoformat(
+            str(continuous_end).replace(
+                "Z",
+                "+00:00",
+            )
+        )
+    else:
+        lookback_hours = (
+            source.get(
+                "query_parameters",
+                {},
+            )
+            .get(
+                "lookback_hours"
+            )
+        )
+
+        if not lookback_hours:
+            return empty
+
+        coverage_start_dt = (
+            completed_dt
+            - timedelta(
+                hours=int(lookback_hours)
+            )
+        )
+        coverage_end_dt = completed_dt
+
     # Use only complete UTC calendar days that are fully inside the proven
-    # query coverage window. The current/open UTC day is always excluded.
+    # continuous source-coverage interval. The current/open UTC day is always
+    # excluded.
     first_full_day = coverage_start_dt.date()
 
     if coverage_start_dt.time() != datetime.min.time():
         first_full_day += timedelta(days=1)
 
     window_end = (
-        completed_dt.date()
+        coverage_end_dt.date()
         - timedelta(days=1)
     )
 

@@ -108,25 +108,55 @@ monthly AS (
     FROM items
 ),
 
-latest_fiat AS (
+latest_payment_cadence AS (
+    SELECT
+        MAX(month) AS latest_payment_source_month
+
+    FROM monthly
+
+    WHERE dated_cash_received_usd IS NOT NULL
+),
+
+latest_fiat_values AS (
     SELECT
         f.month AS latest_fiat_source_month,
-        DATE_ADD('month', -2, f.month) AS latest_fiat_service_month,
         f.fiat_operator_payout_usd AS latest_fiat_operator_payout_usd,
-        f.fiat_gross_allocation_usd AS latest_fiat_gross_allocation_usd,
-        100.0
-        * f.fiat_gross_allocation_usd
-        / NULLIF(s.wifi_revenue_projected_usd, 0)
-            AS latest_fiat_routed_share_of_service_revenue_pct
+        f.fiat_gross_allocation_usd AS latest_fiat_gross_allocation_usd
 
     FROM monthly f
-    LEFT JOIN monthly s
-        ON s.month = DATE_ADD('month', -2, f.month)
 
     WHERE f.fiat_operator_payout_usd IS NOT NULL
 
     ORDER BY f.month DESC
     LIMIT 1
+),
+
+latest_fiat AS (
+    SELECT
+        f.latest_fiat_source_month,
+        DATE_ADD(
+            'month',
+            -2,
+            p.latest_payment_source_month
+        ) AS latest_fiat_service_month,
+        f.latest_fiat_operator_payout_usd,
+        f.latest_fiat_gross_allocation_usd,
+        100.0
+        * f.latest_fiat_gross_allocation_usd
+        / NULLIF(
+            s.wifi_revenue_projected_usd,
+            0
+        )
+            AS latest_fiat_routed_share_of_service_revenue_pct
+
+    FROM latest_fiat_values f
+    CROSS JOIN latest_payment_cadence p
+    LEFT JOIN monthly s
+        ON s.month = DATE_ADD(
+            'month',
+            -2,
+            p.latest_payment_source_month
+        )
 )
 
 SELECT

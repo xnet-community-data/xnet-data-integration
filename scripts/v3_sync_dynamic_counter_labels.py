@@ -466,23 +466,18 @@ def main():
         defi
     )
 
-    if fiat:
-        fiat_service_label = month_label(
-            fiat.get(
-                "service_month"
-            )
-        )
+    if fiat and payment_label:
+        # Fiat settlement follows the same carrier-payment cadence as the
+        # latest cash receipt. Use that reconciled service period rather than
+        # inferring a service month from the row in which the fiat transfer
+        # happens to be reported.
+        fiat_service_label = payment_label
+
         fiat_source_label = month_label(
             fiat.get(
                 "source_month"
             )
         )
-
-        if not fiat_service_label:
-            raise RuntimeError(
-                "Latest fiat payout has no "
-                "valid service month."
-            )
 
         fiat_label = (
             f"{fiat_service_label} service"
@@ -492,12 +487,15 @@ def main():
             "Cash paid to operators that "
             "chose the XIP-13.1 fiat option "
             f"for {fiat_service_label} service. "
+            "The service period follows the "
+            "latest carrier payment cadence. "
             + (
-                f"Reported in {fiat_source_label} "
-                "after the carrier settlement cycle."
+                f"The fiat transfer is reported "
+                f"in the {fiat_source_label} source row."
                 if fiat_source_label
                 else
-                "Reported after the carrier settlement cycle."
+                "The fiat transfer is reported separately "
+                "in the revenue source."
             )
         )
 
@@ -505,7 +503,9 @@ def main():
             "Share of "
             f"{fiat_service_label} service revenue "
             "routed through the fiat option. "
-            "Uses the full fiat allocation before "
+            "The service period follows the "
+            "latest carrier payment cadence and "
+            "uses the full fiat allocation before "
             "the 75% operator / 5% BBB / "
             "20% operations split."
         )
@@ -542,8 +542,9 @@ def main():
 
     else:
         print(
-            "WARNING: no fiat operator payout "
-            "found; preserving existing fiat labels."
+            "WARNING: no fiat operator payout or "
+            "latest payment service mapping found; "
+            "preserving existing fiat labels."
         )
 
     print(

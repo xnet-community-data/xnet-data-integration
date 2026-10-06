@@ -5,7 +5,7 @@
 -- Scope:
 --   * primary BBB wallet
 --   * XNET-facing DEX legs
---   * bounded parameterized overlap (daily in production)
+--   * one daily bounded window covering the latest seven full UTC days
 --
 -- Multiple XNET-facing decoded route legs are reduced into a single
 -- transaction-level economic record.
@@ -65,7 +65,7 @@ WITH legs AS (
 
     FROM dex_solana.trades
 
-    WHERE block_date >= CURRENT_DATE - INTERVAL '2' DAY
+    WHERE block_date >= CURRENT_DATE - INTERVAL '9' DAY
       AND block_time >= CURRENT_TIMESTAMP - INTERVAL '{{lookback_hours}}' HOUR
 
       AND trader_id =

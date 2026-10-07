@@ -621,6 +621,64 @@ SELECT
         AS DOUBLE
     ) AS supply_side_revenue_30d_usd,
 
+    json_extract_scalar(
+        r.j,
+        '$.annualized_earnings.basis'
+    ) AS annualized_earnings_basis,
+
+    json_extract_scalar(
+        r.j,
+        '$.annualized_earnings.as_of'
+    ) AS annualized_earnings_as_of,
+
+    TRY_CAST(
+        json_extract_scalar(
+            r.j,
+            '$.annualized_earnings.fees_usd'
+        )
+        AS DOUBLE
+    ) AS annualized_fees_30d_usd,
+
+    TRY_CAST(
+        json_extract_scalar(
+            r.j,
+            '$.annualized_earnings.revenue_usd'
+        )
+        AS DOUBLE
+    ) AS annualized_retained_revenue_30d_usd,
+
+    TRY_CAST(
+        json_extract_scalar(
+            r.j,
+            '$.annualized_earnings.supply_side_revenue_usd'
+        )
+        AS DOUBLE
+    ) AS annualized_supply_side_revenue_30d_usd,
+
+    TRY_CAST(
+        json_extract_scalar(
+            r.j,
+            '$.annualized_earnings.holders_revenue_usd'
+        )
+        AS DOUBLE
+    ) AS annualized_holders_revenue_30d_usd,
+
+    TRY_CAST(
+        json_extract_scalar(
+            r.j,
+            '$.annualized_earnings.protocol_revenue_usd'
+        )
+        AS DOUBLE
+    ) AS annualized_protocol_revenue_30d_usd,
+
+    TRY_CAST(
+        json_extract_scalar(
+            r.j,
+            '$.annualized_earnings.provisional'
+        )
+        AS BOOLEAN
+    ) AS annualized_earnings_provisional,
+
     TRY_CAST(
         json_extract_scalar(
             r.j,

@@ -1,0 +1,39 @@
+name: Test Dune refresh recovery
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "scripts/v3_refresh_dashboard.py"
+      - "scripts/v3_execution_tracker.py"
+      - "scripts/v3_publish_live_state.sh"
+      - "config/v3_refresh.json"
+      - "tests/test_v3_refresh.py"
+      - "tests/test_v3_execution_tracker.py"
+      - ".github/workflows/test-v3-refresh.yml"
+  pull_request:
+    paths:
+      - "scripts/v3_refresh_dashboard.py"
+      - "scripts/v3_execution_tracker.py"
+      - "scripts/v3_publish_live_state.sh"
+      - "config/v3_refresh.json"
+      - "tests/test_v3_refresh.py"
+      - "tests/test_v3_execution_tracker.py"
+      - ".github/workflows/test-v3-refresh.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Test execution tracking, recovery and publication isolation
+        run: python -m unittest discover -s tests -p 'test_v3*refresh*.py' -v && python -m unittest discover -s tests -p 'test_v3_execution_tracker.py' -v
+      - name: Check publisher syntax
+        run: bash -n scripts/v3_publish_live_state.sh

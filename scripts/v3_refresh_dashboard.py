@@ -14,6 +14,7 @@ import urllib.error
 import urllib.request
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
+from v3_execution_tracker import ExecutionPending, ExecutionTracker
 
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG = json.loads((ROOT / "config/v3_refresh.json").read_text())
@@ -70,46 +71,22 @@ def usage_guard():
         raise RuntimeError(f"Monthly spend guard reached: {used:.3f}/{limit:.0f} credits.")
     return {"credits_used": used, "guard_credits": limit, "period_start": period["start_date"], "period_end": period["end_date"]}
 
-def execute(spec, params=None, enforce_cap=True, timeout_seconds=None):
-    usage = usage_guard()
-    body = {"performance": CONFIG["performance"]}
-    if params:
-        body["query_parameters"] = params
-    execution = api(f'query/{spec["query_id"]}/execute', body)
-    execution_id = execution["execution_id"]
-    if timeout_seconds is None:
-        timeout_seconds = CONFIG.get(
-            "source_execution_timeout_seconds",
-            240,
-        )
-    deadline = time.monotonic() + timeout_seconds
-    while True:
-        status = api(f"execution/{execution_id}/status")
-        if status.get("is_execution_finished") or status.get("state") in {
-            "QUERY_STATE_COMPLETED", "QUERY_STATE_FAILED", "QUERY_STATE_CANCELLED", "QUERY_STATE_EXPIRED"}:
-            break
-        if time.monotonic() > deadline:
-            raise RuntimeError(
-                f"Execution {execution_id} polling timeout after "
-                f"{timeout_seconds}s; do not automatically resubmit."
-            )
-        time.sleep(4)
-    cost = status.get("execution_cost_credits")
-    if cost is None:
-        raise RuntimeError(f"Execution {execution_id} has no cost metadata.")
-    record = {"query_id": spec["query_id"], "execution_id": execution_id,
-        "execution_cost_credits": float(cost), "completed_at_utc": stamp(),
-        "execution_started_at": status.get("execution_started_at"),
-        "execution_ended_at": status.get("execution_ended_at"),
-        "query_parameters": params or {},
-        "result_metadata": status.get("result_metadata", {}), "billing": usage}
-    print(f"Query {spec['query_id']} execution {execution_id}: {status['state']}, {float(cost):.6f} credits (limit {spec['max_run_credits']})", flush=True)
-    if status["state"] != "QUERY_STATE_COMPLETED":
-        raise RuntimeError(f"Execution {execution_id}: {status['state']}; no automatic retry.")
-    if enforce_cap and float(cost) > spec["max_run_credits"]:
-        raise RuntimeError(f"Query {spec['query_id']} cost {cost} exceeded {spec['max_run_credits']}; refresh paused.")
-    return record
+def checkpoint(state):
+    # Only Dune execution state is published here. Revenue/feed builders and
+    # dashboard-data publication are deliberately excluded.
+    save(STATE, state)
+    publish(state_only=True)
 
+def tracker(state):
+    return ExecutionTracker(state, api, lambda: checkpoint(state), usage_guard,
+                            now, time.sleep, CONFIG["performance"])
+
+def execute(spec, params=None, enforce_cap=True, timeout_seconds=None, state=None):
+    if state is None:
+        state = load(STATE, {"schema_version": 1, "queries": {}})
+    if timeout_seconds is None:
+        timeout_seconds = CONFIG.get("source_execution_timeout_seconds", 240)
+    return tracker(state).execute(spec, params, enforce_cap, timeout_seconds)
 def export_source(record, spec, remaining):
     meta = record["result_metadata"]
     rows = int(meta.get("total_row_count", meta.get("row_count", 0)))
@@ -160,8 +137,11 @@ def reduce_atomically(transfer_path, bbb_path=None):
             shutil.copytree(backup, ROOT / "data")
             raise
 
-def publish():
-    subprocess.run(["bash", "scripts/v3_publish_live_state.sh"], cwd=ROOT, check=True)
+def publish(state_only=False):
+    args = ["bash", "scripts/v3_publish_live_state.sh"]
+    if state_only:
+        args.append("--refresh-state-only")
+    subprocess.run(args, cwd=ROOT, check=True)
 
 def main():
     parser = argparse.ArgumentParser()
@@ -188,15 +168,20 @@ def main():
                         if lookback is not None
                         else None
                     )
+                    benchmark_state = load(STATE, {"schema_version": 1, "queries": {}})
                     records.append({"batch": batch, "repetition": repetition,
                         "key": spec["key"], "lookback_hours": lookback,
-                        **execute(spec, params, enforce_cap=False)})
+                        **execute(spec, params, enforce_cap=False, state=benchmark_state)})
+                    tracker(benchmark_state).acknowledge(spec, records[-1])
                     save(ROOT / "state/v3_credit_benchmark.json", {"generated_at_utc": stamp(), "performance": CONFIG["performance"], "queries": records})
                     print(batch, repetition, spec["key"], records[-1]["execution_cost_credits"], "credits", flush=True)
                     if records[-1]["execution_cost_credits"] > 2 or sum(r["execution_cost_credits"] for r in records) > 30:
                         raise RuntimeError("Benchmark safety allowance reached; costs saved for review.")
         return 0
     state = load(STATE, {"schema_version": 1, "queries": {}})
+    reconciliation_errors = tracker(state).reconcile()
+    for key, error in reconciliation_errors.items():
+        print(f"::warning::Execution reconciliation {key}: {error}", flush=True)
     if state.get("paused") and not args.resume:
         message = "Refresh remains paused after a previous failure; no queries submitted."
         if os.environ.get("EVENT") in {"schedule", "push"}:
@@ -213,6 +198,7 @@ def main():
     for source in CONFIG["sources"]:
         if not source.get("enabled", True):
             state["queries"].pop(source["key"], None)
+    consumed_sources = []
     try:
         usage_guard()
         health = load(HEALTH, {})
@@ -238,6 +224,7 @@ def main():
             source_config_changed
             or repair
             or due(last, CONFIG["chain_cadence_minutes"])
+            or any(s["key"] in state.get("pending_executions", {}) for s in CONFIG["sources"])
         ):
             remaining = (
                 CONFIG["max_repair_export_points"]
@@ -314,6 +301,7 @@ def main():
                 if (
                     lookback_changed
                     or repair_for_source
+                    or spec["key"] in state.get("pending_executions", {})
                     or (
                         in_preferred_hour
                         and due(
@@ -326,6 +314,12 @@ def main():
                         spec
                     )
 
+            # A recovered BBB result must be reduced even if the transfer clock
+            # isn't due yet. The unchanged canonical CSV remains deduplicated.
+            if any(s["key"] == "bbb_dex" for s in due_sources):
+                transfer = next((s for s in active_sources if s["key"] == "xnet_transfers"), None)
+                if transfer and transfer not in due_sources:
+                    due_sources.insert(0, transfer)
             paths = {}
 
             for spec in due_sources:
@@ -345,7 +339,10 @@ def main():
                     )
                 )
 
-                if repair_for_source:
+                pending = state.get("pending_executions", {}).get(spec["key"])
+                if pending:
+                    lookback = pending["query_parameters"].get("lookback_hours", spec.get("lookback_hours", 2))
+                elif repair_for_source:
                     lookback = int(
                         spec.get(
                             "repair_lookback_hours",
@@ -402,6 +399,7 @@ def main():
                         "lookback_hours":
                             lookback,
                     },
+                    state=state,
                 )
 
                 if spec.get(
@@ -534,6 +532,8 @@ def main():
                         ]
                     )
 
+                consumed_sources = due_sources
+
             health_sources = {
                 spec["key"]:
                     state.get(
@@ -575,10 +575,14 @@ def main():
         run("v3_collect_market.py")
         save(STATE, state)
         publish()
+        # Canonical data, rebuilt snapshots and their clock are now durable.
+        # A killed runner before this point can replay the same source result.
+        for spec in consumed_sources:
+            tracker(state).acknowledge(spec, state["queries"][spec["key"]])
         due_presentation = []
         for spec in CONFIG["presentation"]:
             last = state["queries"].get(spec["key"], {}).get("completed_at_utc")
-            if due(last, spec["cadence_minutes"]):
+            if due(last, spec["cadence_minutes"]) or spec["key"] in state.get("pending_executions", {}):
                 due_presentation.append(spec)
 
         # Bound each cron run so one slow cached chart cannot consume the
@@ -600,7 +604,9 @@ def main():
                 state["queries"][spec["key"]] = execute(
                     spec,
                     timeout_seconds=presentation_timeout,
+                    state=state,
                 )
+                tracker(state).acknowledge(spec, state["queries"][spec["key"]])
                 state.get("presentation_errors", {}).pop(spec["key"], None)
             except Exception as error:
                 presentation_errors[spec["key"]] = {
@@ -621,6 +627,12 @@ def main():
         state.update({"completed_at_utc": stamp(), "last_error": None, "billing": usage_guard()})
         save(STATE, state)
         publish()
+        return 0
+    except ExecutionPending as error:
+        # Recover unresolved work on the next schedule without a global pause.
+        state.update({"last_pending_error": str(error), "pending_at_utc": stamp()})
+        checkpoint(state)
+        print(f"::warning::{error}", flush=True)
         return 0
     except Exception as error:
         state.update({"paused": True, "last_error": str(error), "failed_at_utc": stamp()})

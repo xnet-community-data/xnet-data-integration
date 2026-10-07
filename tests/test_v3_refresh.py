@@ -1,15 +1,27 @@
 import importlib.util
 import tempfile
 import unittest
+import sys
 from pathlib import Path
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "scripts"))
 spec = importlib.util.spec_from_file_location("refresh", ROOT / "scripts/v3_refresh_dashboard.py")
 refresh = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(refresh)
 
 class RefreshTests(unittest.TestCase):
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        state = patch.object(refresh, "STATE", Path(self.directory.name) / "state.json")
+        state.start()
+        self.addCleanup(state.stop)
+        publish = patch.object(refresh, "publish")
+        publish.start()
+        self.addCleanup(publish.stop)
+
     def test_disabled_collector_is_not_executed_or_reduced(self):
         import json
         with tempfile.TemporaryDirectory() as directory:

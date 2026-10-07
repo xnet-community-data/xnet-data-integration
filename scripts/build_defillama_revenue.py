@@ -1395,6 +1395,18 @@ def main():
         "schema_version": 4,
         "accounting_basis": "hybrid_accrual_reconciled",
         "source": source["source"],
+        "source_revision_policy": {
+            "mode": "source_faithful_restatement",
+            "publisher": "XNET team revenue sheet",
+            "treatment": (
+                "This community analytics feed reflects the team's currently "
+                "published accounting. If the source revenue sheet revises a "
+                "historical month, the revised value is intentionally carried "
+                "forward on the next rebuild and affected daily accrual and "
+                "settlement history are recomputed. This is a source mirror, "
+                "not an independent restatement by the community."
+            ),
+        },
         "policy_sources": {
             "xip_index": XIP_INDEX_URL,
             "xip_12": {
@@ -1505,9 +1517,10 @@ def main():
                 "operator cash share; for DeFiLlama accounting that fiat "
                 "slice is 75% Supply-Side Revenue, 5% BBB/Holders Revenue and "
                 "20% operations/Protocol Revenue. XIP-13.1 states that fiat "
-                "operators are paid monthly in arrears on the NET60+ timeline, "
-                "so payouts are attributed to service two calendar months "
-                "earlier and shaped across that month's offload. Assigned "
+                "operators are paid monthly in arrears on the NET60+ timeline. "
+                "A fiat payout therefore inherits the service month from the "
+                "carrier settlement that funds it; the allocation is then "
+                "shaped across that reconciled service month's offload. Assigned "
                 "fiat-option token emissions go to the Burn facility, but no "
                 "token quantity is inferred from the USD sheet."
             ),

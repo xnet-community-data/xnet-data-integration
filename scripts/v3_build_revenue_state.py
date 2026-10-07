@@ -436,6 +436,21 @@ supply_side_24h = rolling_total("supply_side_revenue_usd", 1)
 supply_side_7d = rolling_total("supply_side_revenue_usd", 7)
 supply_side_30d = rolling_total("supply_side_revenue_usd", 30)
 
+holders_30d = rolling_total("holders_revenue_usd", 30)
+protocol_30d = rolling_total("protocol_revenue_usd", 30)
+
+ANNUALIZATION_DAYS = Decimal("365")
+TRAILING_WINDOW_DAYS = Decimal("30")
+annualization_factor = (
+    ANNUALIZATION_DAYS / TRAILING_WINDOW_DAYS
+)
+
+annualized_fees_30d = fees_30d * annualization_factor
+annualized_revenue_30d = revenue_30d * annualization_factor
+annualized_supply_side_30d = supply_side_30d * annualization_factor
+annualized_holders_30d = holders_30d * annualization_factor
+annualized_protocol_30d = protocol_30d * annualization_factor
+
 recent_30d = [
     row
     for row in daily_rows
@@ -501,6 +516,15 @@ state = {
 
         "accounting_basis":
             defi["accounting_basis"],
+
+        "revision_policy":
+            defi.get(
+                "source_revision_policy",
+                {}
+            ).get(
+                "mode",
+                "source_faithful_restatement"
+            ),
     },
 
     "latest_service": {
@@ -835,6 +859,47 @@ state = {
                 "Revenue, 5% goes to BBB and 20% to operations. "
                 "Provisional source-month attribution is backfilled "
                 "if a service period is later published."
+            ),
+    },
+
+    "annualized_earnings": {
+        "basis":
+            "trailing_30d_daily_accrual_times_365_over_30",
+
+        "as_of":
+            accrual_as_of.isoformat(),
+
+        "window_days":
+            30,
+
+        "annualization_factor":
+            dec(annualization_factor),
+
+        "fees_usd":
+            dec(annualized_fees_30d),
+
+        "revenue_usd":
+            dec(annualized_revenue_30d),
+
+        "supply_side_revenue_usd":
+            dec(annualized_supply_side_30d),
+
+        "holders_revenue_usd":
+            dec(annualized_holders_30d),
+
+        "protocol_revenue_usd":
+            dec(annualized_protocol_30d),
+
+        "provisional":
+            recent_30d_is_provisional,
+
+        "methodology":
+            (
+                "Run-rate view only: each metric is the trailing 30-day "
+                "daily accrual multiplied by 365/30. It is not guidance or "
+                "a forecast. Historical source-sheet restatements and later "
+                "carrier settlements flow through automatically when the "
+                "underlying daily accrual history is rebuilt."
             ),
     },
 

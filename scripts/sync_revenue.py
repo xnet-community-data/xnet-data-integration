@@ -89,7 +89,7 @@ def clean(value):
 def parse_number(value, metric, month):
     raw = clean(value)
 
-    if raw == "":
+    if raw in ("", "-", "–", "—"):
         return None
 
     cleaned = (

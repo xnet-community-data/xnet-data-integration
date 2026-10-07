@@ -8,6 +8,11 @@
     "raw_mirror_url": "https://raw.githubusercontent.com/xnet-community-data/xnet-data-integration/main/data/xnet_revenue_sheet_raw.csv",
     "raw_csv_sha256": "e8efbbdc58b95802e75577e0f0053d33a68865d02570c245fdfbc640ec3c8025"
   },
+  "source_revision_policy": {
+    "mode": "source_faithful_restatement",
+    "publisher": "XNET team revenue sheet",
+    "treatment": "This community analytics feed reflects the team's currently published accounting. If the source revenue sheet revises a historical month, the revised value is intentionally carried forward on the next rebuild and affected daily accrual and settlement history are recomputed. This is a source mirror, not an independent restatement by the community."
+  },
   "policy_sources": {
     "xip_index": "https://github.com/XNET-Foundation/XIP",
     "xip_12": {
@@ -38,9 +43,9 @@
     "name": "XNET daily offload API",
     "url": "https://xnet-offload-scraper.vercel.app/api/data",
     "first_date": "2024-07-29",
-    "last_measured_date": "2026-10-05",
-    "accrual_last_date": "2026-10-05",
-    "count": 799
+    "last_measured_date": "2026-10-06",
+    "accrual_last_date": "2026-10-06",
+    "count": 800
   },
   "methodology": {
     "fees": "Carriers pay XNET for mobile data offloaded onto WiFi. Until carrier payment arrives, Fees are conservatively estimated from daily offload. Payments typically arrive about two months later, and historical estimates are then reconciled to the amount actually paid.",
@@ -50,7 +55,7 @@
     "missing_offload": "Missing offload observations are never filled with zero. If the upstream API is temporarily stale by no more than 14 completed days, trailing missing days are provisionally estimated using the average of the latest seven measured offload days. Those imputed days are explicitly flagged and are replaced when measured observations resume. If the gap exceeds 14 days, the model fails closed and stops extending the synthetic series.",
     "revenue": "Fees minus payments to deployers who choose fiat compensation. When no fiat-deployer payout applies, Revenue equals Fees.",
     "supply_side_revenue": "Payments to deployers who choose fiat compensation for carrying mobile traffic. For the fiat option, 75% of the gross fiat allocation is paid to the deployer.",
-    "fiat_deployer_option": "The official XIP index lists XIP-13.1 as Passed. The ratified mechanism lets designated operators choose fiat in lieu of token distributions. Its 80% BuyBack Revenue Percentage less a 5% facilitation fee produces a 75% operator cash share; for DeFiLlama accounting that fiat slice is 75% Supply-Side Revenue, 5% BBB/Holders Revenue and 20% operations/Protocol Revenue. XIP-13.1 states that fiat operators are paid monthly in arrears on the NET60+ timeline, so payouts are attributed to service two calendar months earlier and shaped across that month's offload. Assigned fiat-option token emissions go to the Burn facility, but no token quantity is inferred from the USD sheet.",
+    "fiat_deployer_option": "The official XIP index lists XIP-13.1 as Passed. The ratified mechanism lets designated operators choose fiat in lieu of token distributions. Its 80% BuyBack Revenue Percentage less a 5% facilitation fee produces a 75% operator cash share; for DeFiLlama accounting that fiat slice is 75% Supply-Side Revenue, 5% BBB/Holders Revenue and 20% operations/Protocol Revenue. XIP-13.1 states that fiat operators are paid monthly in arrears on the NET60+ timeline. A fiat payout therefore inherits the service month from the carrier settlement that funds it; the allocation is then shaped across that reconciled service month's offload. Assigned fiat-option token emissions go to the Burn facility, but no token quantity is inferred from the USD sheet.",
     "holders_revenue": "Holder Revenue is accrued in the same service period as Fees so 24h/7d/30d comparisons remain economically comparable. Before XIP-12, the ordinary holder allocation is 80%; from XIP-12 onward it is 60%. For the XIP-13.1 fiat slice, 5% is the BBB/facilitation allocation. Values remain provisional where underlying Fees are provisional and are reconciled with those Fees when settlement arrives. This is accrual attribution, not a claim that the on-chain buyback or burn executed on the same calendar day.",
     "protocol_revenue": "Protocol Revenue is the portion retained within XNET after Supply-Side Revenue. Before XIP-12 the ordinary retained share is 20%; from XIP-12 onward it is 40%, comprising 20% operations and 20% protocol-owned liquidity. For the XIP-13.1 fiat slice, 20% is retained for XNET operations."
   },
@@ -95,8 +100,8 @@
       "lookback_days": 7,
       "max_fallback_days": 14,
       "active": false,
-      "last_measured_date": "2026-10-05",
-      "latest_completed_date": "2026-10-05",
+      "last_measured_date": "2026-10-06",
+      "latest_completed_date": "2026-10-06",
       "imputed_dates": [],
       "imputed_daily_offload_gb": null
     }
@@ -105,21 +110,21 @@
     "source_payments_received_usd": 171427.4,
     "recognized_service_revenue_usd": 171427.39,
     "unattributed_payments_usd": 0.01,
-    "defillama_daily_accrual_usd": 236914.92,
-    "defillama_daily_revenue_usd": 235806.74,
+    "defillama_daily_accrual_usd": 237488.26,
+    "defillama_daily_revenue_usd": 236380.08,
     "defillama_daily_supply_side_revenue_usd": 1108.18,
-    "defillama_daily_holders_revenue_usd": 143804.81,
-    "defillama_daily_protocol_revenue_usd": 92001.93,
+    "defillama_daily_holders_revenue_usd": 144148.81,
+    "defillama_daily_protocol_revenue_usd": 92231.27,
     "fiat_operator_payout_usd": 1108.18,
     "fiat_gross_allocation_usd": 1477.57,
     "fiat_bbb_allocation_usd": 73.88,
     "fiat_operations_allocation_usd": 295.51,
     "fully_settled_daily_accrual_usd": 171427.39,
     "partially_confirmed_service_revenue_usd": 0.0,
-    "unconfirmed_accrual_component_usd": 65487.53
+    "unconfirmed_accrual_component_usd": 66060.87
   },
   "count": 23,
-  "daily_count": 765,
+  "daily_count": 766,
   "data": [
     {
       "date": "2024-09-30",
@@ -17169,6 +17174,30 @@
       "protocol_revenue_usd": 243.6,
       "revenue_usd": 608.98,
       "fiat_allocation_basis": null
+    },
+    {
+      "date": "2026-10-06",
+      "service_month": "2026-10",
+      "offload_gb": 3796.0,
+      "offload_basis": "measured",
+      "fees_usd": 573.34,
+      "user_fees_usd": 573.34,
+      "basis": "provisional_live_offload",
+      "rate_usd_per_api_gb": 0.151037,
+      "rate_source_month": "2026-09",
+      "fiat_gross_allocation_usd": 0.0,
+      "fiat_operator_payout_usd": 0.0,
+      "fiat_bbb_allocation_usd": 0.0,
+      "fiat_operations_allocation_usd": 0.0,
+      "ordinary_holders_revenue_usd": 344.0,
+      "ordinary_operations_revenue_usd": 114.67,
+      "ordinary_protocol_owned_liquidity_usd": 114.67,
+      "ordinary_protocol_revenue_usd": 229.34,
+      "supply_side_revenue_usd": 0.0,
+      "holders_revenue_usd": 344.0,
+      "protocol_revenue_usd": 229.34,
+      "revenue_usd": 573.34,
+      "fiat_allocation_basis": null
     }
   ],
   "monthly_accrual": [
@@ -17751,9 +17780,9 @@
       "service_month": "2026-10",
       "basis": "provisional_live_offload",
       "daily_shape": "measured_network_offload",
-      "offload_days": 5,
-      "api_offload_gb": 23663.0,
-      "accrual_total_usd": 3573.99,
+      "offload_days": 6,
+      "api_offload_gb": 27459.0,
+      "accrual_total_usd": 4147.33,
       "official_projected_revenue_usd": null,
       "settlement_confirmed_usd": 0.0,
       "rate_usd_per_api_gb": 0.151037,
@@ -17762,14 +17791,14 @@
       "fiat_operator_payout_usd": 0.0,
       "fiat_bbb_allocation_usd": 0.0,
       "fiat_operations_allocation_usd": 0.0,
-      "ordinary_holders_revenue_usd": 2144.39,
-      "ordinary_operations_revenue_usd": 714.8,
-      "ordinary_protocol_owned_liquidity_usd": 714.8,
-      "ordinary_protocol_revenue_usd": 1429.6,
+      "ordinary_holders_revenue_usd": 2488.39,
+      "ordinary_operations_revenue_usd": 829.47,
+      "ordinary_protocol_owned_liquidity_usd": 829.47,
+      "ordinary_protocol_revenue_usd": 1658.94,
       "supply_side_revenue_usd": 0.0,
-      "revenue_usd": 3573.99,
-      "holders_revenue_usd": 2144.39,
-      "protocol_revenue_usd": 1429.6,
+      "revenue_usd": 4147.33,
+      "holders_revenue_usd": 2488.39,
+      "protocol_revenue_usd": 1658.94,
       "fiat_allocation_basis": null
     }
   ],

@@ -188,7 +188,7 @@ def parse_epoch_schedule(text):
             row
             for row in rows
             if any(
-                re.fullmatch(r"Epoch\\s+\\d+", clean(cell))
+                re.fullmatch(r"Epoch\s+\d+", clean(cell))
                 for cell in row
             )
         ),
@@ -229,7 +229,7 @@ def parse_epoch_schedule(text):
 
         numeric_epoch_cells = 0
         for col, heading in enumerate(header):
-            if not re.fullmatch(r"Epoch\\s+\\d+", clean(heading)):
+            if not re.fullmatch(r"Epoch\s+\d+", clean(heading)):
                 continue
             value = parse_number(
                 row[col] if col < len(row) else "",
@@ -261,7 +261,7 @@ def parse_epoch_schedule(text):
 
     for col, heading in enumerate(header):
         match = re.fullmatch(
-            r"Epoch\\s+(\\d+)",
+            r"Epoch\s+(\d+)",
             clean(heading),
         )
 

@@ -240,6 +240,7 @@ def main():
             "csv_url": SOURCE_CSV_URL,
             "raw_mirror_url": RAW_MIRROR_URL,
             "raw_csv_sha256": raw_sha256,
+            "revision_policy": "source_faithful_current_snapshot",
         },
         "notes": {
             "gb_per_month": (
@@ -248,6 +249,12 @@ def main():
             ),
             "blank_cells": (
                 "Blank source cells are represented as null."
+            ),
+            "historical_restatements": (
+                "This community analytics mirror is source-faithful: each "
+                "refresh reflects the XNET team's currently published revenue "
+                "sheet, including revisions to historical months. Prior values "
+                "are not frozen when the source accounting is restated."
             ),
             "brought_forward": (
                 "The non-calendar BFWD column remains available in "

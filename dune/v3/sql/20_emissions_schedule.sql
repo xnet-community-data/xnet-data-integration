@@ -1,10 +1,10 @@
 -- XNET source-confirmed reward epoch schedule.
 --
--- The live XNET source sheet publishes exact epoch start/end dates and
--- dispersal totals. This helper intentionally mirrors only those published
--- epochs. It does not invent future epoch boundaries or calendar-year decay
--- dates; future reductions become visible when the source sheet publishes
--- them.
+-- The live XNET source sheet publishes exact epoch start/end dates and total
+-- reward tokens. This helper mirrors only those published values. Historical
+-- PoC/Data/Bonus component splits are intentionally excluded because they do
+-- not represent the current offload-based reward model. No future epoch or
+-- decay boundary is inferred.
 
 WITH raw AS (
     SELECT json_parse(
@@ -34,21 +34,9 @@ SELECT
         AS DATE
     ) AS epoch_end_date,
     TRY_CAST(
-        json_extract_scalar(item, '$.poc_dispersal_xnet')
+        json_extract_scalar(item, '$.total_reward_tokens_xnet')
         AS DOUBLE
-    ) AS poc_dispersal_xnet,
-    TRY_CAST(
-        json_extract_scalar(item, '$.data_dispersal_xnet')
-        AS DOUBLE
-    ) AS data_dispersal_xnet,
-    TRY_CAST(
-        json_extract_scalar(item, '$.bonus_dispersal_xnet')
-        AS DOUBLE
-    ) AS bonus_dispersal_xnet,
-    TRY_CAST(
-        json_extract_scalar(item, '$.total_dispersal_xnet')
-        AS DOUBLE
-    ) AS total_dispersal_xnet,
+    ) AS total_reward_tokens_xnet,
     TRY_CAST(
         json_extract_scalar(item, '$.fiat_operator_burn_xnet')
         AS DOUBLE

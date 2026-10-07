@@ -15,7 +15,7 @@ Everything else reads stored canonical outputs.
 - Device mirror: daily
 - Revenue mirror: daily
 - Commercial/network derived metrics: daily
-- Emissions schedule: deterministic; refresh only when policy changes
+- Emissions schedule: daily source-confirmed mirror of the XNET Summary epoch table; no unpublished future epoch or decay dates are inferred
 
 ## Canonical components
 

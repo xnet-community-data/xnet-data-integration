@@ -15,7 +15,7 @@ Everything else reads stored canonical outputs.
 - Device mirror: daily
 - Revenue mirror: daily
 - Commercial/network derived metrics: daily
-- Emissions schedule: daily source-confirmed mirror of the XNET Summary epoch table; no unpublished future epoch or decay dates are inferred
+- Reward epoch schedule: daily source-confirmed mirror of published epoch dates and total reward tokens; stale PoC/Data/Bonus component splits and unpublished future boundaries are not inferred
 
 ## Canonical components
 

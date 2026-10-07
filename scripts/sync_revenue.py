@@ -218,11 +218,14 @@ def parse_epoch_schedule(text):
         if not row or clean(row[0]) != "":
             continue
 
-        to_date = parse_number(
-            row[1] if len(row) > 1 else "",
-            "Total reward tokens to date",
-            "summary",
-        )
+        try:
+            to_date = parse_number(
+                row[1] if len(row) > 1 else "",
+                "Total reward tokens to date",
+                "summary",
+            )
+        except RuntimeError:
+            continue
 
         if to_date is None:
             continue

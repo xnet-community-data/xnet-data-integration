@@ -153,6 +153,81 @@ SPECS = [
     },
 
     {
+        "key": "annualized_fees_30d",
+        "name": "Annualized Service Fees",
+        "type": "counter",
+        "description":
+            "Trailing 30-day carrier service Fees "
+            "annualized at 365/30. Run rate only, "
+            "not guidance or a forecast.",
+        "options": {
+            "counterColName":
+                "annualized_fees_30d_usd",
+            "rowNumber": 1,
+            "stringDecimal": 0,
+            "stringPrefix": "$",
+            "counterLabel":
+                "Trailing 30d × 365/30",
+        },
+    },
+
+    {
+        "key": "annualized_retained_revenue_30d",
+        "name": "Annualized Retained Revenue",
+        "type": "counter",
+        "description":
+            "Trailing 30-day Revenue after fiat "
+            "operator Supply-Side Revenue, annualized "
+            "at 365/30. Run rate only.",
+        "options": {
+            "counterColName":
+                "annualized_retained_revenue_30d_usd",
+            "rowNumber": 1,
+            "stringDecimal": 0,
+            "stringPrefix": "$",
+            "counterLabel":
+                "Trailing 30d × 365/30",
+        },
+    },
+
+    {
+        "key": "annualized_holders_revenue_30d",
+        "name": "Annualized Holders Revenue",
+        "type": "counter",
+        "description":
+            "Trailing 30-day holder/BBB accrual "
+            "annualized at 365/30. Run rate only.",
+        "options": {
+            "counterColName":
+                "annualized_holders_revenue_30d_usd",
+            "rowNumber": 1,
+            "stringDecimal": 0,
+            "stringPrefix": "$",
+            "counterLabel":
+                "Trailing 30d × 365/30",
+        },
+    },
+
+    {
+        "key": "annualized_protocol_revenue_30d",
+        "name": "Annualized Protocol Revenue",
+        "type": "counter",
+        "description":
+            "Trailing 30-day protocol-retained "
+            "accrual annualized at 365/30. Run rate "
+            "only.",
+        "options": {
+            "counterColName":
+                "annualized_protocol_revenue_30d_usd",
+            "rowNumber": 1,
+            "stringDecimal": 0,
+            "stringPrefix": "$",
+            "counterLabel":
+                "Trailing 30d × 365/30",
+        },
+    },
+
+    {
         "key": "latest_payment",
         "name": "Latest Wi-Fi Payment",
         "type": "counter",

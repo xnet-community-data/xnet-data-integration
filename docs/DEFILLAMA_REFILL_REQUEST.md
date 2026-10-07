@@ -1,26 +1,44 @@
-# XNET DeFiLlama registration and historical refill
+# XNET DeFiLlama historical refill
 
-The revenue sheet pipeline and merged adapter pass their checks. XNET's public fees/revenue API still returns HTTP 400. The registration and historical refill request was posted as `xnet-community-data` on October 5, 2026, and the published comment was verified:
+XNET's updated `fees/xnet.ts` adapter was merged into DefiLlama on **October 6, 2026**. Current daily execution is live, but the public historical series still contains pre-update stored values and therefore needs an explicit historical refill.
 
-https://github.com/DefiLlama/dimension-adapters/pull/9872#issuecomment-5990513239
+## Refill request
 
-Pending: DeFiLlama must connect the existing listing to the fees module, load the historical service dates, and confirm how earlier dates are reprocessed for future late settlements. The request is posted; production fees/revenue activation is not yet confirmed.
+Please refill `fees/xnet` from **2024-09-01 through the latest available service day**, including Fees, Revenue, Supply-Side Revenue, Holders Revenue and Protocol Revenue.
+
+The adapter reads the public daily feed:
+
+https://raw.githubusercontent.com/xnet-community-data/xnet-data-integration/main/data/xnet_defillama_revenue.json
+
+### Source-faithful restatement policy
+
+This is a **community analytics pipeline**, not an independent accounting publisher. Its purpose is to reflect XNET's own published accounting as transparently and reproducibly as possible.
+
+The canonical source is the XNET team's public revenue sheet. When that source changes a historical value, the community pipeline intentionally carries the revision forward on the next rebuild. It does **not** freeze an older snapshot simply because it was previously published. The affected service-month accrual, settlement reconciliation and daily history are deterministically recomputed from the current source.
+
+That behavior matters for this refill because the team revised historical 2026 source values after the adapter PR was merged. For example, the published sheet changed January 2026 service revenue from **$9,707.31 to $16,275.62** and March 2026 from **$14,957.00 to $15,000.00**. Those are source-sheet accounting revisions and are therefore reflected by the community feed.
+
+This should be treated the same way as later carrier settlements: the historical daily rows are revised to the latest published source truth rather than adding a second revenue event.
+
+### Accounting behavior
+
+- Closed service months use the team's official projected revenue until a carrier settlement resolves them.
+- A confirmed settlement replaces/reconciles the prior accrual; it is never added on top.
+- April-June 2026 are reconciled to the final historical **$15,000** carrier-cap settlements.
+- XIP-13.1 fiat-operator payouts inherit the service month from the reconciled carrier settlement that funds the payout.
+- The July 2026 fiat allocation is therefore attributed to July service, not the October source-row month.
+- Current incomplete periods use measured network offload and the conservative effective API-GB rate until stronger source data is published.
+- Historical source-sheet revisions are intentionally propagated on every rebuild.
+
+### Why a refill is required
+
+After merge, DefiLlama began running the new adapter and current rolling values populated, but previously stored historical dates were not fully rewritten. The public all-time series therefore remains below the canonical feed even though current daily execution is working.
+
+A full refill from the adapter start date is the safest option because the source is date-addressable, deterministic and already validates continuity, duplicate dates, non-negative values and accounting identities before publication.
+
+No methodology change is being requested here. This is a request to recompute stored DefiLlama history using the **already merged adapter** and the source-faithful current feed.
 
 ---
-
-Could you connect the existing [XNET listing](https://defillama.com/protocol/xnet) to the merged `fees/xnet.ts` module and backfill its historical fees and revenue?
-
-Checked **2026-10-05 04:13 UTC**:
-
-- Both `https://api.llama.fi/summary/fees/xnet?dataType=dailyFees` and the corresponding `dailyRevenue` endpoint return HTTP 400: “Fees for xnet not found, please visit /overview/fees to see available protocols.”
-- The [public feed](https://raw.githubusercontent.com/xnet-community-data/xnet-data-integration/main/data/xnet_defillama_revenue.json) contains **20 reconciled service months totaling $119,816.08**. It is generated from the public XNET revenue sheet, refreshed daily at 09:17 UTC. The complete download, normalization, reconciliation, publication and Dune label workflow [passes](https://github.com/xnet-community-data/xnet-data-integration/actions/runs/37262542166).
-- The unchanged merged adapter [passes the official historical runner and both TypeScript checks](https://github.com/xnet-community-data/xnet-data-integration/actions/runs/37242743651). Window-end tests return February 2025 $1,704.18; February 2026 $11,915.76; July 2026 $33,688.91; and zero for a day with no recognition entry.
-- Please backfill **2024-09-30 through 2026-07-31**, including the holder/protocol breakdowns. The feed books revenue on the **service-month-end date**, rather than the later carrier payment date. July revenue was paid on September 25, so processing only recent payment dates will miss the history.
-- Source payments total $131,816.09; $12,000.01 without payment-date/service attribution remains excluded. Future late settlements require reprocessing their earlier service dates. The adapter retains its July 2026 coverage boundary; October's separately reported fiat-operator transfers require service-period attribution before extending retained-revenue accounting beyond that history.
-
-Website: https://www.xnetmobile.com/ · X: https://x.com/XNET_Mobile · Documentation: https://docs.xnetmobile.com/
-
-No new adapter PR or CodeRabbit review is required to load the already merged history.
 
 ## Metadata clarification posted
 

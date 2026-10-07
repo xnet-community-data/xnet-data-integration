@@ -6,24 +6,24 @@ on:
     branches: [main]
     paths:
       - "scripts/sync_revenue.py"
+      - "scripts/build_defillama_revenue.py"
+      - "scripts/check_defillama_feed.py"
+      - "data/xnet_revenue_monthly.json"
+      - "data/xnet_epoch_schedule.json"
+      - "data/xnet_offload_api.json"
+      - "data/xnet_defillama_revenue.json"
+      - "dune/v3/sql/20_emissions_schedule.sql"
+      - ".github/workflows/check-defillama.yml"
+  pull_request:
+    paths:
       - "scripts/sync_revenue.py"
       - "scripts/build_defillama_revenue.py"
       - "scripts/check_defillama_feed.py"
       - "data/xnet_revenue_monthly.json"
       - "data/xnet_epoch_schedule.json"
-      - "dune/v3/sql/20_emissions_schedule.sql"
-      - "data/xnet_epoch_schedule.json"
-      - "dune/v3/sql/20_emissions_schedule.sql"
       - "data/xnet_offload_api.json"
       - "data/xnet_defillama_revenue.json"
-      - ".github/workflows/check-defillama.yml"
-  pull_request:
-    paths:
-      - "scripts/build_defillama_revenue.py"
-      - "scripts/check_defillama_feed.py"
-      - "data/xnet_revenue_monthly.json"
-      - "data/xnet_offload_api.json"
-      - "data/xnet_defillama_revenue.json"
+      - "dune/v3/sql/20_emissions_schedule.sql"
       - ".github/workflows/check-defillama.yml"
 
 permissions:

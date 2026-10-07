@@ -4,8 +4,17 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SOURCE="$ROOT"
-python3 "$SOURCE/scripts/v3_record_bbb_usdc_history.py"
-python3 "$SOURCE/scripts/v3_build_presentation_history.py"
+STATE_ONLY=false
+if [ "${1:-}" = "--refresh-state-only" ]; then
+  STATE_ONLY=true
+elif [ "$#" -ne 0 ]; then
+  echo "Unknown publication option" >&2
+  exit 1
+fi
+if [ "$STATE_ONLY" = false ]; then
+  python3 "$SOURCE/scripts/v3_record_bbb_usdc_history.py"
+  python3 "$SOURCE/scripts/v3_build_presentation_history.py"
+fi
 
 
 
@@ -43,6 +52,20 @@ else
     git checkout --orphan live-state
 
     git rm -rf . >/dev/null 2>&1 || true
+fi
+
+if [ "$STATE_ONLY" = true ]; then
+  mkdir -p data/current
+  cp "$SOURCE/data/current/v3_refresh_state.json" data/current/
+  git add data/current/v3_refresh_state.json
+  git config user.name "xnet-community-data-bot"
+  git config user.email "xnet-community-data-bot@users.noreply.github.com"
+  if ! git diff --cached --quiet; then
+    git commit -m "Track XNET Dune execution state" --quiet
+    git push origin live-state --quiet
+  fi
+  echo "Published Dune execution state."
+  exit 0
 fi
 
 mkdir -p \

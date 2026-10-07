@@ -61,6 +61,7 @@ jobs:
           if git diff --quiet -- \
             data/xnet_revenue_sheet_raw.csv \
             data/xnet_revenue_monthly.json \
+            data/xnet_epoch_schedule.json \
             data/xnet_offload_api.json \
             data/xnet_defillama_revenue.json
           then
@@ -71,6 +72,7 @@ jobs:
           git add \
             data/xnet_revenue_sheet_raw.csv \
             data/xnet_revenue_monthly.json \
+            data/xnet_epoch_schedule.json \
             data/xnet_offload_api.json \
             data/xnet_defillama_revenue.json
 
@@ -78,6 +80,7 @@ jobs:
           # normalized/generated files for whitespace errors.
           git diff --cached --check -- \
             data/xnet_revenue_monthly.json \
+            data/xnet_epoch_schedule.json \
             data/xnet_offload_api.json \
             data/xnet_defillama_revenue.json
           git commit -m "Update XNET revenue data"

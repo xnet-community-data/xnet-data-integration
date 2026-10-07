@@ -6,23 +6,35 @@ import io
 import json
 import re
 import urllib.request
-from datetime import datetime
+from datetime import date, datetime, timedelta
 
 SHEET_ID = "1NebqJ876SNlO4xPihfJWzsH-V0xzgeA-Qw8i5VcHDU4"
-GID = "1205842263"
+REVENUE_GID = "1205842263"
+SUMMARY_GID = "1994698195"
 
 SOURCE_HUMAN_URL = (
     f"https://docs.google.com/spreadsheets/u/0/d/{SHEET_ID}"
-    f"/htmlview?pli=1#gid={GID}"
+    f"/htmlview?pli=1#gid={REVENUE_GID}"
 )
 
 SOURCE_CSV_URL = (
     f"https://docs.google.com/spreadsheets/d/{SHEET_ID}"
-    f"/export?format=csv&gid={GID}"
+    f"/export?format=csv&gid={REVENUE_GID}"
+)
+
+EPOCH_SOURCE_HUMAN_URL = (
+    f"https://docs.google.com/spreadsheets/u/0/d/{SHEET_ID}"
+    f"/htmlview?pli=1#gid={SUMMARY_GID}"
+)
+
+EPOCH_SOURCE_CSV_URL = (
+    f"https://docs.google.com/spreadsheets/d/{SHEET_ID}"
+    f"/export?format=csv&gid={SUMMARY_GID}"
 )
 
 RAW_PATH = "data/xnet_revenue_sheet_raw.csv"
 JSON_PATH = "data/xnet_revenue_monthly.json"
+EPOCH_JSON_PATH = "data/xnet_epoch_schedule.json"
 
 RAW_MIRROR_URL = (
     "https://raw.githubusercontent.com/"
@@ -122,9 +134,9 @@ def parse_payment_date(value):
     raise RuntimeError(f"Could not parse WiFi Payment Date: {raw!r}")
 
 
-def fetch_csv():
+def fetch_csv(url, required):
     request = urllib.request.Request(
-        SOURCE_CSV_URL,
+        url,
         headers={
             "User-Agent": "XNET-Community-Data/1.0",
             "Accept": "text/csv,text/plain,*/*",
@@ -141,17 +153,6 @@ def fetch_csv():
 
     text = content.decode("utf-8-sig")
 
-    required = [
-        ("GB per month",),
-        ("WiFi Revenue (Projected)",),
-        ("WiFi Payment (Received)",),
-        ("Transferred to Buy & Burn",),
-        (
-            "Balance Outstanding to Transfer",
-            "Balance Due to Buy/Burn",
-        ),
-    ]
-
     for alternatives in required:
         if not any(marker in text for marker in alternatives):
             raise RuntimeError(
@@ -162,8 +163,222 @@ def fetch_csv():
     return content, text
 
 
+def parse_epoch_date(value, label):
+    raw = clean(value)
+
+    if raw == "":
+        return None
+
+    for fmt in ("%m/%d/%Y", "%m/%d/%y"):
+        try:
+            return datetime.strptime(raw, fmt).date()
+        except ValueError:
+            pass
+
+    raise RuntimeError(
+        f"Could not parse {label}: {raw!r}"
+    )
+
+
+def parse_epoch_schedule(text):
+    rows = list(csv.reader(io.StringIO(text)))
+
+    header = next(
+        (
+            row
+            for row in rows
+            if any(
+                re.fullmatch(r"Epoch\s+\d+", clean(cell))
+                for cell in row
+            )
+        ),
+        None,
+    )
+
+    if header is None:
+        raise RuntimeError("Epoch header row not found")
+
+    def source_row(label):
+        for row in rows:
+            if clean(row[0] if row else "") == label:
+                return row
+        raise RuntimeError(
+            f"Required epoch source row not found: {label}"
+        )
+
+    start_row = source_row("Epoch Start Date")
+    end_row = source_row("Epoch End Date")
+    poc_row = source_row("PoC - Dispersal")
+    data_row = source_row("Data - Dispersal")
+    bonus_row = source_row("Bonus - Dispersal")
+
+    total_row = None
+    for row in rows:
+        if not row or clean(row[0]) != "":
+            continue
+        populated = [
+            clean(cell)
+            for cell in row[2:]
+            if clean(cell) != ""
+        ]
+        if populated and len(populated) >= 3:
+            try:
+                first = parse_number(
+                    row[2],
+                    "Epoch total",
+                    "summary",
+                )
+            except RuntimeError:
+                continue
+            if first is not None:
+                total_row = row
+                break
+
+    if total_row is None:
+        raise RuntimeError("Epoch total row not found")
+
+    fiat_row = next(
+        (
+            row
+            for row in rows
+            if clean(row[0] if row else "")
+            == "Fiat Operator Burn"
+        ),
+        None,
+    )
+
+    schedule = []
+
+    for col, heading in enumerate(header):
+        match = re.fullmatch(
+            r"Epoch\s+(\d+)",
+            clean(heading),
+        )
+
+        if not match:
+            continue
+
+        epoch = int(match.group(1))
+        start = parse_epoch_date(
+            start_row[col] if col < len(start_row) else "",
+            f"Epoch {epoch} start date",
+        )
+        end = parse_epoch_date(
+            end_row[col] if col < len(end_row) else "",
+            f"Epoch {epoch} end date",
+        )
+
+        if start is None or end is None:
+            raise RuntimeError(
+                f"Epoch {epoch} is missing a start/end date"
+            )
+
+        poc = parse_number(
+            poc_row[col] if col < len(poc_row) else "",
+            "PoC - Dispersal",
+            f"Epoch {epoch}",
+        ) or 0.0
+        data = parse_number(
+            data_row[col] if col < len(data_row) else "",
+            "Data - Dispersal",
+            f"Epoch {epoch}",
+        ) or 0.0
+        bonus = parse_number(
+            bonus_row[col] if col < len(bonus_row) else "",
+            "Bonus - Dispersal",
+            f"Epoch {epoch}",
+        ) or 0.0
+        total = parse_number(
+            total_row[col] if col < len(total_row) else "",
+            "Total epoch dispersal",
+            f"Epoch {epoch}",
+        )
+
+        if total is None:
+            raise RuntimeError(
+                f"Epoch {epoch} is missing total dispersal"
+            )
+
+        fiat_burn = (
+            parse_number(
+                fiat_row[col] if fiat_row and col < len(fiat_row) else "",
+                "Fiat Operator Burn",
+                f"Epoch {epoch}",
+            )
+            if fiat_row
+            else None
+        )
+
+        inclusive_days = (end - start).days + 1
+
+        if inclusive_days != 14:
+            raise RuntimeError(
+                f"Epoch {epoch} spans {inclusive_days} days, expected 14"
+            )
+
+        if abs((poc + data + bonus) - total) > 1.0:
+            raise RuntimeError(
+                f"Epoch {epoch} components do not reconcile to total: "
+                f"{poc + data + bonus} != {total}"
+            )
+
+        if schedule:
+            previous = schedule[-1]
+
+            if epoch != previous["epoch"] + 1:
+                raise RuntimeError(
+                    f"Epoch numbering gap: {previous['epoch']} -> {epoch}"
+                )
+
+            expected_start = (
+                date.fromisoformat(previous["end_date"])
+                + timedelta(days=1)
+            )
+
+            if start != expected_start:
+                raise RuntimeError(
+                    f"Epoch {epoch} does not start immediately after "
+                    f"Epoch {previous['epoch']}: "
+                    f"{start.isoformat()} != {expected_start.isoformat()}"
+                )
+
+        schedule.append(
+            {
+                "epoch": epoch,
+                "start_date": start.isoformat(),
+                "end_date": end.isoformat(),
+                "poc_dispersal_xnet": round(poc),
+                "data_dispersal_xnet": round(data),
+                "bonus_dispersal_xnet": round(bonus),
+                "total_dispersal_xnet": round(total),
+                "fiat_operator_burn_xnet": (
+                    round(fiat_burn)
+                    if fiat_burn is not None
+                    else None
+                ),
+            }
+        )
+
+    if not schedule:
+        raise RuntimeError("No epoch records produced")
+
+    return schedule
+
+
 def main():
-    raw_bytes, text = fetch_csv()
+    raw_bytes, text = fetch_csv(
+        SOURCE_CSV_URL,
+        [
+            ("GB per month",),
+            ("WiFi Revenue (Projected)",),
+            ("WiFi Payment (Received)",),
+            ("Transferred to Buy & Burn",),
+            (
+                "Balance Outstanding to Transfer",
+                "Balance Due to Buy/Burn",
+            ),
+        ],
+    )
 
     rows = list(csv.reader(io.StringIO(text)))
 
@@ -288,9 +503,65 @@ def main():
         json.dump(output, f, indent=2, ensure_ascii=False)
         f.write("\n")
 
-    print(f"Downloaded {len(raw_bytes):,} CSV bytes")
+    epoch_raw_bytes, epoch_text = fetch_csv(
+        EPOCH_SOURCE_CSV_URL,
+        [
+            ("Epoch Start Date",),
+            ("Epoch End Date",),
+            ("PoC - Dispersal",),
+            ("Data - Dispersal",),
+            ("Bonus - Dispersal",),
+        ],
+    )
+    epoch_schedule = parse_epoch_schedule(epoch_text)
+    epoch_sha256 = hashlib.sha256(epoch_raw_bytes).hexdigest()
+
+    epoch_output = {
+        "schema_version": 1,
+        "source": {
+            "name": "XNET Reward Tokens by Epoch Summary",
+            "human_url": EPOCH_SOURCE_HUMAN_URL,
+            "csv_url": EPOCH_SOURCE_CSV_URL,
+            "raw_csv_sha256": epoch_sha256,
+            "revision_policy": "source_faithful_current_snapshot",
+        },
+        "notes": {
+            "date_policy": (
+                "Epoch boundaries are mirrored exactly from the team's "
+                "published Summary tab. No future epoch or decay date is "
+                "invented beyond the latest published epoch."
+            ),
+            "validation": (
+                "Each published epoch must span exactly 14 inclusive days, "
+                "start immediately after the preceding epoch, use consecutive "
+                "epoch numbering, and reconcile PoC + Data + Bonus to total "
+                "dispersal within one displayed XNET of rounding."
+            ),
+        },
+        "count": len(epoch_schedule),
+        "first_epoch": epoch_schedule[0]["epoch"],
+        "last_epoch": epoch_schedule[-1]["epoch"],
+        "data": epoch_schedule,
+    }
+
+    with open(EPOCH_JSON_PATH, "w", encoding="utf-8") as f:
+        json.dump(
+            epoch_output,
+            f,
+            indent=2,
+            ensure_ascii=False,
+        )
+        f.write("\n")
+
+    print(f"Downloaded {len(raw_bytes):,} revenue CSV bytes")
     print(f"Produced {len(data)} monthly records")
-    print(f"SHA256: {raw_sha256}")
+    print(f"Revenue SHA256: {raw_sha256}")
+    print(f"Downloaded {len(epoch_raw_bytes):,} epoch Summary CSV bytes")
+    print(
+        f"Produced {len(epoch_schedule)} source-confirmed epochs "
+        f"({epoch_schedule[0]['epoch']}..{epoch_schedule[-1]['epoch']})"
+    )
+    print(f"Epoch SHA256: {epoch_sha256}")
 
 
 if __name__ == "__main__":

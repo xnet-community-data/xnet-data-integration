@@ -6,7 +6,7 @@ import io
 import json
 import re
 import urllib.request
-from datetime import date, datetime, timedelta
+from datetime import datetime
 
 SHEET_ID = "1NebqJ876SNlO4xPihfJWzsH-V0xzgeA-Qw8i5VcHDU4"
 REVENUE_GID = "1205842263"
@@ -188,7 +188,7 @@ def parse_epoch_schedule(text):
             row
             for row in rows
             if any(
-                re.fullmatch(r"Epoch\s+\d+", clean(cell))
+                re.fullmatch(r"Epoch\\s+\\d+", clean(cell))
                 for cell in row
             )
         ),
@@ -208,34 +208,43 @@ def parse_epoch_schedule(text):
 
     start_row = source_row("Epoch Start Date")
     end_row = source_row("Epoch End Date")
-    poc_row = source_row("PoC - Dispersal")
-    data_row = source_row("Data - Dispersal")
-    bonus_row = source_row("Bonus - Dispersal")
 
+    # The Summary tab contains an unlabeled total-reward row spanning
+    # the epoch columns. Deliberately mirror only that authoritative total.
+    # Historical PoC/Data/Bonus component rows are not part of the current
+    # offload-based reward model and are intentionally ignored.
     total_row = None
     for row in rows:
         if not row or clean(row[0]) != "":
             continue
-        populated = [
-            clean(cell)
-            for cell in row[2:]
-            if clean(cell) != ""
-        ]
-        if populated and len(populated) >= 3:
-            try:
-                first = parse_number(
-                    row[2],
-                    "Epoch total",
-                    "summary",
-                )
-            except RuntimeError:
+
+        to_date = parse_number(
+            row[1] if len(row) > 1 else "",
+            "Total reward tokens to date",
+            "summary",
+        )
+
+        if to_date is None:
+            continue
+
+        numeric_epoch_cells = 0
+        for col, heading in enumerate(header):
+            if not re.fullmatch(r"Epoch\\s+\\d+", clean(heading)):
                 continue
-            if first is not None:
-                total_row = row
-                break
+            value = parse_number(
+                row[col] if col < len(row) else "",
+                "Epoch total reward tokens",
+                "summary",
+            )
+            if value is not None:
+                numeric_epoch_cells += 1
+
+        if numeric_epoch_cells >= 3:
+            total_row = row
+            break
 
     if total_row is None:
-        raise RuntimeError("Epoch total row not found")
+        raise RuntimeError("Epoch total-reward row not found")
 
     fiat_row = next(
         (
@@ -248,10 +257,11 @@ def parse_epoch_schedule(text):
     )
 
     schedule = []
+    seen_epochs = set()
 
     for col, heading in enumerate(header):
         match = re.fullmatch(
-            r"Epoch\s+(\d+)",
+            r"Epoch\\s+(\\d+)",
             clean(heading),
         )
 
@@ -259,6 +269,13 @@ def parse_epoch_schedule(text):
             continue
 
         epoch = int(match.group(1))
+
+        if epoch in seen_epochs:
+            raise RuntimeError(
+                f"Duplicate epoch column: {epoch}"
+            )
+        seen_epochs.add(epoch)
+
         start = parse_epoch_date(
             start_row[col] if col < len(start_row) else "",
             f"Epoch {epoch} start date",
@@ -267,36 +284,20 @@ def parse_epoch_schedule(text):
             end_row[col] if col < len(end_row) else "",
             f"Epoch {epoch} end date",
         )
-
-        if start is None or end is None:
-            raise RuntimeError(
-                f"Epoch {epoch} is missing a start/end date"
-            )
-
-        poc = parse_number(
-            poc_row[col] if col < len(poc_row) else "",
-            "PoC - Dispersal",
-            f"Epoch {epoch}",
-        ) or 0.0
-        data = parse_number(
-            data_row[col] if col < len(data_row) else "",
-            "Data - Dispersal",
-            f"Epoch {epoch}",
-        ) or 0.0
-        bonus = parse_number(
-            bonus_row[col] if col < len(bonus_row) else "",
-            "Bonus - Dispersal",
-            f"Epoch {epoch}",
-        ) or 0.0
         total = parse_number(
             total_row[col] if col < len(total_row) else "",
-            "Total epoch dispersal",
+            "Total reward tokens",
             f"Epoch {epoch}",
         )
 
+        if start is None or end is None:
+            raise RuntimeError(
+                f"Epoch {epoch} is missing a published start/end date"
+            )
+
         if total is None:
             raise RuntimeError(
-                f"Epoch {epoch} is missing total dispersal"
+                f"Epoch {epoch} is missing published total reward tokens"
             )
 
         fiat_burn = (
@@ -309,48 +310,12 @@ def parse_epoch_schedule(text):
             else None
         )
 
-        inclusive_days = (end - start).days + 1
-
-        if inclusive_days != 14:
-            raise RuntimeError(
-                f"Epoch {epoch} spans {inclusive_days} days, expected 14"
-            )
-
-        if abs((poc + data + bonus) - total) > 1.0:
-            raise RuntimeError(
-                f"Epoch {epoch} components do not reconcile to total: "
-                f"{poc + data + bonus} != {total}"
-            )
-
-        if schedule:
-            previous = schedule[-1]
-
-            if epoch != previous["epoch"] + 1:
-                raise RuntimeError(
-                    f"Epoch numbering gap: {previous['epoch']} -> {epoch}"
-                )
-
-            expected_start = (
-                date.fromisoformat(previous["end_date"])
-                + timedelta(days=1)
-            )
-
-            if start != expected_start:
-                raise RuntimeError(
-                    f"Epoch {epoch} does not start immediately after "
-                    f"Epoch {previous['epoch']}: "
-                    f"{start.isoformat()} != {expected_start.isoformat()}"
-                )
-
         schedule.append(
             {
                 "epoch": epoch,
                 "start_date": start.isoformat(),
                 "end_date": end.isoformat(),
-                "poc_dispersal_xnet": round(poc),
-                "data_dispersal_xnet": round(data),
-                "bonus_dispersal_xnet": round(bonus),
-                "total_dispersal_xnet": round(total),
+                "total_reward_tokens_xnet": round(total),
                 "fiat_operator_burn_xnet": (
                     round(fiat_burn)
                     if fiat_burn is not None
@@ -448,7 +413,7 @@ def main():
     raw_sha256 = hashlib.sha256(raw_bytes).hexdigest()
 
     output = {
-        "schema_version": 1,
+        "schema_version": 2,
         "source": {
             "name": "XNET Revenue Sheet",
             "human_url": SOURCE_HUMAN_URL,
@@ -508,9 +473,6 @@ def main():
         [
             ("Epoch Start Date",),
             ("Epoch End Date",),
-            ("PoC - Dispersal",),
-            ("Data - Dispersal",),
-            ("Bonus - Dispersal",),
         ],
     )
     epoch_schedule = parse_epoch_schedule(epoch_text)
@@ -531,11 +493,17 @@ def main():
                 "published Summary tab. No future epoch or decay date is "
                 "invented beyond the latest published epoch."
             ),
+            "reward_model_scope": (
+                "Only source-published epoch dates, total reward tokens and "
+                "fiat-operator burn are mirrored. Historical PoC/Data/Bonus "
+                "component rows are intentionally excluded because they do "
+                "not describe the current offload-based reward model."
+            ),
             "validation": (
-                "Each published epoch must span exactly 14 inclusive days, "
-                "start immediately after the preceding epoch, use consecutive "
-                "epoch numbering, and reconcile PoC + Data + Bonus to total "
-                "dispersal within one displayed XNET of rounding."
+                "Published epoch numbers must be unique and every mirrored "
+                "epoch must have source-published start/end dates and a total "
+                "reward-token value. No fixed epoch length or inferred future "
+                "boundary is enforced."
             ),
         },
         "count": len(epoch_schedule),

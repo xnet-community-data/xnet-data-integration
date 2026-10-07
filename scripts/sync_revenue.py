@@ -413,7 +413,7 @@ def main():
     raw_sha256 = hashlib.sha256(raw_bytes).hexdigest()
 
     output = {
-        "schema_version": 2,
+        "schema_version": 1,
         "source": {
             "name": "XNET Revenue Sheet",
             "human_url": SOURCE_HUMAN_URL,
@@ -479,7 +479,7 @@ def main():
     epoch_sha256 = hashlib.sha256(epoch_raw_bytes).hexdigest()
 
     epoch_output = {
-        "schema_version": 1,
+        "schema_version": 2,
         "source": {
             "name": "XNET Reward Tokens by Epoch Summary",
             "human_url": EPOCH_SOURCE_HUMAN_URL,

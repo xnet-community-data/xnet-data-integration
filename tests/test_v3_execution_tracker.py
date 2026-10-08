@@ -12,7 +12,7 @@ from unittest.mock import Mock, patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
-from v3_execution_tracker import ExecutionPending, ExecutionTracker
+from v3_execution_tracker import ExecutionPending, ExecutionTracker, SubmissionRejected
 
 SPEC = {"key": "current", "query_id": 1, "max_run_credits": 1}
 
@@ -73,6 +73,41 @@ class TrackerTests(unittest.TestCase):
                          ("query/1/execute", {"performance": "small",
                                               "query_parameters": {"lookback_hours": 8}}))
         self.assertEqual(self.state["pending_executions"]["current"]["timeout_seconds"], 18)
+
+    def test_definitive_http_rejection_releases_intent_and_audits_it(self):
+        self.api.side_effect = SubmissionRejected("Dune HTTP 400: tier unavailable")
+        with self.assertRaises(SubmissionRejected):
+            self.tracker.execute({**SPEC, "performance": "small"}, {}, True, 18)
+        self.assertEqual(self.state["pending_executions"], {})
+        self.assertEqual(len(self.state["rejected_submissions"]), 1)
+        self.assertEqual(self.state["rejected_submissions"][0]["query_id"], 1)
+
+    def test_queue_delay_does_not_consume_execution_budget(self):
+        self.pending(
+            submitted_at_utc=(self.clock - timedelta(seconds=25)).isoformat(),
+            queue_timeout_seconds=30, run_timeout_seconds=15)
+        self.api.side_effect = [
+            {"state": "QUERY_STATE_EXECUTING", "execution_started_at":
+                (self.clock - timedelta(seconds=2)).isoformat()},
+            self.completed()]
+        result = self.tracker.execute(SPEC, {}, True, 18)
+        self.assertEqual(result["execution_id"], "existing")
+        self.assertFalse(any(call.args[0].endswith("/cancel") for call in self.api.call_args_list))
+
+    def test_compute_timeout_requests_cancel_without_replacement(self):
+        self.pending(
+            submitted_at_utc=(self.clock - timedelta(seconds=40)).isoformat(),
+            queue_timeout_seconds=30, run_timeout_seconds=15)
+        self.api.side_effect = [
+            {"state": "QUERY_STATE_EXECUTING", "execution_started_at":
+                (self.clock - timedelta(seconds=16)).isoformat()},
+            {"success": True},
+            {"state": "QUERY_STATE_EXECUTING"}]
+        with self.assertRaises(ExecutionPending):
+            self.tracker.execute(SPEC, {}, True, 90)
+        self.assertIsNotNone(
+            self.state["pending_executions"]["current"]["cancellation_requested_at_utc"])
+        self.assertTrue(any(call.args[0].endswith("/cancel") for call in self.api.call_args_list))
 
     def test_killed_runner_resumes_the_same_execution_without_guard_or_post(self):
         self.api.side_effect = [{"execution_id": "new"}, SystemExit("runner killed")]
@@ -291,6 +326,29 @@ class RecoveryIntegrationTests(unittest.TestCase):
         self.assertTrue(saved["paused"])
         self.assertEqual(saved["pending_executions"]["xnet_transfers"]["execution_id"], "recover")
 
+    def test_expensive_transfer_is_quarantined_while_dashboard_stays_live(self):
+        status = {"state": "QUERY_STATE_COMPLETED",
+                  "execution_cost_credits": 7.14,
+                  "execution_ended_at": self.fixed.isoformat(),
+                  "result_metadata": {"total_row_count": 0, "column_names": []}}
+        with patch("sys.argv", ["refresh"]), patch.object(self.refresh, "now", return_value=self.fixed), \
+             patch.object(self.refresh, "api", return_value=status), \
+             patch.object(self.refresh, "usage_guard", return_value={}), \
+             patch.object(self.refresh, "run"), patch.object(self.refresh, "publish"), \
+             patch.object(self.refresh, "reduce_atomically") as reduce:
+            self.assertEqual(self.refresh.main(), 0)
+        saved = json.loads(self.state_path.read_text())
+        self.assertFalse(saved["paused"])
+        self.assertTrue(saved["source_errors"]["xnet_transfers"]["next_retry_at_utc"])
+        self.assertEqual(json.loads((self.root / "health.json").read_text())["status"], "DEGRADED")
+        reduce.assert_not_called()
+        with patch("sys.argv", ["refresh"]), patch.object(self.refresh, "now", return_value=self.fixed), \
+             patch.object(self.refresh, "api") as api, \
+             patch.object(self.refresh, "usage_guard", return_value={}), \
+             patch.object(self.refresh, "run"), patch.object(self.refresh, "publish"):
+            self.assertEqual(self.refresh.main(), 0)
+        api.assert_not_called()  # Cooling off without duplicate Dune spending.
+
     def test_pending_source_does_not_set_a_global_pause(self):
         with patch("sys.argv", ["refresh"]), patch.object(self.refresh, "now", return_value=self.fixed), \
              patch.object(self.refresh, "api", side_effect=RuntimeError("status temporarily unavailable")), \
@@ -299,8 +357,17 @@ class RecoveryIntegrationTests(unittest.TestCase):
             self.assertEqual(self.refresh.main(), 0)
         saved = json.loads(self.state_path.read_text())
         self.assertFalse(saved["paused"])
-        self.assertIn("replacement blocked", saved["last_pending_error"])
+        self.assertTrue(saved["source_errors"]["xnet_transfers"]["unresolved_execution"])
+        self.assertIn("replacement blocked", saved["source_errors"]["xnet_transfers"]["error"])
         self.assertEqual(saved["pending_executions"]["xnet_transfers"]["execution_id"], "recover")
+
+
+class SqlPartitionTests(unittest.TestCase):
+    def test_transfer_partition_tracks_real_lookback(self):
+        sql = (ROOT / "dune/v3/sql/40_xnet_transfer_events_hot.sql").read_text()
+        self.assertIn("CAST(CURRENT_TIMESTAMP - INTERVAL '{{lookback_hours}}' HOUR AS DATE)", sql)
+        self.assertIn("block_time >= CURRENT_TIMESTAMP - INTERVAL '{{lookback_hours}}' HOUR", sql)
+        self.assertNotIn("CURRENT_DATE - INTERVAL '1' DAY", sql)
 
 
 if __name__ == "__main__":

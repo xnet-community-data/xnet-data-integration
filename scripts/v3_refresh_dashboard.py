@@ -14,7 +14,10 @@ import urllib.error
 import urllib.request
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
-from v3_execution_tracker import ExecutionPending, ExecutionTracker
+from v3_execution_tracker import (
+    ExecutionPending, ExecutionTracker, SubmissionRejected,
+    ExecutionCostExceeded, ExecutionFailed,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG = json.loads((ROOT / "config/v3_refresh.json").read_text())
@@ -54,7 +57,10 @@ def api(path, payload=None, include_wire_size=False):
             message = str(body.get("error") or body.get("message") or "")[:400].replace(key, "[redacted]")
         except Exception:
             message = ""
-        raise RuntimeError(f"Dune HTTP {error.code} at {path.split('?')[0]}: {message}; no automatic execution retry.") from None
+        detail = f"Dune HTTP {error.code} at {path.split('?')[0]}: {message}; no automatic execution retry."
+        if path.endswith("/execute") and error.code in (400, 401, 403, 404, 422):
+            raise SubmissionRejected(detail) from None
+        raise RuntimeError(detail) from None
 
 def usage_guard():
     usage = api("usage", {"start_date": now().date().replace(day=1).isoformat(),
@@ -121,6 +127,34 @@ def due(last, cadence_minutes):
         return True
     elapsed = (now() - datetime.fromisoformat(last.replace("Z", "+00:00"))).total_seconds()
     return elapsed >= cadence_minutes * 60 - 60
+
+def record_source_issue(state, key, error, unresolved=False):
+    issues = state.setdefault("source_errors", {})
+    previous = issues.get(key, {})
+    failures = previous.get("consecutive_failures", 0) if unresolved else (
+        previous.get("consecutive_failures", 0) + 1
+    )
+    # One bounded recovery attempt per backoff, no noisy repeated spending.
+    retry_time = None if unresolved else now() + timedelta(
+        minutes=min(120, 30 * 2 ** min(failures - 1, 2))
+    )
+    issues[key] = {
+        "error": str(error), "failed_at_utc": stamp(),
+        "consecutive_failures": failures,
+        "next_retry_at_utc": retry_time.isoformat().replace("+00:00", "Z") if retry_time else None,
+        "unresolved_execution": bool(unresolved),
+    }
+    save(STATE, state)
+    print(f"::warning::Source {key} degraded; last verified data retained: {error}", flush=True)
+
+
+def source_in_backoff(state, key):
+    pending = state.get("pending_executions", {})
+    if key in pending:
+        return False  # Always reconcile an existing execution ID.
+    until = state.get("source_errors", {}).get(key, {}).get("next_retry_at_utc")
+    return bool(until and now() < datetime.fromisoformat(until.replace("Z", "+00:00")))
+
 
 def reduce_atomically(transfer_path, bbb_path=None):
     # A failed reduction must preserve canonical data and all derived state.
@@ -320,6 +354,13 @@ def main():
                         spec
                     )
 
+            # Do not submit a replacement during a source-specific cooling-off
+            # period. Presentation refreshes still proceed using last-good data.
+            due_sources = [
+                spec for spec in due_sources
+                if not source_in_backoff(state, spec["key"])
+            ]
+
             # A recovered BBB result must be reduced even if the transfer clock
             # isn't due yet. The unchanged canonical CSV remains deduplicated.
             if any(s["key"] == "bbb_dex" for s in due_sources):
@@ -327,8 +368,13 @@ def main():
                 if transfer and transfer not in due_sources:
                     due_sources.insert(0, transfer)
             paths = {}
+            successful_sources = []
 
             for spec in due_sources:
+                # BBB-only results cannot be committed without the canonical
+                # transfer clock; the reducer requires a transfer input.
+                if spec["key"] == "bbb_dex" and "xnet_transfers" not in paths:
+                    continue
                 previous = (
                     state.get("queries", {})
                     .get(spec["key"], {})
@@ -399,15 +445,19 @@ def main():
                         )
                     )
 
-                record = execute(
-                    spec,
-                    {
-                        "lookback_hours":
-                            lookback,
-                    },
-                    state=state,
-                    timeout_seconds=spec.get("execution_timeout_seconds"),
-                )
+                try:
+                    record = execute(
+                        spec,
+                        {"lookback_hours": lookback},
+                        state=state,
+                        timeout_seconds=spec.get("execution_timeout_seconds"),
+                    )
+                except ExecutionPending as error:
+                    record_source_issue(state, spec["key"], error, unresolved=True)
+                    continue
+                except (SubmissionRejected, ExecutionCostExceeded, ExecutionFailed) as error:
+                    record_source_issue(state, spec["key"], error)
+                    continue
 
                 if spec.get(
                     "track_continuous_coverage",
@@ -516,6 +566,7 @@ def main():
                     ROOT
                     / spec["output"]
                 )
+                successful_sources.append(spec)
 
                 save(
                     STATE,
@@ -539,7 +590,7 @@ def main():
                         ]
                     )
 
-                consumed_sources = due_sources
+                consumed_sources = successful_sources
 
             health_sources = {
                 spec["key"]:
@@ -567,7 +618,7 @@ def main():
                         state.get(
                             "chain_completed_at_utc"
                         ),
-                    "status": "HEALTHY",
+                    "status": "DEGRADED" if state.get("source_errors") else "HEALTHY",
                     "cadence_minutes":
                         CONFIG[
                             "chain_cadence_minutes"
@@ -575,7 +626,8 @@ def main():
                     "paused_due_to_cost": False,
                     "sources":
                         health_sources,
-                    "automatic_retry": False,
+                    "degraded_sources": state.get("source_errors", {}),
+                    "automatic_retry": True,
                 },
             )
         run("v3_build_chain_snapshot.py")
@@ -586,6 +638,9 @@ def main():
         # A killed runner before this point can replay the same source result.
         for spec in consumed_sources:
             tracker(state).acknowledge(spec, state["queries"][spec["key"]])
+            state.setdefault("source_errors", {}).pop(spec["key"], None)
+        # Any failure to publish/reduce stays global fail-closed, never masked.
+        save(STATE, state)
         due_presentation = []
         for spec in CONFIG["presentation"]:
             last = state["queries"].get(spec["key"], {}).get("completed_at_utc")
@@ -632,6 +687,13 @@ def main():
             )
             save(STATE, state)
         state.update({"completed_at_utc": stamp(), "last_error": None, "billing": usage_guard()})
+        # Health is reconciled after successful source commits, not before them.
+        if HEALTH.exists():
+            health = load(HEALTH, {})
+            health["status"] = "DEGRADED" if state.get("source_errors") else "HEALTHY"
+            health["degraded_sources"] = state.get("source_errors", {})
+            health["automatic_retry"] = True
+            save(HEALTH, health)
         save(STATE, state)
         publish()
         return 0

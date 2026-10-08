@@ -249,7 +249,7 @@ def main():
                 ).get("lookback_hours", 0)
                 or 0
             )
-            != int(spec.get("lookback_hours", 2))
+            < int(spec.get("lookback_hours", 2))
             for spec in CONFIG["sources"]
             if spec.get("enabled", True)
         )
@@ -311,7 +311,7 @@ def main():
 
                 lookback_changed = (
                     previous_lookback
-                    != configured_lookback
+                    < configured_lookback
                 )
 
                 preferred_hour = spec.get(

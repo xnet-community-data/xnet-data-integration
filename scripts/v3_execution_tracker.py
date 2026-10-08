@@ -13,6 +13,18 @@ class ExecutionPending(RuntimeError):
     """An execution remains unresolved; a replacement must not be submitted."""
 
 
+class SubmissionRejected(RuntimeError):
+    """A definitive 4xx execute rejection: Dune did not accept an execution."""
+
+
+class ExecutionCostExceeded(RuntimeError):
+    """A completed execution exceeded its permitted spending cap."""
+
+
+class ExecutionFailed(RuntimeError):
+    """A terminal engine failure that is safe to isolate to its source."""
+
+
 class ExecutionTracker:
     def __init__(self, state, api, checkpoint, guard, now, sleep, performance):
         self.state, self.api, self.checkpoint = state, api, checkpoint
@@ -78,10 +90,26 @@ class ExecutionTracker:
         status = self.api(f"execution/{execution_id}/status")
         if self.observe(pending, status):
             return status
-        age = (self.now() - datetime.fromisoformat(
-            pending["submitted_at_utc"].replace("Z", "+00:00")
-        )).total_seconds()
-        if age >= pending["timeout_seconds"]:
+        # Queueing and actual computation are separate budgets. Save the
+        # engine-reported start to retain correct deadlines after restarts.
+        remote_start = status.get("execution_started_at")
+        if remote_start and not pending.get("execution_started_at"):
+            pending["execution_started_at"] = remote_start
+            self.checkpoint()
+        started = pending.get("execution_started_at")
+        submitted = datetime.fromisoformat(pending["submitted_at_utc"].replace("Z", "+00:00"))
+        if "queue_timeout_seconds" in pending and "run_timeout_seconds" in pending:
+            if started:
+                since = datetime.fromisoformat(started.replace("Z", "+00:00"))
+                budget = pending["run_timeout_seconds"]
+            else:
+                since = submitted
+                budget = pending["queue_timeout_seconds"]
+        else:
+            since = submitted
+            budget = pending["timeout_seconds"]
+        age = (self.now() - since).total_seconds()
+        if age >= budget:
             # Persist intent before the request. A rejected/ambiguous cancellation
             # never establishes completion; only a terminal status does.
             if not pending.get("cancellation_requested_at_utc"):
@@ -132,6 +160,10 @@ class ExecutionTracker:
                 "query_parameters": deepcopy(params or {}),
                 "submitted_at_utc": self.stamp(), "timeout_seconds": timeout_seconds,
                 "billing": billing, "execution_id": None,
+                **({
+                    "queue_timeout_seconds": int(spec["queue_timeout_seconds"]),
+                    "run_timeout_seconds": int(spec["run_timeout_seconds"]),
+                } if "queue_timeout_seconds" in spec and "run_timeout_seconds" in spec else {}),
             }
             self.pending()[key] = pending
             # If the POST response is lost or the runner dies, this intent blocks
@@ -145,6 +177,17 @@ class ExecutionTracker:
                 pending["execution_id"] = execution["execution_id"]
                 if not pending["execution_id"]:
                     raise RuntimeError("No execution ID returned")
+            except SubmissionRejected as error:
+                # A confirmed 4xx validation/authorization rejection did NOT
+                # submit work. Preserve an audit record and release the intent.
+                self.state.setdefault("rejected_submissions", []).append({
+                    "key": key, "query_id": spec["query_id"],
+                    "at_utc": self.stamp(), "error": str(error),
+                })
+                self.state["rejected_submissions"] = self.state["rejected_submissions"][-50:]
+                del self.pending()[key]
+                self.checkpoint()
+                raise
             except Exception as error:
                 pending["submission_error"] = str(error)
                 self.checkpoint()
@@ -183,13 +226,13 @@ class ExecutionTracker:
                     f"Execution {pending['execution_id']} cancellation confirmed; "
                     "replacement deferred to a later scheduled run."
                 )
-            raise RuntimeError(f"Execution {pending['execution_id']}: {status['state']}; no automatic retry.")
+            raise ExecutionFailed(f"Execution {pending['execution_id']}: {status['state']}; no automatic retry.")
         if cost is None:
             raise ExecutionPending(f"Execution {pending['execution_id']} has no cost metadata; replacement blocked.")
         if enforce_cap and float(cost) > spec["max_run_credits"]:
             self.acknowledge(spec, pending)
-            raise RuntimeError(
-                f"Query {spec['query_id']} cost {cost} exceeded {spec['max_run_credits']}; refresh paused."
+            raise ExecutionCostExceeded(
+                f"Query {spec['query_id']} cost {cost} exceeded {spec['max_run_credits']}; source quarantined."
             )
         record = {
             "query_id": pending["query_id"], "execution_id": pending["execution_id"],

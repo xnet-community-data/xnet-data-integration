@@ -137,7 +137,7 @@ class ExecutionTracker:
             # If the POST response is lost or the runner dies, this intent blocks
             # automatic resubmission rather than guessing that nothing ran.
             self.checkpoint()
-            body = {"performance": self.performance}
+            body = {"performance": spec.get("performance", self.performance)}
             if params:
                 body["query_parameters"] = params
             try:

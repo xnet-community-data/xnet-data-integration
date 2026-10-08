@@ -284,10 +284,16 @@ def main():
                     "preferred_hour_utc"
                 )
 
+                # Recover a missed preferred hour after a 3-hour grace
+                # period instead of deferring BBB collection another day.
+                # The existing max_catchup_hours guard still applies.
                 in_preferred_hour = (
                     preferred_hour is None
-                    or now().hour
-                    == int(preferred_hour)
+                    or now().hour == int(preferred_hour)
+                    or (
+                        previous_completed is not None
+                        and due(previous_completed, cadence + 180)
+                    )
                 )
 
                 repair_for_source = (
@@ -400,6 +406,7 @@ def main():
                             lookback,
                     },
                     state=state,
+                    timeout_seconds=spec.get("execution_timeout_seconds"),
                 )
 
                 if spec.get(

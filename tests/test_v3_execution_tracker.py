@@ -64,6 +64,16 @@ class TrackerTests(unittest.TestCase):
         self.tracker.acknowledge(SPEC, record)
         self.assertFalse(self.state["pending_executions"])
 
+    def test_bounded_source_can_override_engine_and_timeout(self):
+        self.api.side_effect = [{"execution_id": "small-source"}, self.completed()]
+        spec = {**SPEC, "performance": "small"}
+        record = self.tracker.execute(spec, {"lookback_hours": 8}, True, 18)
+        self.assertEqual(record["execution_id"], "small-source")
+        self.assertEqual(self.api.call_args_list[0].args,
+                         ("query/1/execute", {"performance": "small",
+                                              "query_parameters": {"lookback_hours": 8}}))
+        self.assertEqual(self.state["pending_executions"]["current"]["timeout_seconds"], 18)
+
     def test_killed_runner_resumes_the_same_execution_without_guard_or_post(self):
         self.api.side_effect = [{"execution_id": "new"}, SystemExit("runner killed")]
         with self.assertRaises(SystemExit):

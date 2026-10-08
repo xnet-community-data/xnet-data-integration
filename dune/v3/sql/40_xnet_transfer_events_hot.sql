@@ -26,8 +26,8 @@ WITH xnet AS (
         to_token_account,
         amount
     FROM tokens_solana.transfers
-    WHERE block_date >= CURRENT_DATE - INTERVAL '1' DAY
-      AND block_time >= CURRENT_TIMESTAMP - INTERVAL '2' HOUR
+    WHERE block_date >= CAST(CURRENT_TIMESTAMP - INTERVAL '{{lookback_hours}}' HOUR AS DATE)
+      AND block_time >= CURRENT_TIMESTAMP - INTERVAL '{{lookback_hours}}' HOUR
       AND token_mint_address =
           'xNETbUB7cRb3AAu2pNG2pUwQcJ2BHcktfvSB8x1Pq6L'
 )

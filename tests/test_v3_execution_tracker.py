@@ -353,7 +353,7 @@ class RecoveryIntegrationTests(unittest.TestCase):
         with patch("sys.argv", ["refresh"]), patch.object(self.refresh, "now", return_value=self.fixed), \
              patch.object(self.refresh, "api", side_effect=RuntimeError("status temporarily unavailable")), \
              patch.object(self.refresh, "usage_guard", return_value={}), \
-             patch.object(self.refresh, "publish"):
+             patch.object(self.refresh, "run"), patch.object(self.refresh, "publish"):
             self.assertEqual(self.refresh.main(), 0)
         saved = json.loads(self.state_path.read_text())
         self.assertFalse(saved["paused"])

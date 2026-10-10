@@ -1,19 +1,19 @@
 {
   "schema_version": 2,
-  "last_refresh_completed_utc": "2026-10-09T08:25:19Z",
-  "status": "PAUSED",
+  "last_refresh_completed_utc": "2026-10-10T11:59:06Z",
+  "status": "DEGRADED",
   "cadence_minutes": 30,
   "paused_due_to_cost": false,
   "sources": {
     "xnet_transfers": {
       "query_id": 8894037,
-      "execution_id": "01M4FW8ER06V9MBRPWY37TAFR1",
-      "execution_cost_credits": 0.014382353,
-      "completed_at_utc": "2026-10-09T08:25:17.616192281Z",
-      "execution_started_at": "2026-10-09T08:25:16.904100195Z",
-      "execution_ended_at": "2026-10-09T08:25:17.616192281Z",
+      "execution_id": "01M4FXVPXTW5MN2T5X22NNXPRE",
+      "execution_cost_credits": 0.655088236,
+      "completed_at_utc": "2026-10-09T08:53:27.890959699Z",
+      "execution_started_at": "2026-10-09T08:53:16.60154858Z",
+      "execution_ended_at": "2026-10-09T08:53:27.890959699Z",
       "query_parameters": {
-        "lookback_hours": 3
+        "lookback_hours": 48
       },
       "result_metadata": {
         "column_names": [
@@ -44,33 +44,33 @@
           "double",
           "bigint"
         ],
-        "row_count": 0,
-        "result_set_bytes": 0,
-        "total_row_count": 0,
-        "total_result_set_bytes": 0,
-        "datapoint_count": 0,
-        "pending_time_millis": 615,
-        "execution_time_millis": 712
+        "row_count": 405,
+        "result_set_bytes": 137030,
+        "total_row_count": 405,
+        "total_result_set_bytes": 137030,
+        "datapoint_count": 4860,
+        "pending_time_millis": 766,
+        "execution_time_millis": 11289
       },
       "billing": {
-        "credits_used": 419.505,
+        "credits_used": 420.178,
         "guard_credits": 3800,
         "period_start": "2026-10-04",
         "period_end": "2026-11-04"
       },
-      "export_points": 0,
-      "export_wire_bytes": 0,
-      "estimated_export_credits": 0.0
+      "export_points": 4860,
+      "export_wire_bytes": 220030,
+      "estimated_export_credits": 2.2003
     },
     "bbb_dex": {
       "query_id": 8894132,
-      "execution_id": "01M4E21EZVGBAE1TK26RY77JJ5",
-      "execution_cost_credits": 0.101794118,
-      "completed_at_utc": "2026-10-08T15:27:58.387920682Z",
-      "execution_started_at": "2026-10-08T15:27:50.98413758Z",
-      "execution_ended_at": "2026-10-08T15:27:58.387920682Z",
+      "execution_id": "01M4JTWAJBSKS9VW65GH1FQA8E",
+      "execution_cost_credits": 0.1225,
+      "completed_at_utc": "2026-10-10T11:58:58.273881998Z",
+      "execution_started_at": "2026-10-10T11:58:53.877431268Z",
+      "execution_ended_at": "2026-10-10T11:58:58.273881998Z",
       "query_parameters": {
-        "lookback_hours": 60
+        "lookback_hours": 46
       },
       "result_metadata": {
         "column_names": [
@@ -109,29 +109,34 @@
           "varchar",
           "bigint"
         ],
-        "row_count": 12,
-        "result_set_bytes": 4102,
-        "total_row_count": 12,
-        "total_result_set_bytes": 4102,
-        "datapoint_count": 192,
-        "pending_time_millis": 1227,
-        "execution_time_millis": 7403
+        "row_count": 11,
+        "result_set_bytes": 3762,
+        "total_row_count": 11,
+        "total_result_set_bytes": 3762,
+        "datapoint_count": 176,
+        "pending_time_millis": 361,
+        "execution_time_millis": 4396
       },
       "billing": {
-        "credits_used": 404.702,
+        "credits_used": 421.833,
         "guard_credits": 3800,
         "period_start": "2026-10-04",
         "period_end": "2026-11-04"
       },
       "continuous_coverage_start_utc": "2026-09-28T07:54:45Z",
-      "continuous_coverage_end_utc": "2026-10-08T15:27:58Z",
-      "export_points": 192,
-      "export_wire_bytes": 8940,
-      "estimated_export_credits": 0.08940000000000001
+      "continuous_coverage_end_utc": "2026-10-10T11:58:58Z",
+      "export_points": 176,
+      "export_wire_bytes": 8295,
+      "estimated_export_credits": 0.08295
     }
   },
-  "degraded_sources": {},
-  "automatic_retry": false,
-  "paused_at_utc": "2026-10-09T08:53:34Z",
-  "pause_reason": "Command '['/opt/hostedtoolcache/Python/3.12.15/x64/bin/python', 'scripts/v3_reduce_chain.py', '--transfer-result', '/home/runner/work/xnet-data-integration/xnet-data-integration/state/v3_transfer_hot_latest.json']' returned non-zero exit status 1."
+  "degraded_sources": {
+    "holder_integrity": {
+      "error": "Negative holder balance after reduction: AxQoWvHTPjKRwTThtqURAiBSzF2oDCgU9nnDHptSQbcU = -3709.53558595",
+      "failed_at_utc": "2026-10-10T11:59:06Z",
+      "holder_data_as_of_utc": "2026-10-08 17:57:58.000 UTC",
+      "automatic_recheck": true
+    }
+  },
+  "automatic_retry": true
 }

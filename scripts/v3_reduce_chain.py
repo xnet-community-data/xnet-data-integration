@@ -406,6 +406,57 @@ def derive_holders(transfers: list[dict]) -> None:
     )
 
 
+def derive_holders_guarded(
+    transfers: list[dict],
+    allow_stale_holders: bool = False,
+) -> None:
+    """Quarantine ONLY a proven holder-balance inconsistency.
+
+    Never manufacture tokens, clamp material negatives, or silently change the
+    verified holder snapshot. Supply and burn accounting are independently
+    derived from the canonical transfer events.
+    """
+    quality_path = Path("data/current/xnet_holder_integrity.json")
+    try:
+        derive_holders(transfers)
+    except RuntimeError as error:
+        if (
+            not allow_stale_holders
+            or not str(error).startswith("Negative holder balance after reduction:")
+        ):
+            raise
+        previous_path = Path("data/current/xnet_holder_state.json")
+        if not previous_path.exists():
+            raise  # Never fall back without a published verified state.
+        previous = json.loads(previous_path.read_text())
+        previous_as_of = previous.get("latest_transfer_event_utc")
+        if not previous_as_of:
+            raise
+        quality = {
+            "schema_version": 1,
+            "status": "DEGRADED",
+            "reason": "holder_balance_integrity",
+            "error": str(error),
+            "holder_data_as_of_utc": previous_as_of,
+            "checked_at_utc": datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
+            "automatic_recheck": True,
+            "methodology_changed": False,
+        }
+        print("::warning::Holder integrity failure; preserving last verified holder state: " + str(error), flush=True)
+    else:
+        holder = json.loads(Path("data/current/xnet_holder_state.json").read_text())
+        quality = {
+            "schema_version": 1,
+            "status": "HEALTHY",
+            "holder_data_as_of_utc": holder["latest_transfer_event_utc"],
+            "checked_at_utc": datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
+            "automatic_recheck": True,
+            "methodology_changed": False,
+        }
+    quality_path.parent.mkdir(parents=True, exist_ok=True)
+    quality_path.write_text(json.dumps(quality, indent=2) + "\n")
+
+
 def derive_supply(transfers: list[dict]) -> None:
     checkpoint = json.loads(
         Path(
@@ -826,6 +877,9 @@ def main():
         type=Path,
     )
 
+    ap.add_argument("--allow-stale-holders", action="store_true",
+                    help="Preserve verified holders on material negative balance; continue independent chain metrics")
+
     args = ap.parse_args()
 
     transfer_rows = [
@@ -854,7 +908,7 @@ def main():
         ("block_time", "tx_id"),
     ) if args.bbb_result else []
 
-    derive_holders(transfers)
+    derive_holders_guarded(transfers, allow_stale_holders=args.allow_stale_holders)
     derive_supply(transfers)
     derive_bbb_burns(transfers)
     if args.bbb_result:

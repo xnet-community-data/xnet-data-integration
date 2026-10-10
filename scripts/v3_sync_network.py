@@ -543,23 +543,61 @@ def mark_attempt(status: str, error: str | None = None, success=None):
     save_json(REFRESH_STATE, state)
 
 
+def uncommitted_network_collection(previous: dict, published: dict) -> bool:
+    """Detect a network success checkpoint ahead of the actual published data.
+
+    In particular, a paused Dune run can have fetched network APIs successfully
+    and persisted its execution-state checkpoint without committing the output.
+    The cached source remains canonical; never claim it is fresh from a clock.
+    """
+    if previous.get("status") != "live" or not previous.get("last_success_utc"):
+        return False
+    observed = published.get("collected_at_utc")
+    if not observed:
+        return True
+    try:
+        success_dt = datetime.fromisoformat(previous["last_success_utc"].replace("Z", "+00:00"))
+        observed_dt = datetime.fromisoformat(observed.replace("Z", "+00:00"))
+    except (ValueError, AttributeError):
+        return True
+    mismatched_values = (
+        str(previous.get("offload_data_as_of")) != str((published.get("offload") or {}).get("data_as_of"))
+        or str(previous.get("device_data_as_of")) != str((published.get("devices") or {}).get("data_as_of"))
+    )
+    return mismatched_values or observed_dt < success_dt - timedelta(minutes=10)
+
+
 def main() -> int:
     refresh_state = load_json(
         REFRESH_STATE,
         {"schema_version": 1, "queries": {}},
     )
+    if refresh_state.get("paused"):
+        print("Dune globally paused; deferring network source calls until recovery.")
+        return 0
     previous = (
         refresh_state.get("external_sources", {})
         .get("network", {})
     )
     cadence = network_cadence_minutes()
 
-    if not due(previous.get("last_attempt_utc"), cadence):
+    published = load_json(NETWORK_STATE, {})
+    publish_gap = uncommitted_network_collection(previous, published)
+    # A single missed publication may be repaired promptly, but never poll
+    # upstream repeatedly during a Dune publication outage.
+    gap_retry_due = (
+        publish_gap and due(previous.get("last_unpublished_retry_utc"), 120)
+    )
+    if not due(previous.get("last_attempt_utc"), cadence) and not gap_retry_due:
         print(
             "Network API refresh not due; preserving current network state "
             f"(cadence {cadence} minutes)."
         )
         return 0
+    if gap_retry_due:
+        refresh_state.setdefault("external_sources", {}).setdefault("network", {})["last_unpublished_retry_utc"] = stamp()
+        save_json(REFRESH_STATE, refresh_state)
+        print("Published network data lagged a previous successful fetch; bounded recovery collection due.")
 
     existing_devices = load_json(DEVICE_HISTORY, {"data": []})
 

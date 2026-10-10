@@ -165,7 +165,7 @@ def reduce_atomically(transfer_path, bbb_path=None):
             args = ["--transfer-result", str(transfer_path)]
             if bbb_path:
                 args.extend(["--bbb-result", str(bbb_path)])
-            run("v3_reduce_chain.py", *args)
+            run("v3_reduce_chain.py", *args, "--allow-stale-holders")
         except Exception:
             shutil.rmtree(ROOT / "data")
             shutil.copytree(backup, ROOT / "data")
@@ -217,6 +217,18 @@ def main():
     for key, error in reconciliation_errors.items():
         print(f"::warning::Execution reconciliation {key}: {error}", flush=True)
     if state.get("paused") and not args.resume:
+        # A green last-good snapshot must not conceal a global production pause.
+        old_health = load(HEALTH, {})
+        if old_health.get("status") != "PAUSED":
+            old_health.update({
+                "status": "PAUSED",
+                "paused_at_utc": state.get("failed_at_utc"),
+                "pause_reason": state.get("last_error", "unknown"),
+                "automatic_retry": False,
+            })
+            save(HEALTH, old_health)
+            if os.environ.get("EVENT") in {"schedule", "push"}:
+                publish(state_only=True)
         message = "Refresh remains paused after a previous failure; no queries submitted."
         if os.environ.get("EVENT") in {"schedule", "push"}:
             print(f"::warning::{message}")
@@ -433,10 +445,12 @@ def main():
                             )
                         )
                     ):
-                        raise RuntimeError(
-                            f"{spec['key']} canonical collection gap "
-                            "exceeds catch-up limit; reviewed repair required."
+                        record_source_issue(
+                            state, spec["key"],
+                            f"Canonical collection gap ({lookback}h) exceeds "
+                            "configured safe catch-up limit; reviewed repair required."
                         )
+                        continue
                 else:
                     lookback = int(
                         spec.get(
@@ -581,6 +595,18 @@ def main():
                     paths["xnet_transfers"],
                     paths.get("bbb_dex"),
                 )
+                holder_quality = load(
+                    ROOT / "data/current/xnet_holder_integrity.json", {}
+                )
+                if holder_quality.get("status") == "DEGRADED":
+                    state.setdefault("source_errors", {})["holder_integrity"] = {
+                        "error": holder_quality["error"],
+                        "failed_at_utc": holder_quality["checked_at_utc"],
+                        "holder_data_as_of_utc": holder_quality["holder_data_as_of_utc"],
+                        "automatic_recheck": True,
+                    }
+                elif holder_quality.get("status") == "HEALTHY":
+                    state.setdefault("source_errors", {}).pop("holder_integrity", None)
                 state["chain_completed_at_utc"] = stamp()
 
                 if repair:
@@ -631,7 +657,19 @@ def main():
                 },
             )
         run("v3_build_chain_snapshot.py")
-        run("v3_collect_market.py")
+        try:
+            run("v3_collect_market.py")
+        except subprocess.CalledProcessError as error:
+            if not (ROOT / "data/current/xnet_market_state.json").exists():
+                raise  # No verified fallback available.
+            state.setdefault("source_errors", {})["market"] = {
+                "error": str(error),
+                "failed_at_utc": stamp(),
+                "automatic_recheck": True,
+            }
+            print("::warning::Market refresh failed; keeping last-good market data.", flush=True)
+        else:
+            state.setdefault("source_errors", {}).pop("market", None)
         save(STATE, state)
         publish()
         # Canonical data, rebuilt snapshots and their clock are now durable.
@@ -706,7 +744,15 @@ def main():
     except Exception as error:
         state.update({"paused": True, "last_error": str(error), "failed_at_utc": stamp()})
         save(STATE, state)
-        # Persist pause without relabelling last-good chain/source observations.
+        old_health = load(HEALTH, {})
+        old_health.update({
+            "status": "PAUSED",
+            "paused_at_utc": state["failed_at_utc"],
+            "pause_reason": str(error),
+            "automatic_retry": False,
+        })
+        save(HEALTH, old_health)
+        # Preserve last verified measurements but expose pause in health metadata.
         try:
             publish()
         except Exception:

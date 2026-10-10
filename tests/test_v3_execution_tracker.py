@@ -242,6 +242,7 @@ class PublicationTests(unittest.TestCase):
             self.git(seed, "config", "user.email", "test@example.com")
             (seed / "data/current").mkdir(parents=True)
             (seed / "data/current/v3_refresh_state.json").write_text('{}\n')
+            (seed / "data/current/xnet_chain_health.json").write_text('{"status": "HEALTHY"}\n')
             (seed / "data/xnet_defillama_revenue.json").write_text('"revenue unchanged"\n')
             self.git(seed, "add", ".")
             self.git(seed, "commit", "-m", "seed")
@@ -254,10 +255,12 @@ class PublicationTests(unittest.TestCase):
             shutil.copy(ROOT / "scripts/v3_publish_live_state.sh", source / "scripts")
             (source / "data/current").mkdir(parents=True)
             (source / "data/current/v3_refresh_state.json").write_text('{"pending_executions": {"current": {"execution_id": "saved"}}}\n')
+            (source / "data/current/xnet_chain_health.json").write_text('{"status": "PAUSED", "last_refresh_completed_utc": "2026-10-09T08:25:19Z"}\n')
             subprocess.run(["bash", "scripts/v3_publish_live_state.sh", "--refresh-state-only"],
                            cwd=source, check=True, capture_output=True, text=True)
             changed = self.git(origin, "diff", "--name-only", "live-state~1", "live-state")
-            self.assertEqual(changed, "data/current/v3_refresh_state.json")
+            self.assertEqual(set(changed.splitlines()), {"data/current/v3_refresh_state.json", "data/current/xnet_chain_health.json"})
+            self.assertEqual(json.loads(self.git(origin, "show", "live-state:data/current/xnet_chain_health.json"))["status"], "PAUSED")
             self.assertEqual(self.git(origin, "show", "live-state:data/xnet_defillama_revenue.json"), '"revenue unchanged"')
 
 

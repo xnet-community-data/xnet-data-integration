@@ -124,13 +124,17 @@ class RefreshTests(unittest.TestCase):
             original = json.dumps({"paused": True, "last_error": "cost anomaly", "queries": {}})
             state.write_text(original)
             summary = Path(directory) / "summary.md"
-            with patch.object(refresh, "STATE", state), patch("sys.argv", ["refresh"]), patch.dict("os.environ", {"EVENT": "schedule", "GITHUB_STEP_SUMMARY": str(summary)}), patch.object(refresh, "api") as api, patch.object(refresh, "publish") as publish:
+            health = Path(directory) / "health.json"
+            health.write_text('{"status": "HEALTHY", "last_refresh_completed_utc": "2026-10-09T08:25:19Z"}')
+            with patch.object(refresh, "STATE", state), patch.object(refresh, "HEALTH", health), patch("sys.argv", ["refresh"]), patch.dict("os.environ", {"EVENT": "schedule", "GITHUB_STEP_SUMMARY": str(summary)}), patch.object(refresh, "api") as api, patch.object(refresh, "publish") as publish:
                 self.assertEqual(refresh.main(), 0)
             api.assert_not_called()
-            publish.assert_not_called()
+            publish.assert_called_once_with(state_only=True)
             self.assertEqual(state.read_text(), original)
             self.assertIn("paused", summary.read_text())
             self.assertIn("cost anomaly", summary.read_text())
+            self.assertEqual(json.loads(health.read_text())["status"], "PAUSED")
+            self.assertEqual(json.loads(health.read_text())["last_refresh_completed_utc"], "2026-10-09T08:25:19Z")
 
     def test_observed_completed_cost_variation_is_within_presentation_guard(self):
         observed_cost = 0.57805981

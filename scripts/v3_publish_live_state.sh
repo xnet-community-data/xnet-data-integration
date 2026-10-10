@@ -60,7 +60,10 @@ if [ "$STATE_ONLY" = true ]; then
   if [ -f "$SOURCE/data/current/xnet_chain_health.json" ]; then
     cp "$SOURCE/data/current/xnet_chain_health.json" data/current/
   fi
-  git add data/current/v3_refresh_state.json data/current/xnet_chain_health.json
+  git add data/current/v3_refresh_state.json
+  if [ -f data/current/xnet_chain_health.json ]; then
+    git add data/current/xnet_chain_health.json
+  fi
   git config user.name "xnet-community-data-bot"
   git config user.email "xnet-community-data-bot@users.noreply.github.com"
   if ! git diff --cached --quiet; then

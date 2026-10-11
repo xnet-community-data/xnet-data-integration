@@ -211,16 +211,19 @@ def source_reconciliation_plan(state, spec, regular_repair_due):
 
 def execution_spec_for_mode(spec, mode):
     execution_spec = dict(spec)
+    base_cap = spec.get("max_run_credits")
+    if base_cap is None:
+        return execution_spec
     if mode == "integrity":
         execution_spec["max_run_credits"] = float(
             spec.get(
                 "integrity_repair_max_run_credits",
-                spec.get("repair_max_run_credits", spec["max_run_credits"]),
+                spec.get("repair_max_run_credits", base_cap),
             )
         )
     elif mode in {"daily", "approved_backfill"}:
         execution_spec["max_run_credits"] = float(
-            spec.get("repair_max_run_credits", spec["max_run_credits"])
+            spec.get("repair_max_run_credits", base_cap)
         )
     return execution_spec
 

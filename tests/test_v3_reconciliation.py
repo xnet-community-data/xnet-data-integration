@@ -46,9 +46,27 @@ class HistoricalReconciliationTests(unittest.TestCase):
             )
         self.assertEqual((mode, hours), ("approved_backfill", 240))
 
-    def test_holder_anomaly_forces_deep_repair_after_generation(self):
+    def test_holder_anomaly_checks_manifest_before_deep_download(self):
         state = {
             "reconciliation": {"generation": 1, "integrity_attempts": 0},
+            "source_errors": {"holder_integrity": {"error": "negative"}},
+        }
+        fixed = datetime(2026, 10, 11, 10, tzinfo=timezone.utc)
+        with patch.object(refresh, "CONFIG", self.config), patch.object(
+            refresh, "now", return_value=fixed
+        ):
+            mode, hours = refresh.source_reconciliation_plan(
+                state, self.transfer, False
+            )
+        self.assertEqual((mode, hours), (None, None))
+
+    def test_clean_integrity_manifest_enables_bounded_deep_fallback(self):
+        state = {
+            "reconciliation": {
+                "generation": 1,
+                "integrity_attempts": 0,
+                "integrity_manifest_clean_at_utc": "2026-10-11T09:30:00Z",
+            },
             "source_errors": {"holder_integrity": {"error": "negative"}},
         }
         fixed = datetime(2026, 10, 11, 10, tzinfo=timezone.utc)

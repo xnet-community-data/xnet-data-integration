@@ -59,7 +59,11 @@ def api(path, payload=None, include_wire_size=False):
         except Exception:
             message = ""
         detail = f"Dune HTTP {error.code} at {path.split('?')[0]}: {message}; no automatic execution retry."
-        if path.endswith("/execute") and error.code in (400, 401, 403, 404, 422):
+        # Dune documents every 4xx as a request failure. For execute POSTs
+        # that means no execution ID was created, so it is safe to release the
+        # durable submission intent. Keep 5xx/network failures ambiguous because
+        # the server may have accepted work before the response was lost.
+        if path.endswith("/execute") and 400 <= error.code < 500:
             raise SubmissionRejected(detail) from None
         raise RuntimeError(detail) from None
 

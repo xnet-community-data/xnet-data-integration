@@ -4,8 +4,8 @@
   "monthly_spend_guard_credits": 3800,
   "chain_cadence_minutes": 30,
   "repair_cadence_minutes": 1440,
-  "repair_lookback_hours": 48,
-  "max_repair_export_points": 9000,
+  "repair_lookback_hours": 168,
+  "max_repair_export_points": 40000,
   "minimum_credit_reserve": 15,
   "export_credits_per_megabyte": 10,
   "max_export_bytes_per_run": 1000000,
@@ -24,7 +24,10 @@
       "execution_timeout_seconds": 50,
       "queue_timeout_seconds": 30,
       "run_timeout_seconds": 15,
-      "max_catchup_hours": 48
+      "max_catchup_hours": 48,
+      "repair_lookback_hours": 168,
+      "repair_max_run_credits": 5,
+      "integrity_repair_max_run_credits": 15
     },
     {
       "key": "bbb_dex",
@@ -92,5 +95,13 @@
   "record_market_history": false,
   "source_execution_timeout_seconds": 240,
   "presentation_execution_timeout_seconds": 90,
-  "max_presentation_queries_per_run": 5
+  "max_presentation_queries_per_run": 5,
+  "max_repair_export_bytes": 2000000,
+  "max_integrity_repair_export_points": 150000,
+  "max_integrity_repair_export_bytes": 5000000,
+  "reconciliation_generation": 1,
+  "approved_backfill_lookback_hours": 240,
+  "integrity_repair_lookback_hours": 720,
+  "integrity_repair_cooldown_minutes": 1440,
+  "integrity_repair_max_attempts": 3
 }

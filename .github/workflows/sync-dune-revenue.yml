@@ -13,6 +13,7 @@ on:
     paths:
       - ".github/workflows/sync-dune-revenue.yml"
       - "scripts/v3_build_revenue_state.py"
+      - "scripts/v3_build_live_bundle.py"
       - "scripts/v3_sync_dynamic_counter_labels.py"
       - "config/v3_headline_visual_ids.json"
 
@@ -45,6 +46,8 @@ jobs:
           python scripts/v3_hydrate_live_state.py
       - name: Build Dune revenue state from the published feed
         run: python scripts/v3_build_revenue_state.py
+      - name: Rebuild atomic LiveFetch bundle
+        run: python scripts/v3_build_live_bundle.py
       - name: Publish Dune revenue state
         env:
           GH_TOKEN: ${{ github.token }}

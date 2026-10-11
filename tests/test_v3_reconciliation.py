@@ -46,9 +46,27 @@ class HistoricalReconciliationTests(unittest.TestCase):
             )
         self.assertEqual((mode, hours), ("approved_backfill", 240))
 
-    def test_holder_anomaly_forces_deep_repair_after_generation(self):
+    def test_holder_anomaly_checks_manifest_before_deep_download(self):
         state = {
             "reconciliation": {"generation": 1, "integrity_attempts": 0},
+            "source_errors": {"holder_integrity": {"error": "negative"}},
+        }
+        fixed = datetime(2026, 10, 11, 10, tzinfo=timezone.utc)
+        with patch.object(refresh, "CONFIG", self.config), patch.object(
+            refresh, "now", return_value=fixed
+        ):
+            mode, hours = refresh.source_reconciliation_plan(
+                state, self.transfer, False
+            )
+        self.assertEqual((mode, hours), (None, None))
+
+    def test_clean_integrity_manifest_enables_bounded_deep_fallback(self):
+        state = {
+            "reconciliation": {
+                "generation": 1,
+                "integrity_attempts": 0,
+                "integrity_manifest_clean_at_utc": "2026-10-11T09:30:00Z",
+            },
             "source_errors": {"holder_integrity": {"error": "negative"}},
         }
         fixed = datetime(2026, 10, 11, 10, tzinfo=timezone.utc)
@@ -87,13 +105,98 @@ class HistoricalReconciliationTests(unittest.TestCase):
         with patch.object(refresh, "CONFIG", self.config):
             self.assertFalse(refresh.integrity_repair_due(state))
 
-    def test_daily_stabilization_window_remains_seven_days(self):
+    def test_routine_repair_does_not_download_full_transfer_window(self):
         state = {"reconciliation": {"generation": 1}}
         with patch.object(refresh, "CONFIG", self.config):
             mode, hours = refresh.source_reconciliation_plan(
                 state, self.transfer, True
             )
-        self.assertEqual((mode, hours), ("daily", 168))
+        self.assertEqual((mode, hours), (None, None))
+
+
+    def test_manifest_comparison_detects_late_indexed_day(self):
+        remote = {
+            "2026-10-06": {
+                "day": "2026-10-06",
+                "event_count": 228,
+                "transfer_count": 225,
+                "burn_count": 3,
+                "mint_count": 0,
+                "tx_count": 123,
+                "min_block_slot": 453733987,
+                "max_block_slot": 454038894,
+                "amount_raw_total": "4187699332505953",
+                "block_slot_total": "103480000000",
+            }
+        }
+        local = {
+            "2026-10-06": {
+                **remote["2026-10-06"],
+                "event_count": 206,
+                "transfer_count": 203,
+            }
+        }
+        self.assertEqual(
+            refresh.manifest_mismatches(remote, local),
+            ["2026-10-06"],
+        )
+
+    def test_manifest_comparison_passes_exact_match(self):
+        row = {
+            "day": "2026-10-06",
+            "event_count": 228,
+            "transfer_count": 225,
+            "burn_count": 3,
+            "mint_count": 0,
+            "tx_count": 123,
+            "min_block_slot": 453733987,
+            "max_block_slot": 454038894,
+            "amount_raw_total": "4187699332505953",
+            "block_slot_total": "103480000000",
+        }
+        self.assertEqual(
+            refresh.manifest_mismatches(
+                {"2026-10-06": row},
+                {"2026-10-06": dict(row)},
+            ),
+            [],
+        )
+
+    def test_weekly_manifest_defers_when_projected_usage_is_high(self):
+        config = {
+            **self.config,
+            "monthly_target_credits": 2500,
+            "reconciliation": {
+                "minimum_target_headroom_credits": 150,
+                "weekly_soft_projected_monthly_credits": 2200,
+            },
+        }
+        with patch.object(refresh, "CONFIG", config):
+            self.assertFalse(
+                refresh.reconciliation_weekly_allowed({
+                    "credits_used": 1800,
+                    "target_credits": 2500,
+                    "projected_period_credits": 2300,
+                })
+            )
+
+    def test_weekly_manifest_allowed_with_credit_headroom(self):
+        config = {
+            **self.config,
+            "monthly_target_credits": 2500,
+            "reconciliation": {
+                "minimum_target_headroom_credits": 150,
+                "weekly_soft_projected_monthly_credits": 2200,
+            },
+        }
+        with patch.object(refresh, "CONFIG", config):
+            self.assertTrue(
+                refresh.reconciliation_weekly_allowed({
+                    "credits_used": 500,
+                    "target_credits": 2500,
+                    "projected_period_credits": 1900,
+                })
+            )
 
     def test_repair_modes_raise_caps_without_weakening_hot_path(self):
         with patch.object(refresh, "CONFIG", self.config):

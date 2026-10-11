@@ -30,7 +30,8 @@ class RefreshTests(unittest.TestCase):
             state.write_text(json.dumps({"queries": {"bbb_dex": {"query_id": 2}}}))
             config = {**refresh.CONFIG, "sources": [
                 {"key": "xnet_transfers", "query_id": 1, "output": "transfers"},
-                {"key": "bbb_dex", "query_id": 2, "output": "bbb", "enabled": False}], "presentation": []}
+                {"key": "bbb_dex", "query_id": 2, "output": "bbb", "enabled": False}],
+                "presentation": [], "reconciliation": None}
             with patch.object(refresh, "ROOT", root), patch.object(refresh, "STATE", state), patch.object(refresh, "HEALTH", root / "health.json"), patch.object(refresh, "CONFIG", config), patch("sys.argv", ["refresh"]), patch.object(refresh, "usage_guard", return_value={}), patch.object(refresh, "execute", return_value={}) as execute, patch.object(refresh, "export_source", return_value=100), patch.object(refresh, "reduce_atomically") as reduce, patch.object(refresh, "run"), patch.object(refresh, "publish"):
                 self.assertEqual(refresh.main(), 0)
             self.assertEqual(execute.call_count, 1)

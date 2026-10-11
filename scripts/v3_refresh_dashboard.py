@@ -2,6 +2,7 @@
 """Bounded sources, status-only chart refreshes, and a persistent spend guard."""
 from __future__ import annotations
 import argparse
+import csv
 import json
 import math
 import os
@@ -75,7 +76,20 @@ def usage_guard():
     limit = min(float(period["credits_included"]), CONFIG["monthly_spend_guard_credits"])
     if used + CONFIG["minimum_credit_reserve"] >= limit:
         raise RuntimeError(f"Monthly spend guard reached: {used:.3f}/{limit:.0f} credits.")
-    return {"credits_used": used, "guard_credits": limit, "period_start": period["start_date"], "period_end": period["end_date"]}
+    start = datetime.fromisoformat(str(period["start_date"])[:10]).replace(tzinfo=timezone.utc)
+    end = datetime.fromisoformat(str(period["end_date"])[:10]).replace(tzinfo=timezone.utc)
+    elapsed_days = max((now() - start).total_seconds() / 86400, 1.0)
+    period_days = max((end - start).total_seconds() / 86400, 1.0)
+    projected = used / elapsed_days * period_days
+    target = min(float(CONFIG.get("monthly_target_credits", limit)), limit)
+    return {
+        "credits_used": used,
+        "guard_credits": limit,
+        "target_credits": target,
+        "projected_period_credits": projected,
+        "period_start": period["start_date"],
+        "period_end": period["end_date"],
+    }
 
 def checkpoint(state):
     # Only Dune execution state is published here. Revenue/feed builders and
@@ -197,15 +211,15 @@ def source_reconciliation_plan(state, spec, regular_repair_due):
             int(CONFIG["approved_backfill_lookback_hours"]),
         )
     if integrity_repair_due(state):
-        return (
-            "integrity",
-            int(CONFIG["integrity_repair_lookback_hours"]),
-        )
-    if regular_repair_due:
-        return (
-            "daily",
-            int(spec.get("repair_lookback_hours", CONFIG["repair_lookback_hours"])),
-        )
+        recon = state.get("reconciliation", {})
+        if recon.get("integrity_manifest_clean_at_utc"):
+            return (
+                "integrity",
+                int(CONFIG["integrity_repair_lookback_hours"]),
+            )
+        return (None, None)
+    # Routine historical reconciliation is manifest-driven. Do not download a
+    # seven-day transfer window every day merely because the repair clock is due.
     return (None, None)
 
 
@@ -243,6 +257,338 @@ def export_limits_for_mode(mode):
         int(CONFIG["max_export_points_per_run"]),
         int(CONFIG["max_export_bytes_per_run"]),
     )
+
+
+def canonical_transfer_manifest(lookback_days):
+    path = ROOT / "data/canonical/xnet_transfers.csv"
+    if not path.exists():
+        raise RuntimeError("Canonical transfer ledger is missing.")
+
+    today = now().date()
+    start = today - timedelta(days=int(lookback_days))
+    daily = {}
+
+    with path.open(newline="") as f:
+        for row in csv.DictReader(f):
+            day_text = str(row.get("block_date") or "")[:10]
+            if not day_text:
+                continue
+            try:
+                day = datetime.fromisoformat(day_text).date()
+            except ValueError:
+                raise RuntimeError(f"Invalid canonical transfer date: {day_text}")
+            if day < start or day >= today:
+                continue
+
+            item = daily.setdefault(day_text, {
+                "day": day_text,
+                "event_count": 0,
+                "transfer_count": 0,
+                "burn_count": 0,
+                "mint_count": 0,
+                "tx_ids": set(),
+                "min_block_slot": None,
+                "max_block_slot": None,
+                "amount_raw_total": 0,
+                "block_slot_total": 0,
+            })
+            action = str(row.get("action") or "").lower()
+            slot = int(row.get("block_slot") or 0)
+            amount = int(row.get("amount_raw") or 0)
+            multiplicity = int(row.get("event_multiplicity") or 1)
+            item["event_count"] += 1
+            if action in {"transfer", "burn", "mint"}:
+                item[action + "_count"] += 1
+            item["tx_ids"].add(str(row.get("tx_id") or ""))
+            item["min_block_slot"] = slot if item["min_block_slot"] is None else min(item["min_block_slot"], slot)
+            item["max_block_slot"] = slot if item["max_block_slot"] is None else max(item["max_block_slot"], slot)
+            item["amount_raw_total"] += amount * multiplicity
+            item["block_slot_total"] += slot * multiplicity
+
+    result = {}
+    for day, item in daily.items():
+        result[day] = {
+            "day": day,
+            "event_count": item["event_count"],
+            "transfer_count": item["transfer_count"],
+            "burn_count": item["burn_count"],
+            "mint_count": item["mint_count"],
+            "tx_count": len(item["tx_ids"]),
+            "min_block_slot": item["min_block_slot"],
+            "max_block_slot": item["max_block_slot"],
+            "amount_raw_total": str(item["amount_raw_total"]),
+            "block_slot_total": str(item["block_slot_total"]),
+        }
+    return result
+
+
+def normalize_manifest_rows(rows):
+    result = {}
+    integer_fields = (
+        "event_count", "transfer_count", "burn_count", "mint_count",
+        "tx_count", "min_block_slot", "max_block_slot",
+    )
+    for row in rows:
+        day = str(row.get("day") or "")[:10]
+        if not day:
+            continue
+        item = {"day": day}
+        for field in integer_fields:
+            value = row.get(field)
+            item[field] = None if value is None else int(value)
+        item["amount_raw_total"] = str(row.get("amount_raw_total") or "0")
+        item["block_slot_total"] = str(row.get("block_slot_total") or "0")
+        result[day] = item
+    return result
+
+
+def manifest_mismatches(remote, local):
+    keys = set(remote) | set(local)
+    fields = (
+        "event_count", "transfer_count", "burn_count", "mint_count",
+        "tx_count", "min_block_slot", "max_block_slot",
+        "amount_raw_total", "block_slot_total",
+    )
+    mismatches = []
+    for day in sorted(keys):
+        r = remote.get(day)
+        l = local.get(day)
+        if r is None or l is None or any(r.get(k) != l.get(k) for k in fields):
+            mismatches.append(day)
+    return mismatches
+
+
+def reconciliation_weekly_allowed(billing):
+    policy = CONFIG["reconciliation"]
+    target = float(billing.get("target_credits", CONFIG.get("monthly_target_credits", 2500)))
+    headroom = target - float(billing.get("credits_used", 0))
+    projected = float(billing.get("projected_period_credits", 0))
+    return (
+        headroom >= float(policy["minimum_target_headroom_credits"])
+        and projected <= float(policy["weekly_soft_projected_monthly_credits"])
+    )
+
+
+def sync_holder_integrity_error(state):
+    quality = load(ROOT / "data/current/xnet_holder_integrity.json", {})
+    if quality.get("status") == "DEGRADED":
+        state.setdefault("source_errors", {})["holder_integrity"] = {
+            "error": quality["error"],
+            "failed_at_utc": quality["checked_at_utc"],
+            "holder_data_as_of_utc": quality["holder_data_as_of_utc"],
+            "automatic_recheck": True,
+        }
+    elif quality.get("status") == "HEALTHY":
+        state.setdefault("source_errors", {}).pop("holder_integrity", None)
+        state.setdefault("reconciliation", {}).pop("integrity_manifest_clean_at_utc", None)
+    return quality
+
+
+def reconcile_historical_manifest(state, billing):
+    policy = CONFIG.get("reconciliation")
+    if not policy:
+        return False
+
+    recon = state.setdefault("reconciliation", {})
+
+    # Do not open new reconciliation work while another source execution is
+    # still awaiting durable consumption/acknowledgement. This keeps exactly-once
+    # recovery simple and avoids spending credits during an unsettled hot path.
+    pending = set(state.get("pending_executions", {}))
+    blocking_pending = pending - {"reconciliation_manifest", "historical_repair"}
+    if blocking_pending:
+        recon["manifest_deferred_at_utc"] = stamp()
+        recon["manifest_deferred_reason"] = (
+            "Pending source recovery: " + ", ".join(sorted(blocking_pending))
+        )
+        return False
+
+    if (
+        "xnet_transfers" in state.get("source_errors", {})
+        and not holder_integrity_degraded(state)
+    ):
+        recon["manifest_deferred_at_utc"] = stamp()
+        recon["manifest_deferred_reason"] = (
+            "Primary transfer collector is degraded; preserve credits until hot-path recovery."
+        )
+        return False
+    force_wide = holder_integrity_degraded(state)
+    pending_days = list(recon.get("pending_mismatch_days", []))
+    daily_due = due(recon.get("last_daily_manifest_utc"), int(policy["daily_cadence_minutes"]))
+    weekly_due = due(recon.get("last_weekly_manifest_utc"), int(policy["weekly_cadence_minutes"]))
+
+    mode = None
+    lookback_days = None
+    if force_wide or pending_days:
+        mode = "integrity" if force_wide else "pending"
+        lookback_days = int(policy["weekly_lookback_days"])
+    elif weekly_due and reconciliation_weekly_allowed(billing):
+        mode = "weekly"
+        lookback_days = int(policy["weekly_lookback_days"])
+    elif daily_due:
+        mode = "daily"
+        lookback_days = int(policy["daily_lookback_days"])
+    elif weekly_due:
+        recon["weekly_deferred_at_utc"] = stamp()
+        recon["weekly_deferred_reason"] = (
+            f"Projected Dune usage {billing.get('projected_period_credits', 0):.1f} "
+            f"credits; preserving target {billing.get('target_credits', 0):.0f}."
+        )
+        return False
+    else:
+        return False
+
+    manifest_spec = {
+        "key": "reconciliation_manifest",
+        "query_id": int(policy["manifest_query_id"]),
+        "max_run_credits": float(policy["manifest_max_run_credits"]),
+        "output": "state/v3_transfer_manifest_latest.json",
+        "performance": CONFIG["performance"],
+    }
+
+    try:
+        record = execute(
+            manifest_spec,
+            {"lookback_days": lookback_days},
+            state=state,
+            timeout_seconds=CONFIG.get("source_execution_timeout_seconds", 240),
+        )
+        export_source(
+            record,
+            manifest_spec,
+            int(policy["manifest_max_export_points"]),
+            max_bytes=int(policy["manifest_max_export_bytes"]),
+        )
+        tracker(state).acknowledge(manifest_spec, record)
+
+        result = load(ROOT / manifest_spec["output"], {})
+        rows = result.get("result", {}).get("rows", [])
+        remote = normalize_manifest_rows(rows)
+        local = canonical_transfer_manifest(lookback_days)
+
+        # The canonical ledger intentionally starts later than a long manifest
+        # window. Only compare days at or after the first canonical day.
+        if local:
+            first_local = min(local)
+            remote = {day: row for day, row in remote.items() if day >= first_local}
+
+        mismatches = manifest_mismatches(remote, local)
+        recon.update({
+            "last_manifest_mode": mode,
+            "last_manifest_utc": stamp(),
+            "last_manifest_lookback_days": lookback_days,
+            "last_manifest_execution_id": record["execution_id"],
+            "last_manifest_cost_credits": record["execution_cost_credits"],
+            "last_manifest_mismatch_days": mismatches,
+        })
+        if mode in {"daily", "weekly"}:
+            recon[f"last_{mode}_manifest_utc"] = recon["last_manifest_utc"]
+        elif mode == "integrity":
+            recon["last_weekly_manifest_utc"] = recon["last_manifest_utc"]
+        if mode == "weekly":
+            recon.pop("weekly_deferred_at_utc", None)
+            recon.pop("weekly_deferred_reason", None)
+
+        if not mismatches:
+            recon.pop("pending_mismatch_days", None)
+            state.setdefault("source_errors", {}).pop("historical_reconciliation", None)
+            state["chain_repaired_at_utc"] = recon["last_manifest_utc"]
+            if force_wide and holder_integrity_degraded(state):
+                recon["integrity_manifest_clean_at_utc"] = recon["last_manifest_utc"]
+            save(STATE, state)
+            return False
+
+        max_days = int(policy["max_repair_days_per_run"])
+        repair_days = mismatches[:max_days]
+        changed = False
+        repaired = []
+
+        repair_spec = {
+            "key": "historical_repair",
+            "query_id": int(policy["repair_query_id"]),
+            "max_run_credits": float(policy["repair_max_run_credits"]),
+            "output": "state/v3_transfer_repair_latest.json",
+            "performance": CONFIG["performance"],
+        }
+
+        today = now().date()
+        for day_text in repair_days:
+            day = datetime.fromisoformat(day_text).date()
+            days_ago = (today - day).days
+            if days_ago < 1 or days_ago > lookback_days:
+                raise RuntimeError(f"Refusing out-of-window historical repair for {day_text}")
+
+            before = canonical_transfer_manifest(lookback_days).get(day_text)
+            repair_record = execute(
+                repair_spec,
+                {
+                    "oldest_days_ago": days_ago,
+                    "newest_days_ago": days_ago,
+                },
+                state=state,
+                timeout_seconds=CONFIG.get("source_execution_timeout_seconds", 240),
+            )
+            export_source(
+                repair_record,
+                repair_spec,
+                int(policy["repair_max_export_points"]),
+                max_bytes=int(policy["repair_max_export_bytes"]),
+            )
+            reduce_atomically(ROOT / repair_spec["output"])
+            tracker(state).acknowledge(repair_spec, repair_record)
+
+            after = canonical_transfer_manifest(lookback_days).get(day_text)
+            expected = remote.get(day_text)
+            if expected != after:
+                raise RuntimeError(
+                    f"Historical repair verification failed for {day_text}: "
+                    "canonical manifest still differs from Dune."
+                )
+            if before != after:
+                changed = True
+            repaired.append({
+                "day": day_text,
+                "execution_id": repair_record["execution_id"],
+                "cost_credits": repair_record["execution_cost_credits"],
+            })
+
+        remaining = manifest_mismatches(remote, canonical_transfer_manifest(lookback_days))
+        recon["last_repaired_days"] = repaired
+        recon["pending_mismatch_days"] = remaining
+        recon["last_completed_utc"] = stamp()
+        recon["last_mode"] = "selective_repair"
+        recon["last_lookback_hours"] = lookback_days * 24
+        state["chain_repaired_at_utc"] = recon["last_completed_utc"]
+        state["chain_completed_at_utc"] = recon["last_completed_utc"]
+
+        sync_holder_integrity_error(state)
+
+        if remaining:
+            state.setdefault("source_errors", {})["historical_reconciliation"] = {
+                "error": f"{len(remaining)} manifest mismatch day(s) remain after bounded repair.",
+                "failed_at_utc": stamp(),
+                "pending_days": remaining,
+                "automatic_recheck": True,
+            }
+        else:
+            state.setdefault("source_errors", {}).pop("historical_reconciliation", None)
+            recon.pop("pending_mismatch_days", None)
+
+        if changed:
+            forced = set(state.get("forced_presentations", []))
+            forced.update(policy.get("dependent_presentations", []))
+            state["forced_presentations"] = sorted(forced)
+            recon["presentation_invalidated_at_utc"] = stamp()
+
+        save(STATE, state)
+        return changed
+
+    except ExecutionPending as error:
+        record_source_issue(state, "historical_reconciliation", error, unresolved=True)
+        return False
+    except (SubmissionRejected, ExecutionCostExceeded, ExecutionFailed, RuntimeError) as error:
+        record_source_issue(state, "historical_reconciliation", error)
+        return False
 
 
 def reduce_atomically(transfer_path, bbb_path=None):
@@ -335,7 +681,7 @@ def main():
             state["queries"].pop(source["key"], None)
     consumed_sources = []
     try:
-        usage_guard()
+        billing = usage_guard()
         health = load(HEALTH, {})
         last = state.get("chain_completed_at_utc") or health.get("last_refresh_completed_utc")
         repair = due(state.get("chain_repaired_at_utc"), CONFIG["repair_cadence_minutes"])
@@ -684,18 +1030,7 @@ def main():
                     paths["xnet_transfers"],
                     paths.get("bbb_dex"),
                 )
-                holder_quality = load(
-                    ROOT / "data/current/xnet_holder_integrity.json", {}
-                )
-                if holder_quality.get("status") == "DEGRADED":
-                    state.setdefault("source_errors", {})["holder_integrity"] = {
-                        "error": holder_quality["error"],
-                        "failed_at_utc": holder_quality["checked_at_utc"],
-                        "holder_data_as_of_utc": holder_quality["holder_data_as_of_utc"],
-                        "automatic_recheck": True,
-                    }
-                elif holder_quality.get("status") == "HEALTHY":
-                    state.setdefault("source_errors", {}).pop("holder_integrity", None)
+                holder_quality = sync_holder_integrity_error(state)
                 state["chain_completed_at_utc"] = stamp()
 
                 transfer_mode = source_modes.get("xnet_transfers")
@@ -767,6 +1102,10 @@ def main():
                     "automatic_retry": True,
                 },
             )
+        historical_changed = reconcile_historical_manifest(state, billing)
+        if historical_changed:
+            sync_holder_integrity_error(state)
+
         run("v3_build_chain_snapshot.py")
         try:
             run("v3_collect_market.py")
@@ -790,8 +1129,16 @@ def main():
             state.setdefault("source_errors", {}).pop(spec["key"], None)
         # Any failure to publish/reduce stays global fail-closed, never masked.
         save(STATE, state)
+        forced = set(state.get("forced_presentations", []))
         due_presentation = []
+        # Historical corrections take priority over ordinary cadence so Dune
+        # cannot display a stale pre-reconciliation holder/burn snapshot.
         for spec in CONFIG["presentation"]:
+            if spec["key"] in forced:
+                due_presentation.append(spec)
+        for spec in CONFIG["presentation"]:
+            if spec in due_presentation:
+                continue
             last = state["queries"].get(spec["key"], {}).get("completed_at_utc")
             if due(last, spec["cadence_minutes"]) or spec["key"] in state.get("pending_executions", {}):
                 due_presentation.append(spec)
@@ -819,6 +1166,8 @@ def main():
                 )
                 tracker(state).acknowledge(spec, state["queries"][spec["key"]])
                 state.get("presentation_errors", {}).pop(spec["key"], None)
+                forced.discard(spec["key"])
+                state["forced_presentations"] = sorted(forced)
             except Exception as error:
                 presentation_errors[spec["key"]] = {
                     "failed_at_utc": stamp(),

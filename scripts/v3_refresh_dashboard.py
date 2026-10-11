@@ -390,6 +390,28 @@ def reconcile_historical_manifest(state, billing):
         return False
 
     recon = state.setdefault("reconciliation", {})
+
+    # Do not open new reconciliation work while another source execution is
+    # still awaiting durable consumption/acknowledgement. This keeps exactly-once
+    # recovery simple and avoids spending credits during an unsettled hot path.
+    pending = set(state.get("pending_executions", {}))
+    blocking_pending = pending - {"reconciliation_manifest", "historical_repair"}
+    if blocking_pending:
+        recon["manifest_deferred_at_utc"] = stamp()
+        recon["manifest_deferred_reason"] = (
+            "Pending source recovery: " + ", ".join(sorted(blocking_pending))
+        )
+        return False
+
+    if (
+        "xnet_transfers" in state.get("source_errors", {})
+        and not holder_integrity_degraded(state)
+    ):
+        recon["manifest_deferred_at_utc"] = stamp()
+        recon["manifest_deferred_reason"] = (
+            "Primary transfer collector is degraded; preserve credits until hot-path recovery."
+        )
+        return False
     force_wide = holder_integrity_degraded(state)
     pending_days = list(recon.get("pending_mismatch_days", []))
     daily_due = due(recon.get("last_daily_manifest_utc"), int(policy["daily_cadence_minutes"]))

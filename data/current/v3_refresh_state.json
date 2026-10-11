@@ -8333,7 +8333,15 @@
   ],
   "last_pending_error": "Query 8894037 has an unresolved submission without an ID; manual reconciliation required, replacement blocked.",
   "pending_at_utc": "2026-10-08T21:22:59Z",
-  "source_errors": {},
+  "source_errors": {
+    "xnet_transfers": {
+      "error": "Query 8894037 cost 10.439764706 exceeded 1.5; source quarantined.",
+      "failed_at_utc": "2026-10-11T21:42:16Z",
+      "consecutive_failures": 1,
+      "next_retry_at_utc": "2026-10-11T22:12:16.538077Z",
+      "unresolved_execution": false
+    }
+  },
   "rejected_submissions": [
     {
       "key": "xnet_transfers",
@@ -8366,8 +8374,8 @@
     ],
     "presentation_invalidated_at_utc": "2026-10-11T11:14:15Z",
     "last_daily_manifest_utc": "2026-10-11T11:21:36Z",
-    "manifest_deferred_at_utc": "2026-10-11T21:01:02Z",
-    "manifest_deferred_reason": "Pending source recovery: xnet_transfers"
+    "manifest_deferred_at_utc": "2026-10-11T21:42:16Z",
+    "manifest_deferred_reason": "Primary transfer collector is degraded; preserve credits until hot-path recovery."
   },
   "forced_presentations": []
 }

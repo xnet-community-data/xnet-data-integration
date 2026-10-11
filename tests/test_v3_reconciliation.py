@@ -2,11 +2,13 @@ import importlib.util
 import json
 import tempfile
 import unittest
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "scripts"))
 spec = importlib.util.spec_from_file_location(
     "refresh", ROOT / "scripts/v3_refresh_dashboard.py"
 )

@@ -7,29 +7,31 @@
 -- No blockchain scan occurs in this query.
 -- Shares the prepared market snapshot with the pool query.
 
-WITH chain AS (
+WITH live_bundle AS (
     SELECT
         json_parse(
-            http_get('https://raw.githubusercontent.com/xnet-community-data/xnet-data-integration/live-state/data/current/xnet_chain_snapshot.json')
+            http_get('https://raw.githubusercontent.com/xnet-community-data/xnet-data-integration/live-state/data/current/xnet_live_bundle.json')
         ) AS j
+),
+
+chain AS (
+    SELECT json_extract(j, '$.chain') AS j
+    FROM live_bundle
 ),
 
 network AS (
-    SELECT
-        json_parse(
-            http_get('https://raw.githubusercontent.com/xnet-community-data/xnet-data-integration/live-state/data/current/xnet_network_state.json')
-        ) AS j
+    SELECT json_extract(j, '$.network') AS j
+    FROM live_bundle
 ),
 
 revenue AS (
-    SELECT
-        json_parse(
-            http_get('https://raw.githubusercontent.com/xnet-community-data/xnet-data-integration/live-state/data/current/xnet_revenue_state.json')
-        ) AS j
+    SELECT json_extract(j, '$.revenue') AS j
+    FROM live_bundle
 ),
 
 market_raw AS (
-    SELECT json_parse(http_get('https://raw.githubusercontent.com/xnet-community-data/xnet-data-integration/live-state/data/current/xnet_market_state.json')) AS j
+    SELECT json_extract(j, '$.market') AS j
+    FROM live_bundle
 ),
 market AS (
     SELECT

@@ -93,14 +93,16 @@ def execute(spec, params=None, enforce_cap=True, timeout_seconds=None, state=Non
     if timeout_seconds is None:
         timeout_seconds = CONFIG.get("source_execution_timeout_seconds", 240)
     return tracker(state).execute(spec, params, enforce_cap, timeout_seconds)
-def export_source(record, spec, remaining):
+def export_source(record, spec, remaining, max_bytes=None):
     meta = record["result_metadata"]
     rows = int(meta.get("total_row_count", meta.get("row_count", 0)))
     if "column_names" not in meta or "total_row_count" not in meta:
         raise RuntimeError("Missing complete result metadata; source export stopped.")
     points = int(meta.get("datapoint_count", rows * len(meta["column_names"])))
     result_bytes = int(meta.get("total_result_set_bytes", meta.get("result_set_bytes", 0)))
-    if result_bytes > CONFIG["max_export_bytes_per_run"]:
+    if max_bytes is None:
+        max_bytes = CONFIG["max_export_bytes_per_run"]
+    if result_bytes > max_bytes:
         raise RuntimeError("Source result exceeds export byte allowance; manual review required.")
     if points > remaining or rows > 10000:
         raise RuntimeError(f"Source export exceeds bounded allowance ({points} points); manual review required.")
@@ -154,6 +156,90 @@ def source_in_backoff(state, key):
         return False  # Always reconcile an existing execution ID.
     until = state.get("source_errors", {}).get(key, {}).get("next_retry_at_utc")
     return bool(until and now() < datetime.fromisoformat(until.replace("Z", "+00:00")))
+
+
+def reconciliation_generation_due(state):
+    configured = int(CONFIG.get("reconciliation_generation", 0))
+    completed = int(state.get("reconciliation", {}).get("generation", 0))
+    return completed < configured
+
+
+def holder_integrity_degraded(state):
+    return "holder_integrity" in state.get("source_errors", {})
+
+
+def integrity_repair_due(state):
+    if not holder_integrity_degraded(state):
+        return False
+    recon = state.get("reconciliation", {})
+    attempts = int(recon.get("integrity_attempts", 0))
+    if attempts >= int(CONFIG.get("integrity_repair_max_attempts", 0)):
+        return False
+    return due(
+        recon.get("last_integrity_attempt_utc"),
+        int(CONFIG.get("integrity_repair_cooldown_minutes", 1440)),
+    )
+
+
+def source_reconciliation_plan(state, spec, regular_repair_due):
+    """Return (mode, lookback_hours) for bounded historical reconciliation."""
+    if spec["key"] != "xnet_transfers":
+        if regular_repair_due and spec.get("repair_on_global_cycle", True):
+            return (
+                "daily",
+                int(spec.get("repair_lookback_hours", CONFIG["repair_lookback_hours"])),
+            )
+        return (None, None)
+
+    if reconciliation_generation_due(state):
+        return (
+            "approved_backfill",
+            int(CONFIG["approved_backfill_lookback_hours"]),
+        )
+    if integrity_repair_due(state):
+        return (
+            "integrity",
+            int(CONFIG["integrity_repair_lookback_hours"]),
+        )
+    if regular_repair_due:
+        return (
+            "daily",
+            int(spec.get("repair_lookback_hours", CONFIG["repair_lookback_hours"])),
+        )
+    return (None, None)
+
+
+def execution_spec_for_mode(spec, mode):
+    execution_spec = dict(spec)
+    if mode == "integrity":
+        execution_spec["max_run_credits"] = float(
+            spec.get(
+                "integrity_repair_max_run_credits",
+                spec.get("repair_max_run_credits", spec["max_run_credits"]),
+            )
+        )
+    elif mode in {"daily", "approved_backfill"}:
+        execution_spec["max_run_credits"] = float(
+            spec.get("repair_max_run_credits", spec["max_run_credits"])
+        )
+    return execution_spec
+
+
+def export_limits_for_mode(mode):
+    if mode == "integrity":
+        return (
+            int(CONFIG["max_integrity_repair_export_points"]),
+            int(CONFIG["max_integrity_repair_export_bytes"]),
+        )
+    if mode in {"daily", "approved_backfill"}:
+        return (
+            int(CONFIG["max_repair_export_points"]),
+            int(CONFIG["max_repair_export_bytes"]),
+        )
+    return (
+        int(CONFIG["max_export_points_per_run"]),
+        int(CONFIG["max_export_bytes_per_run"]),
+    )
 
 
 def reduce_atomically(transfer_path, bbb_path=None):
@@ -250,6 +336,8 @@ def main():
         health = load(HEALTH, {})
         last = state.get("chain_completed_at_utc") or health.get("last_refresh_completed_utc")
         repair = due(state.get("chain_repaired_at_utc"), CONFIG["repair_cadence_minutes"])
+        generation_due = reconciliation_generation_due(state)
+        integrity_due = integrity_repair_due(state)
 
         source_config_changed = any(
             int(
@@ -269,14 +357,17 @@ def main():
         if (
             source_config_changed
             or repair
+            or generation_due
+            or integrity_due
             or due(last, CONFIG["chain_cadence_minutes"])
             or any(s["key"] in state.get("pending_executions", {}) for s in CONFIG["sources"])
         ):
-            remaining = (
-                CONFIG["max_repair_export_points"]
-                if repair
-                else CONFIG["max_export_points_per_run"]
-            )
+            if integrity_due:
+                remaining, default_export_max_bytes = export_limits_for_mode("integrity")
+            elif generation_due or repair:
+                remaining, default_export_max_bytes = export_limits_for_mode("daily")
+            else:
+                remaining, default_export_max_bytes = export_limits_for_mode(None)
             active_sources = [
                 s
                 for s in CONFIG["sources"]
@@ -342,17 +433,13 @@ def main():
                     )
                 )
 
-                repair_for_source = (
-                    repair
-                    and spec.get(
-                        "repair_on_global_cycle",
-                        True,
-                    )
+                reconciliation_mode, _ = source_reconciliation_plan(
+                    state, spec, repair
                 )
 
                 if (
                     lookback_changed
-                    or repair_for_source
+                    or reconciliation_mode is not None
                     or spec["key"] in state.get("pending_executions", {})
                     or (
                         in_preferred_hour
@@ -381,6 +468,7 @@ def main():
                     due_sources.insert(0, transfer)
             paths = {}
             successful_sources = []
+            source_modes = {}
 
             for spec in due_sources:
                 # BBB-only results cannot be committed without the canonical
@@ -395,24 +483,17 @@ def main():
                     "completed_at_utc"
                 )
 
-                repair_for_source = (
-                    repair
-                    and spec.get(
-                        "repair_on_global_cycle",
-                        True,
-                    )
+                planned_mode, planned_lookback = source_reconciliation_plan(
+                    state, spec, repair
                 )
 
                 pending = state.get("pending_executions", {}).get(spec["key"])
+                actual_mode = None
                 if pending:
                     lookback = pending["query_parameters"].get("lookback_hours", spec.get("lookback_hours", 2))
-                elif repair_for_source:
-                    lookback = int(
-                        spec.get(
-                            "repair_lookback_hours",
-                            CONFIG["repair_lookback_hours"],
-                        )
-                    )
+                elif planned_mode is not None:
+                    actual_mode = planned_mode
+                    lookback = planned_lookback
                 elif previous_completed:
                     elapsed_hours = (
                         now()
@@ -461,7 +542,7 @@ def main():
 
                 try:
                     record = execute(
-                        spec,
+                        execution_spec_for_mode(spec, actual_mode),
                         {"lookback_hours": lookback},
                         state=state,
                         timeout_seconds=spec.get("execution_timeout_seconds"),
@@ -564,11 +645,14 @@ def main():
                         )
                     )
 
+                _, export_max_bytes = export_limits_for_mode(actual_mode)
                 remaining = export_source(
                     record,
                     spec,
                     remaining,
+                    max_bytes=export_max_bytes,
                 )
+                source_modes[spec["key"]] = actual_mode
 
                 state["queries"][
                     spec["key"]
@@ -609,12 +693,35 @@ def main():
                     state.setdefault("source_errors", {}).pop("holder_integrity", None)
                 state["chain_completed_at_utc"] = stamp()
 
-                if repair:
-                    state["chain_repaired_at_utc"] = (
-                        state[
-                            "chain_completed_at_utc"
-                        ]
-                    )
+                transfer_mode = source_modes.get("xnet_transfers")
+                if transfer_mode in {"daily", "approved_backfill", "integrity"}:
+                    state["chain_repaired_at_utc"] = state["chain_completed_at_utc"]
+                    recon = state.setdefault("reconciliation", {})
+                    recon.update({
+                        "last_mode": transfer_mode,
+                        "last_completed_utc": state["chain_completed_at_utc"],
+                        "last_lookback_hours": int(
+                            state["queries"]["xnet_transfers"]["query_parameters"]["lookback_hours"]
+                        ),
+                    })
+                    if transfer_mode == "approved_backfill":
+                        recon["generation"] = int(
+                            CONFIG.get("reconciliation_generation", 0)
+                        )
+
+                    if holder_quality.get("status") == "HEALTHY":
+                        recon["integrity_attempts"] = 0
+                        recon.pop("last_integrity_attempt_utc", None)
+                    elif (
+                        holder_quality.get("status") == "DEGRADED"
+                        and transfer_mode in {"approved_backfill", "integrity"}
+                    ):
+                        recon["integrity_attempts"] = int(
+                            recon.get("integrity_attempts", 0)
+                        ) + 1
+                        recon["last_integrity_attempt_utc"] = (
+                            state["chain_completed_at_utc"]
+                        )
 
                 consumed_sources = successful_sources
 
@@ -653,6 +760,7 @@ def main():
                     "sources":
                         health_sources,
                     "degraded_sources": state.get("source_errors", {}),
+                    "reconciliation": state.get("reconciliation", {}),
                     "automatic_retry": True,
                 },
             )
@@ -730,6 +838,7 @@ def main():
             health = load(HEALTH, {})
             health["status"] = "DEGRADED" if state.get("source_errors") else "HEALTHY"
             health["degraded_sources"] = state.get("source_errors", {})
+            health["reconciliation"] = state.get("reconciliation", {})
             health["automatic_retry"] = True
             save(HEALTH, health)
         save(STATE, state)

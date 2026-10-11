@@ -117,6 +117,10 @@ cp \
   data/current/
 
 cp \
+  "$SOURCE/data/current/xnet_live_bundle.json" \
+  data/current/
+
+cp \
   "$SOURCE/data/current/xnet_holder_state.json" \
   data/current/
 if [ -f "$SOURCE/data/current/xnet_holder_integrity.json" ]; then

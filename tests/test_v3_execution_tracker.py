@@ -219,6 +219,57 @@ class TrackerTests(unittest.TestCase):
         self.guard.assert_not_called()
         self.assertEqual(self.state["execution_history"][0]["execution_cost_credits"], 0.2)
 
+    def test_dune_canceled_spelling_is_terminal(self):
+        self.pending(cancellation_requested_at_utc=self.clock.isoformat())
+        self.api.return_value = {
+            "state": "QUERY_STATE_CANCELED",
+            "execution_cost_credits": 0.3,
+        }
+        with self.assertRaisesRegex(ExecutionPending, "cancellation confirmed"):
+            self.tracker.execute(SPEC, {}, True, 90)
+        self.assertFalse(self.state["pending_executions"])
+        self.assertEqual(
+            self.state["execution_history"][0]["state"],
+            "QUERY_STATE_CANCELED",
+        )
+
+    def test_completed_partial_is_terminal_but_never_consumed_as_success(self):
+        self.pending()
+        self.api.return_value = {
+            "state": "QUERY_STATE_COMPLETED_PARTIAL",
+            "execution_cost_credits": 0.4,
+        }
+        with self.assertRaisesRegex(RuntimeError, "QUERY_STATE_COMPLETED_PARTIAL"):
+            self.tracker.execute(SPEC, {}, True, 90)
+        self.assertFalse(self.state["pending_executions"])
+        self.assertEqual(
+            self.state["execution_history"][0]["state"],
+            "QUERY_STATE_COMPLETED_PARTIAL",
+        )
+
+    def test_acknowledge_persists_result_and_export_telemetry(self):
+        self.pending()
+        self.api.return_value = self.completed(
+            result_metadata={
+                "total_row_count": 12,
+                "total_result_set_bytes": 3456,
+                "column_names": ["a"],
+            }
+        )
+        record = self.tracker.execute(SPEC, {}, True, 90)
+        record.update({
+            "export_points": 12,
+            "export_wire_bytes": 4000,
+            "estimated_export_credits": 0.04,
+        })
+        self.tracker.acknowledge(SPEC, record)
+        entry = self.state["execution_history"][0]
+        self.assertEqual(entry["result_row_count"], 12)
+        self.assertEqual(entry["result_bytes"], 3456)
+        self.assertEqual(entry["export_points"], 12)
+        self.assertEqual(entry["export_wire_bytes"], 4000)
+        self.assertEqual(entry["estimated_export_credits"], 0.04)
+
     def test_terminal_record_is_deduplicated_across_restarts(self):
         self.pending()
         self.api.return_value = self.completed()

@@ -1,7 +1,9 @@
 import importlib.util
+import io
 import tempfile
 import unittest
 import sys
+import urllib.error
 from pathlib import Path
 from unittest.mock import patch
 
@@ -83,6 +85,35 @@ class RefreshTests(unittest.TestCase):
         with patch.object(refresh, "api", api), patch.object(refresh, "usage_guard", return_value={}):
             with self.assertRaisesRegex(RuntimeError, "exceeded"):
                 refresh.execute({"query_id": 1, "max_run_credits": 0.35})
+
+    def test_execute_4xx_is_definitive_submission_rejection(self):
+        for code in (400, 402, 409, 429):
+            error = urllib.error.HTTPError(
+                url="https://api.dune.com/api/v1/query/1/execute",
+                code=code,
+                msg="error",
+                hdrs=None,
+                fp=io.BytesIO(b'{"error":"rejected"}'),
+            )
+            with self.subTest(code=code), patch.dict(
+                "os.environ", {"DUNE_API_KEY": "test-key"}
+            ), patch("urllib.request.urlopen", side_effect=error):
+                with self.assertRaises(refresh.SubmissionRejected):
+                    refresh.api("query/1/execute", {"performance": "medium"})
+
+    def test_execute_5xx_remains_ambiguous(self):
+        error = urllib.error.HTTPError(
+            url="https://api.dune.com/api/v1/query/1/execute",
+            code=500,
+            msg="error",
+            hdrs=None,
+            fp=io.BytesIO(b'{"error":"server failure"}'),
+        )
+        with patch.dict("os.environ", {"DUNE_API_KEY": "test-key"}), patch(
+            "urllib.request.urlopen", side_effect=error
+        ):
+            with self.assertRaises(RuntimeError):
+                refresh.api("query/1/execute", {"performance": "medium"})
 
     def test_export_allowance_checked_before_download(self):
         record = {"execution_id": "test", "result_metadata": {

@@ -4,9 +4,25 @@ from datetime import datetime
 import math
 
 TERMINAL = {
-    "QUERY_STATE_COMPLETED", "QUERY_STATE_FAILED", "QUERY_STATE_CANCELLED",
+    "QUERY_STATE_COMPLETED",
+    "QUERY_STATE_COMPLETED_PARTIAL",
+    "QUERY_STATE_FAILED",
+    # Dune's current docs use CANCELED; older/live responses have also used
+    # CANCELLED. Accept both so a spelling change can never strand work.
+    "QUERY_STATE_CANCELED",
+    "QUERY_STATE_CANCELLED",
     "QUERY_STATE_EXPIRED",
 }
+
+CANCELED_STATES = {"QUERY_STATE_CANCELED", "QUERY_STATE_CANCELLED"}
+
+HISTORY_TELEMETRY_FIELDS = (
+    "result_row_count",
+    "result_bytes",
+    "export_points",
+    "export_wire_bytes",
+    "estimated_export_credits",
+)
 
 
 class ExecutionPending(RuntimeError):
@@ -65,6 +81,12 @@ class ExecutionTracker:
         previous = next((e for e in history if e["execution_id"] == entry["execution_id"]), None)
         if previous and cost is None:
             entry["execution_cost_credits"] = previous.get("execution_cost_credits")
+        if previous:
+            # Status reconciliation must not erase telemetry recorded after a
+            # paid result export has been safely consumed.
+            for field in HISTORY_TELEMETRY_FIELDS:
+                if field in previous:
+                    entry[field] = previous[field]
         pending_status = deepcopy(status)
         pending_status["execution_cost_credits"] = entry["execution_cost_credits"]
         if previous != entry or pending.get("terminal_status") != pending_status:
@@ -145,9 +167,49 @@ class ExecutionTracker:
     def acknowledge(self, spec, record):
         """Retire completed work only after its result has been safely applied."""
         key = self.key(spec)
+        execution_id = record.get("execution_id")
+        changed = False
+
+        # Persist compact result/export telemetry before retiring the execution.
+        # Dune meters API result reads separately from compute, so compute-only
+        # history is not enough to explain account-level credit usage.
+        history = self.state.setdefault("execution_history", [])
+        entry = next(
+            (item for item in history if item.get("execution_id") == execution_id),
+            None,
+        )
+        if entry is not None:
+            meta = record.get("result_metadata") or {}
+            telemetry = {
+                "result_row_count": int(
+                    meta.get("total_row_count", meta.get("row_count", 0)) or 0
+                ),
+                "result_bytes": int(
+                    meta.get(
+                        "total_result_set_bytes",
+                        meta.get("result_set_bytes", 0),
+                    )
+                    or 0
+                ),
+            }
+            for field in (
+                "export_points",
+                "export_wire_bytes",
+                "estimated_export_credits",
+            ):
+                if field in record:
+                    telemetry[field] = record[field]
+            for field, value in telemetry.items():
+                if entry.get(field) != value:
+                    entry[field] = value
+                    changed = True
+
         pending = self.pending().get(key)
-        if pending and pending.get("execution_id") == record.get("execution_id"):
+        if pending and pending.get("execution_id") == execution_id:
             del self.pending()[key]
+            changed = True
+
+        if changed:
             self.checkpoint()
 
     def execute(self, spec, params, enforce_cap, timeout_seconds):
@@ -221,7 +283,7 @@ class ExecutionTracker:
         if status["state"] != "QUERY_STATE_COMPLETED":
             # The terminal failure is now recorded, including unknown costs.
             self.acknowledge(spec, pending)
-            if status["state"] == "QUERY_STATE_CANCELLED" and pending.get("cancellation_requested_at_utc"):
+            if status["state"] in CANCELED_STATES and pending.get("cancellation_requested_at_utc"):
                 raise ExecutionPending(
                     f"Execution {pending['execution_id']} cancellation confirmed; "
                     "replacement deferred to a later scheduled run."

@@ -472,6 +472,7 @@ def main():
             paths = {}
             successful_sources = []
             source_modes = {}
+            source_lookbacks = {}
 
             for spec in due_sources:
                 # BBB-only results cannot be committed without the canonical
@@ -656,6 +657,7 @@ def main():
                     max_bytes=export_max_bytes,
                 )
                 source_modes[spec["key"]] = actual_mode
+                source_lookbacks[spec["key"]] = int(lookback)
 
                 state["queries"][
                     spec["key"]
@@ -703,9 +705,7 @@ def main():
                     recon.update({
                         "last_mode": transfer_mode,
                         "last_completed_utc": state["chain_completed_at_utc"],
-                        "last_lookback_hours": int(
-                            state["queries"]["xnet_transfers"]["query_parameters"]["lookback_hours"]
-                        ),
+                        "last_lookback_hours": source_lookbacks["xnet_transfers"],
                     })
                     if transfer_mode == "approved_backfill":
                         recon["generation"] = int(

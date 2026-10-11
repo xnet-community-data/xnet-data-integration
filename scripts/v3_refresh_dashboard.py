@@ -1120,6 +1120,11 @@ def main():
             print("::warning::Market refresh failed; keeping last-good market data.", flush=True)
         else:
             state.setdefault("source_errors", {}).pop("market", None)
+
+        # Publish one coherent payload for Dune LiveFetch. The component files
+        # remain available for provenance/debugging, but the live Current
+        # Snapshot reads this single bundle so it cannot straddle Git commits.
+        run("v3_build_live_bundle.py")
         save(STATE, state)
         publish()
         # Canonical data, rebuilt snapshots and their clock are now durable.

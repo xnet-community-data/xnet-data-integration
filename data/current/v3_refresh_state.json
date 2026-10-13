@@ -747,22 +747,54 @@
         "period_end": "2026-11-04"
       },
       "execution_id": "01M4TZJR2SR23BJMQ6PSVKSQ6G",
-      "execution_started_at": "2026-10-13T15:54:58.763934938Z"
+      "execution_started_at": "2026-10-13T15:54:58.763934938Z",
+      "terminal_status": {
+        "execution_id": "01M4TZJR2SR23BJMQ6PSVKSQ6G",
+        "query_id": 8893945,
+        "is_execution_finished": true,
+        "state": "QUERY_STATE_COMPLETED",
+        "submitted_at": "2026-10-13T15:54:58.009993Z",
+        "expires_at": "2027-01-11T15:55:09.0108Z",
+        "execution_started_at": "2026-10-13T15:54:58.763934938Z",
+        "execution_ended_at": "2026-10-13T15:55:09.010792088Z",
+        "result_metadata": {
+          "column_names": [
+            "day",
+            "event_count",
+            "transfer_count",
+            "burn_count",
+            "mint_count",
+            "tx_count",
+            "min_block_slot",
+            "max_block_slot",
+            "amount_raw_total",
+            "block_slot_total"
+          ],
+          "column_types": [
+            "date",
+            "bigint",
+            "bigint",
+            "bigint",
+            "bigint",
+            "bigint",
+            "bigint",
+            "bigint",
+            "decimal(38, 0)",
+            "decimal(38, 0)"
+          ],
+          "row_count": 7,
+          "result_set_bytes": 644,
+          "total_row_count": 7,
+          "total_result_set_bytes": 644,
+          "datapoint_count": 70,
+          "pending_time_millis": 753,
+          "execution_time_millis": 10246
+        },
+        "execution_cost_credits": 2.211911765
+      }
     }
   },
   "execution_history": [
-    {
-      "key": "current",
-      "query_id": 8894185,
-      "execution_id": "01M4B1T1T61J4Q6BCJRJC5EHST",
-      "submitted_at_utc": "2026-10-07T11:26:00Z",
-      "execution_started_at": "2026-10-07T11:26:04.686760257Z",
-      "execution_ended_at": "2026-10-07T11:26:04.785787657Z",
-      "state": "QUERY_STATE_COMPLETED",
-      "execution_cost_credits": 0.098064648,
-      "query_parameters": {},
-      "cancellation_requested_at_utc": null
-    },
     {
       "key": "pools",
       "query_id": 8895093,
@@ -14286,6 +14318,20 @@
       "cancellation_requested_at_utc": null,
       "result_row_count": 27,
       "result_bytes": 1192
+    },
+    {
+      "key": "reconciliation_manifest",
+      "query_id": 8893945,
+      "execution_id": "01M4TZJR2SR23BJMQ6PSVKSQ6G",
+      "submitted_at_utc": "2026-10-13T15:54:55Z",
+      "execution_started_at": "2026-10-13T15:54:58.763934938Z",
+      "execution_ended_at": "2026-10-13T15:55:09.010792088Z",
+      "state": "QUERY_STATE_COMPLETED",
+      "execution_cost_credits": 2.211911765,
+      "query_parameters": {
+        "lookback_days": 7
+      },
+      "cancellation_requested_at_utc": null
     }
   ],
   "last_pending_error": "Query 8894037 has an unresolved submission without an ID; manual reconciliation required, replacement blocked.",

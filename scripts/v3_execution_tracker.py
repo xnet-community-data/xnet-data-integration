@@ -29,6 +29,10 @@ class ExecutionPending(RuntimeError):
     """An execution remains unresolved; a replacement must not be submitted."""
 
 
+class ExecutionCancelled(ExecutionPending):
+    """Cancellation confirmed; replacement may be deferred by a cooldown."""
+
+
 class SubmissionRejected(RuntimeError):
     """A definitive 4xx execute rejection: Dune did not accept an execution."""
 
@@ -284,7 +288,7 @@ class ExecutionTracker:
             # The terminal failure is now recorded, including unknown costs.
             self.acknowledge(spec, pending)
             if status["state"] in CANCELED_STATES and pending.get("cancellation_requested_at_utc"):
-                raise ExecutionPending(
+                raise ExecutionCancelled(
                     f"Execution {pending['execution_id']} cancellation confirmed; "
                     "replacement deferred to a later scheduled run."
                 )

@@ -16,7 +16,7 @@ import urllib.request
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from v3_execution_tracker import (
-    ExecutionPending, ExecutionTracker, SubmissionRejected,
+    ExecutionPending, ExecutionCancelled, ExecutionTracker, SubmissionRejected,
     ExecutionCostExceeded, ExecutionFailed,
 )
 
@@ -173,6 +173,14 @@ def source_in_backoff(state, key):
     if key in pending:
         return False  # Always reconcile an existing execution ID.
     until = state.get("source_errors", {}).get(key, {}).get("next_retry_at_utc")
+    return bool(until and now() < datetime.fromisoformat(until.replace("Z", "+00:00")))
+
+
+def presentation_in_backoff(state, key):
+    # An in-flight execution must always be reconciled before any cooldown.
+    if key in state.get("pending_executions", {}):
+        return False
+    until = state.get("presentation_errors", {}).get(key, {}).get("next_retry_at_utc")
     return bool(until and now() < datetime.fromisoformat(until.replace("Z", "+00:00")))
 
 
@@ -901,6 +909,10 @@ def main():
                         state=state,
                         timeout_seconds=spec.get("execution_timeout_seconds"),
                     )
+                except ExecutionCancelled as error:
+                    # The terminal cancellation is resolved, so apply a cooldown.
+                    record_source_issue(state, spec["key"], error)
+                    continue
                 except ExecutionPending as error:
                     record_source_issue(state, spec["key"], error, unresolved=True)
                     continue
@@ -1152,6 +1164,10 @@ def main():
             if due(last, spec["cadence_minutes"]) or spec["key"] in state.get("pending_executions", {}):
                 due_presentation.append(spec)
 
+        # Confirmed terminal failures wait for bounded backoff. Pending work is
+        # exempt so existing execution IDs are always reconciled first.
+        due_presentation = [s for s in due_presentation if not presentation_in_backoff(state, s["key"])]
+
         # Bound each cron run so one slow cached chart cannot consume the
         # whole GitHub Actions timeout. Overdue charts simply remain due for
         # the next run.
@@ -1178,9 +1194,20 @@ def main():
                 forced.discard(spec["key"])
                 state["forced_presentations"] = sorted(forced)
             except Exception as error:
+                previous = state.get("presentation_errors", {}).get(spec["key"], {})
+                terminal = isinstance(error, (
+                    ExecutionCancelled, ExecutionFailed, ExecutionCostExceeded,
+                    SubmissionRejected,
+                ))
+                failures = int(previous.get("consecutive_failures", 0)) + (1 if terminal else 0)
+                retry_at = (now() + timedelta(minutes=min(120, 30 * 2 ** min(failures - 1, 2)))) if terminal else None
                 presentation_errors[spec["key"]] = {
                     "failed_at_utc": stamp(),
                     "error": str(error),
+                    "consecutive_failures": failures,
+                    "next_retry_at_utc": (
+                        retry_at.isoformat().replace("+00:00", "Z") if retry_at else None
+                    ),
                 }
                 print(
                     f"::warning::Presentation refresh {spec['key']} "

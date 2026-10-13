@@ -12,7 +12,7 @@ from unittest.mock import Mock, patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
-from v3_execution_tracker import ExecutionPending, ExecutionTracker, SubmissionRejected
+from v3_execution_tracker import ExecutionPending, ExecutionCancelled, ExecutionTracker, SubmissionRejected
 
 SPEC = {"key": "current", "query_id": 1, "max_run_credits": 1}
 
@@ -155,7 +155,7 @@ class TrackerTests(unittest.TestCase):
     def test_confirmed_cancel_is_recorded_without_immediate_replacement(self):
         self.pending(cancellation_requested_at_utc=self.clock.isoformat())
         self.api.return_value = {"state": "QUERY_STATE_CANCELLED", "execution_cost_credits": 0.4}
-        with self.assertRaisesRegex(ExecutionPending, "cancellation confirmed"):
+        with self.assertRaisesRegex(ExecutionCancelled, "cancellation confirmed"):
             self.tracker.execute(SPEC, {}, True, 90)
         self.assertFalse(self.state["pending_executions"])
         self.assertEqual(self.state["execution_history"][0]["execution_cost_credits"], 0.4)
@@ -225,7 +225,7 @@ class TrackerTests(unittest.TestCase):
             "state": "QUERY_STATE_CANCELED",
             "execution_cost_credits": 0.3,
         }
-        with self.assertRaisesRegex(ExecutionPending, "cancellation confirmed"):
+        with self.assertRaisesRegex(ExecutionCancelled, "cancellation confirmed"):
             self.tracker.execute(SPEC, {}, True, 90)
         self.assertFalse(self.state["pending_executions"])
         self.assertEqual(
@@ -344,6 +344,28 @@ class RecoveryIntegrationTests(unittest.TestCase):
             patcher = patch.object(self.refresh, name, value)
             patcher.start()
             self.addCleanup(patcher.stop)
+
+    def test_confirmed_cancel_enters_source_cooldown_without_replacement(self):
+        status = {"state": "QUERY_STATE_CANCELLED", "execution_cost_credits": 0.1}
+        self.state["pending_executions"]["xnet_transfers"]["cancellation_requested_at_utc"] = self.fixed.isoformat()
+        self.state_path.write_text(json.dumps(self.state))
+        with patch("sys.argv", ["refresh"]), patch.object(self.refresh, "now", return_value=self.fixed), \
+             patch.object(self.refresh, "api", return_value=status), \
+             patch.object(self.refresh, "usage_guard", return_value={}), \
+             patch.object(self.refresh, "run"), patch.object(self.refresh, "publish"):
+            self.assertEqual(self.refresh.main(), 0)
+        saved = json.loads(self.state_path.read_text())
+        self.assertNotIn("xnet_transfers", saved["pending_executions"])
+        self.assertFalse(saved["source_errors"]["xnet_transfers"]["unresolved_execution"])
+        self.assertTrue(saved["source_errors"]["xnet_transfers"]["next_retry_at_utc"])
+
+    def test_presentation_backoff_does_not_block_existing_pending_id(self):
+        until = (self.fixed + timedelta(minutes=30)).isoformat()
+        state = {"presentation_errors": {"current": {"next_retry_at_utc": until}}}
+        with patch.object(self.refresh, "now", return_value=self.fixed):
+            self.assertTrue(self.refresh.presentation_in_backoff(state, "current"))
+            state["pending_executions"] = {"current": {"execution_id": "existing"}}
+            self.assertFalse(self.refresh.presentation_in_backoff(state, "current"))
 
     def test_recovered_source_is_consumed_with_original_window_and_published_before_retirement(self):
         status = {"state": "QUERY_STATE_COMPLETED", "execution_cost_credits": 0.1,

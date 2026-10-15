@@ -171,6 +171,17 @@ class TrackerTests(unittest.TestCase):
             restored.execute(SPEC, {}, True, 90)
         self.api.assert_not_called()
 
+    def test_unknown_execution_id_blocks_other_new_submissions(self):
+        self.pending(execution_id=None, submission_error="Dune HTTP 500")
+        with self.assertRaisesRegex(ExecutionPending, "all new submissions blocked"):
+            self.tracker.execute(
+                {"key": "burns", "query_id": 22, "max_run_credits": 1},
+                {}, True, 90,
+            )
+        self.api.assert_not_called()
+        self.guard.assert_not_called()
+        self.assertNotIn("burns", self.state["pending_executions"])
+
     def test_failed_checkpoint_prevents_submission(self):
         self.tracker.checkpoint = Mock(side_effect=RuntimeError("publish failed"))
         with self.assertRaisesRegex(RuntimeError, "publish failed"):
@@ -358,6 +369,20 @@ class RecoveryIntegrationTests(unittest.TestCase):
         self.assertNotIn("xnet_transfers", saved["pending_executions"])
         self.assertFalse(saved["source_errors"]["xnet_transfers"]["unresolved_execution"])
         self.assertTrue(saved["source_errors"]["xnet_transfers"]["next_retry_at_utc"])
+
+    def test_no_id_ambiguous_submission_halts_future_refresh_post_calls(self):
+        self.state["pending_executions"]["xnet_transfers"]["execution_id"] = None
+        self.state["pending_executions"]["xnet_transfers"]["submission_error"] = "Dune HTTP 500"
+        self.state_path.write_text(json.dumps(self.state))
+        with patch("sys.argv", ["refresh"]), patch.object(self.refresh, "now", return_value=self.fixed), \
+             patch.object(self.refresh, "api") as api, \
+             patch.object(self.refresh, "usage_guard", return_value={}), \
+             patch.object(self.refresh, "run"), patch.object(self.refresh, "publish"):
+            self.assertEqual(self.refresh.main(), 0)
+        api.assert_not_called()
+        saved = json.loads(self.state_path.read_text())
+        self.assertIsNone(saved["pending_executions"]["xnet_transfers"]["execution_id"])
+        self.assertEqual(saved["source_errors"]["xnet_transfers"]["unresolved_execution"], True)
 
     def test_presentation_backoff_does_not_block_existing_pending_id(self):
         until = (self.fixed + timedelta(minutes=30)).isoformat()

@@ -773,22 +773,58 @@
       "execution_id": "01M50QM1Z045K3PHRM01RFMAV5",
       "queue_timeout_seconds": 120,
       "run_timeout_seconds": 180,
-      "execution_started_at": "2026-10-15T21:31:19.764943034Z"
+      "execution_started_at": "2026-10-15T21:31:19.764943034Z",
+      "terminal_status": {
+        "execution_id": "01M50QM1Z045K3PHRM01RFMAV5",
+        "query_id": 8894037,
+        "is_execution_finished": true,
+        "state": "QUERY_STATE_COMPLETED",
+        "submitted_at": "2026-10-15T21:31:18.880575Z",
+        "expires_at": "2027-01-13T21:31:24.417722Z",
+        "execution_started_at": "2026-10-15T21:31:19.764943034Z",
+        "execution_ended_at": "2026-10-15T21:31:24.417712636Z",
+        "result_metadata": {
+          "column_names": [
+            "block_date",
+            "block_time",
+            "block_slot",
+            "tx_id",
+            "action",
+            "from_owner",
+            "to_owner",
+            "from_token_account",
+            "to_token_account",
+            "amount_raw",
+            "amount_xnet",
+            "event_multiplicity"
+          ],
+          "column_types": [
+            "date",
+            "timestamp(3) with time zone",
+            "bigint",
+            "varchar",
+            "varchar",
+            "varchar",
+            "varchar",
+            "varchar",
+            "varchar",
+            "uint256",
+            "double",
+            "bigint"
+          ],
+          "row_count": 170,
+          "result_set_bytes": 57548,
+          "total_row_count": 170,
+          "total_result_set_bytes": 57548,
+          "datapoint_count": 2040,
+          "pending_time_millis": 884,
+          "execution_time_millis": 4652
+        },
+        "execution_cost_credits": 0.146970589
+      }
     }
   },
   "execution_history": [
-    {
-      "key": "tokenomics",
-      "query_id": 8895091,
-      "execution_id": "01M4MB3H4CGM7PCAR7CP6TDS33",
-      "submitted_at_utc": "2026-10-11T02:01:38Z",
-      "execution_started_at": "2026-10-11T02:01:41.263223419Z",
-      "execution_ended_at": "2026-10-11T02:01:41.740456479Z",
-      "state": "QUERY_STATE_COMPLETED",
-      "execution_cost_credits": 0.113382537,
-      "query_parameters": {},
-      "cancellation_requested_at_utc": null
-    },
     {
       "key": "holders",
       "query_id": 8895092,
@@ -15263,6 +15299,20 @@
       "cancellation_requested_at_utc": null,
       "result_row_count": 4,
       "result_bytes": 401
+    },
+    {
+      "key": "xnet_transfers",
+      "query_id": 8894037,
+      "execution_id": "01M50QM1Z045K3PHRM01RFMAV5",
+      "submitted_at_utc": "2026-10-15T21:31:15Z",
+      "execution_started_at": "2026-10-15T21:31:19.764943034Z",
+      "execution_ended_at": "2026-10-15T21:31:24.417712636Z",
+      "state": "QUERY_STATE_COMPLETED",
+      "execution_cost_credits": 0.146970589,
+      "query_parameters": {
+        "lookback_hours": 16
+      },
+      "cancellation_requested_at_utc": null
     }
   ],
   "last_pending_error": "Query 8894037 has an unresolved submission without an ID; manual reconciliation required, replacement blocked.",

@@ -741,22 +741,58 @@
       },
       "execution_id": "01M4Z0S3AP6GQK9QQPYT61ET5P",
       "queue_timeout_seconds": 120,
-      "run_timeout_seconds": 180
+      "run_timeout_seconds": 180,
+      "terminal_status": {
+        "execution_id": "01M4Z0S3AP6GQK9QQPYT61ET5P",
+        "query_id": 8894037,
+        "is_execution_finished": true,
+        "state": "QUERY_STATE_COMPLETED",
+        "submitted_at": "2026-10-15T05:32:52.438994Z",
+        "expires_at": "2027-01-13T05:33:02.305164Z",
+        "execution_started_at": "2026-10-15T05:33:00.364940271Z",
+        "execution_ended_at": "2026-10-15T05:33:02.305154966Z",
+        "result_metadata": {
+          "column_names": [
+            "block_date",
+            "block_time",
+            "block_slot",
+            "tx_id",
+            "action",
+            "from_owner",
+            "to_owner",
+            "from_token_account",
+            "to_token_account",
+            "amount_raw",
+            "amount_xnet",
+            "event_multiplicity"
+          ],
+          "column_types": [
+            "date",
+            "timestamp(3) with time zone",
+            "bigint",
+            "varchar",
+            "varchar",
+            "varchar",
+            "varchar",
+            "varchar",
+            "varchar",
+            "uint256",
+            "double",
+            "bigint"
+          ],
+          "row_count": 0,
+          "result_set_bytes": 0,
+          "total_row_count": 0,
+          "total_result_set_bytes": 0,
+          "datapoint_count": 0,
+          "pending_time_millis": 7925,
+          "execution_time_millis": 1940
+        },
+        "execution_cost_credits": 0.292205883
+      }
     }
   },
   "execution_history": [
-    {
-      "key": "current",
-      "query_id": 8894185,
-      "execution_id": "01M4M601WD17KP44A4RSY2FAHM",
-      "submitted_at_utc": "2026-10-11T00:32:22Z",
-      "execution_started_at": "2026-10-11T00:32:25.802212159Z",
-      "execution_ended_at": "2026-10-11T00:32:26.016335142Z",
-      "state": "QUERY_STATE_COMPLETED",
-      "execution_cost_credits": 0.100852942,
-      "query_parameters": {},
-      "cancellation_requested_at_utc": null
-    },
     {
       "key": "burns",
       "query_id": 8895090,
@@ -15184,6 +15220,20 @@
       "cancellation_requested_at_utc": null,
       "result_row_count": 4,
       "result_bytes": 401
+    },
+    {
+      "key": "xnet_transfers",
+      "query_id": 8894037,
+      "execution_id": "01M4Z0S3AP6GQK9QQPYT61ET5P",
+      "submitted_at_utc": "2026-10-15T05:32:49Z",
+      "execution_started_at": "2026-10-15T05:33:00.364940271Z",
+      "execution_ended_at": "2026-10-15T05:33:02.305154966Z",
+      "state": "QUERY_STATE_COMPLETED",
+      "execution_cost_credits": 0.292205883,
+      "query_parameters": {
+        "lookback_hours": 2
+      },
+      "cancellation_requested_at_utc": null
     }
   ],
   "last_pending_error": "Query 8894037 has an unresolved submission without an ID; manual reconciliation required, replacement blocked.",

@@ -261,6 +261,7 @@ def parse_epoch_schedule(text):
 
     schedule = []
     seen_epochs = set()
+    incomplete_trailing = []
 
     for col, heading in enumerate(header):
         match = re.fullmatch(
@@ -293,14 +294,17 @@ def parse_epoch_schedule(text):
             f"Epoch {epoch}",
         )
 
-        if start is None or end is None:
+        # The source often publishes a new epoch header before its reward
+        # total is available. Only complete, source-confirmed epochs enter
+        # the canonical mirror. Never infer reward totals or dates. A gap in
+        # the middle of published history still fails closed.
+        if start is None or end is None or total is None:
+            incomplete_trailing.append(epoch)
+            continue
+        if incomplete_trailing:
             raise RuntimeError(
-                f"Epoch {epoch} is missing a published start/end date"
-            )
-
-        if total is None:
-            raise RuntimeError(
-                f"Epoch {epoch} is missing published total reward tokens"
+                f"Complete Epoch {epoch} follows incomplete epoch(s) "
+                f"{incomplete_trailing}; source requires review"
             )
 
         fiat_burn = (
@@ -328,7 +332,16 @@ def parse_epoch_schedule(text):
         )
 
     if not schedule:
-        raise RuntimeError("No epoch records produced")
+        raise RuntimeError("No complete epoch records produced")
+
+    if incomplete_trailing:
+        print(
+            f"::warning::Unpublished/incomplete trailing epoch(s) "
+            f"{incomplete_trailing} withheld; retaining source-confirmed "
+            f"Epoch {schedule[-1]['epoch']}. Revenue/offload publication "
+            f"is independent.",
+            flush=True,
+        )
 
     return schedule
 

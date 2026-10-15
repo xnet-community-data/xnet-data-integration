@@ -41,7 +41,10 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Refresh live revenue and epoch source mirrors
+      # PR/push checks use the checked-in canonical mirrors, not another
+      # upstream revenue/epoch fetch. The daily source-sync job owns polling.
+      - name: Refresh source mirrors only on explicit manual verification
+        if: github.event_name == 'workflow_dispatch'
         run: python scripts/sync_revenue.py
 
       - name: Rebuild feed from checked-out sources

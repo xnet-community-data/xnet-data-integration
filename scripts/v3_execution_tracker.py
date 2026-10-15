@@ -220,6 +220,19 @@ class ExecutionTracker:
         key = self.key(spec)
         pending = self.pending().get(key)
         if pending is None:
+            # A lost/HTTP-5xx submission response may represent accepted work.
+            # Block *all* new submissions while ANY query has an unknown ID,
+            # rather than spending on more queries during an API outage.
+            unknown = sorted(
+                name for name, entry in self.pending().items()
+                if not entry.get("execution_id")
+            )
+            if unknown:
+                raise ExecutionPending(
+                    "Unresolved Dune submission without execution ID "
+                    f"({', '.join(unknown)}); all new submissions blocked "
+                    "pending reviewed reconciliation."
+                )
             billing = self.guard()
             pending = {
                 "key": key, "query_id": spec["query_id"],

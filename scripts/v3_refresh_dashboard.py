@@ -176,6 +176,14 @@ def source_in_backoff(state, key):
     return bool(until and now() < datetime.fromisoformat(until.replace("Z", "+00:00")))
 
 
+def ambiguous_submission_keys(state):
+    """Unknown execute IDs must never trigger speculative replacements."""
+    return sorted(
+        key for key, pending in state.get("pending_executions", {}).items()
+        if not pending.get("execution_id")
+    )
+
+
 def presentation_in_backoff(state, key):
     # An in-flight execution must always be reconciled before any cooldown.
     if key in state.get("pending_executions", {}):
@@ -1167,6 +1175,18 @@ def main():
         # Confirmed terminal failures wait for bounded backoff. Pending work is
         # exempt so existing execution IDs are always reconciled first.
         due_presentation = [s for s in due_presentation if not presentation_in_backoff(state, s["key"])]
+        unknown = ambiguous_submission_keys(state)
+        if unknown:
+            # A Dune execute HTTP 5xx may have accepted work. One such
+            # ambiguous response must halt further POSTs globally, but cached
+            # state and the last verified dashboard remain publishable.
+            print(
+                f"::warning::Dune execution submissions paused: unknown "
+                f"execution ID(s) for {', '.join(unknown)}; reviewed "
+                "reconciliation required. No new Dune queries submitted.",
+                flush=True,
+            )
+            due_presentation = []
 
         # Bound each cron run so one slow cached chart cannot consume the
         # whole GitHub Actions timeout. Overdue charts simply remain due for

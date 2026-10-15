@@ -740,22 +740,54 @@
         "period_end": "2026-11-04"
       },
       "execution_id": "01M50QVNESBXMT31576X7058MG",
-      "execution_started_at": "2026-10-15T21:35:29.131341946Z"
+      "execution_started_at": "2026-10-15T21:35:29.131341946Z",
+      "terminal_status": {
+        "execution_id": "01M50QVNESBXMT31576X7058MG",
+        "query_id": 8893945,
+        "is_execution_finished": true,
+        "state": "QUERY_STATE_COMPLETED",
+        "submitted_at": "2026-10-15T21:35:28.218111Z",
+        "expires_at": "2027-01-13T21:36:15.169747Z",
+        "execution_started_at": "2026-10-15T21:35:29.131341946Z",
+        "execution_ended_at": "2026-10-15T21:36:15.169739152Z",
+        "result_metadata": {
+          "column_names": [
+            "day",
+            "event_count",
+            "transfer_count",
+            "burn_count",
+            "mint_count",
+            "tx_count",
+            "min_block_slot",
+            "max_block_slot",
+            "amount_raw_total",
+            "block_slot_total"
+          ],
+          "column_types": [
+            "date",
+            "bigint",
+            "bigint",
+            "bigint",
+            "bigint",
+            "bigint",
+            "bigint",
+            "bigint",
+            "decimal(38, 0)",
+            "decimal(38, 0)"
+          ],
+          "row_count": 30,
+          "result_set_bytes": 2760,
+          "total_row_count": 30,
+          "total_result_set_bytes": 2760,
+          "datapoint_count": 300,
+          "pending_time_millis": 913,
+          "execution_time_millis": 46038
+        },
+        "execution_cost_credits": 39.136617648
+      }
     }
   },
   "execution_history": [
-    {
-      "key": "current",
-      "query_id": 8894185,
-      "execution_id": "01M4MDBX6DF8EZEF74Y6FGH75G",
-      "submitted_at_utc": "2026-10-11T02:41:10Z",
-      "execution_started_at": "2026-10-11T02:41:14.102853375Z",
-      "execution_ended_at": "2026-10-11T02:41:14.250341491Z",
-      "state": "QUERY_STATE_COMPLETED",
-      "execution_cost_credits": 0.114705883,
-      "query_parameters": {},
-      "cancellation_requested_at_utc": null
-    },
     {
       "key": "burns",
       "query_id": 8895090,
@@ -15245,6 +15277,20 @@
       "cancellation_requested_at_utc": null,
       "result_row_count": 4,
       "result_bytes": 401
+    },
+    {
+      "key": "reconciliation_manifest",
+      "query_id": 8893945,
+      "execution_id": "01M50QVNESBXMT31576X7058MG",
+      "submitted_at_utc": "2026-10-15T21:35:24Z",
+      "execution_started_at": "2026-10-15T21:35:29.131341946Z",
+      "execution_ended_at": "2026-10-15T21:36:15.169739152Z",
+      "state": "QUERY_STATE_COMPLETED",
+      "execution_cost_credits": 39.136617648,
+      "query_parameters": {
+        "lookback_days": 30
+      },
+      "cancellation_requested_at_utc": null
     }
   ],
   "last_pending_error": "Query 8894037 has an unresolved submission without an ID; manual reconciliation required, replacement blocked.",

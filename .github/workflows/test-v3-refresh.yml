@@ -4,6 +4,8 @@ on:
   push:
     branches: [main]
     paths:
+      - "scripts/sync_revenue.py"
+      - "tests/test_sync_revenue_epoch.py"
       - "scripts/v3_refresh_dashboard.py"
       - "scripts/v3_reduce_chain.py"
       - "scripts/v3_sync_network.py"
@@ -21,6 +23,8 @@ on:
       - ".github/workflows/test-v3-refresh.yml"
   pull_request:
     paths:
+      - "scripts/sync_revenue.py"
+      - "tests/test_sync_revenue_epoch.py"
       - "scripts/v3_refresh_dashboard.py"
       - "scripts/v3_reduce_chain.py"
       - "scripts/v3_sync_network.py"
@@ -51,5 +55,7 @@ jobs:
           python-version: "3.12"
       - name: Test execution tracking, recovery and publication isolation
         run: python -m unittest discover -s tests -p 'test_v3*refresh*.py' -v && python -m unittest discover -s tests -p 'test_v3_execution_tracker.py' -v && python -m unittest discover -s tests -p 'test_v3_holder_integrity.py' -v && python -m unittest discover -s tests -p 'test_v3_network_published_state.py' -v && python -m unittest discover -s tests -p 'test_v3_live_bundle.py' -v && python -m unittest discover -s tests -p 'test_v3_reconciliation.py' -v
+      - name: Test epoch publication isolation (offline)
+        run: python -m unittest discover -s tests -p 'test_sync_revenue_epoch.py' -v
       - name: Check publisher syntax
         run: bash -n scripts/v3_publish_live_state.sh

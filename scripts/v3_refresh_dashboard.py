@@ -404,12 +404,32 @@ def sync_holder_integrity_error(state):
     return quality
 
 
+def historical_cost_quarantined(state):
+    """Do not automatically retry a reconciliation that exceeded its cost cap."""
+    issue = state.get("source_errors", {}).get("historical_reconciliation", {})
+    error = str(issue.get("error", "")).lower()
+    # Recognize pre-existing production incidents as well as newly tagged ones.
+    return bool(issue.get("cost_overrun_quarantined")) or (
+        " cost " in f" {error} " and " exceeded " in f" {error} "
+    )
+
+
 def reconcile_historical_manifest(state, billing):
     policy = CONFIG.get("reconciliation")
     if not policy:
         return False
 
     recon = state.setdefault("reconciliation", {})
+    if historical_cost_quarantined(state):
+        # Result caps are observed after Dune execution, not pre-charge caps.
+        # Preserve last-good history until an operator reviews cost and clears
+        # the quarantine explicitly; do not retry the 30-day manifest on cron.
+        recon["manifest_deferred_at_utc"] = stamp()
+        recon["manifest_deferred_reason"] = (
+            "Prior reconciliation exceeded its Dune credit cap; "
+            "manual review and explicit clearance required."
+        )
+        return False
 
     # Do not open new reconciliation work while another source execution is
     # still awaiting durable consumption/acknowledgement. This keeps exactly-once
@@ -606,7 +626,12 @@ def reconcile_historical_manifest(state, billing):
     except ExecutionPending as error:
         record_source_issue(state, "historical_reconciliation", error, unresolved=True)
         return False
-    except (SubmissionRejected, ExecutionCostExceeded, ExecutionFailed, RuntimeError) as error:
+    except ExecutionCostExceeded as error:
+        record_source_issue(state, "historical_reconciliation", error)
+        state["source_errors"]["historical_reconciliation"]["cost_overrun_quarantined"] = True
+        save(STATE, state)
+        return False
+    except (SubmissionRejected, ExecutionFailed, RuntimeError) as error:
         record_source_issue(state, "historical_reconciliation", error)
         return False
 

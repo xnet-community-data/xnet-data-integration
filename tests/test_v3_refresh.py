@@ -168,6 +168,32 @@ class RefreshTests(unittest.TestCase):
             self.assertEqual(json.loads(health.read_text())["status"], "PAUSED")
             self.assertEqual(json.loads(health.read_text())["last_refresh_completed_utc"], "2026-10-09T08:25:19Z")
 
+    def test_overbudget_manifest_is_quarantined_without_dune_calls(self):
+        state = {
+            "source_errors": {
+                "historical_reconciliation": {
+                    "error": "Query 8893945 cost 39.136617648 exceeded 15.0; source quarantined."
+                }
+            }
+        }
+        with patch.object(refresh, "execute") as execute:
+            self.assertFalse(refresh.reconcile_historical_manifest(state, {"credits_used": 100}))
+        execute.assert_not_called()
+        self.assertIn("manual review", state["reconciliation"]["manifest_deferred_reason"])
+
+    def test_cost_overrun_sets_persistent_quarantine(self):
+        state = {"queries": {}, "source_errors": {}}
+        with patch.object(refresh, "execute",
+                          side_effect=refresh.ExecutionCostExceeded("cost exceeded cap")) as execute, \
+             patch.object(refresh, "save"):
+            self.assertFalse(refresh.reconcile_historical_manifest(state, {"credits_used": 100}))
+        self.assertEqual(execute.call_count, 1)
+        self.assertTrue(state["source_errors"]["historical_reconciliation"]["cost_overrun_quarantined"])
+
+        with patch.object(refresh, "execute") as no_retry:
+            self.assertFalse(refresh.reconcile_historical_manifest(state, {"credits_used": 100}))
+        no_retry.assert_not_called()
+
     def test_observed_completed_cost_variation_is_within_presentation_guard(self):
         observed_cost = 0.57805981
         tokenomics = next(s for s in refresh.CONFIG["presentation"] if s["key"] == "tokenomics")

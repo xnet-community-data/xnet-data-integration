@@ -5,7 +5,7 @@ import unittest
 import sys
 import urllib.error
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
@@ -17,6 +17,14 @@ class RefreshTests(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
+        # checkpoint() now also writes internal operational health, and main()
+        # owns the network/market collection, so give the fixture its own repo
+        # root with a real data/ directory instead of touching the worktree.
+        self.repo = Path(self.directory.name) / "repo"
+        (self.repo / "data/current").mkdir(parents=True)
+        root = patch.object(refresh, "ROOT", self.repo)
+        root.start()
+        self.addCleanup(root.stop)
         state = patch.object(refresh, "STATE", Path(self.directory.name) / "state.json")
         state.start()
         self.addCleanup(state.stop)
@@ -28,18 +36,29 @@ class RefreshTests(unittest.TestCase):
         import json
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
+            # publish_data_generation() snapshots ROOT/data for pre-publish
+            # rollback, and main() now owns the network/market collection, so the
+            # orchestration fixture needs a real data directory.
+            (root / "data/current").mkdir(parents=True)
             state = root / "state.json"
-            state.write_text(json.dumps({"queries": {"bbb_dex": {"query_id": 2}}}))
+            state.write_text(json.dumps({"schema_version": 1,
+                                         "queries": {"bbb_dex": {"query_id": 2}}}))
             config = {**refresh.CONFIG, "sources": [
                 {"key": "xnet_transfers", "query_id": 1, "output": "transfers"},
                 {"key": "bbb_dex", "query_id": 2, "output": "bbb", "enabled": False}],
                 "presentation": [], "reconciliation": None}
-            with patch.object(refresh, "ROOT", root), patch.object(refresh, "STATE", state), patch.object(refresh, "HEALTH", root / "health.json"), patch.object(refresh, "CONFIG", config), patch("sys.argv", ["refresh"]), patch.object(refresh, "usage_guard", return_value={}), patch.object(refresh, "execute", return_value={}) as execute, patch.object(refresh, "export_source", return_value=100), patch.object(refresh, "reduce_atomically") as reduce, patch.object(refresh, "run"), patch.object(refresh, "publish"):
+            record = {"execution_id": "exec-1", "query_id": 1,
+                      "query_parameters": {"lookback_hours": 2},
+                      "execution_cost_credits": 0.1}
+            with patch.object(refresh, "ROOT", root), patch.object(refresh, "STATE", state), patch.object(refresh, "HEALTH", root / "health.json"), patch.object(refresh, "load_authoritative_state", return_value=json.loads(state.read_text())), patch.object(refresh, "CONFIG", config), patch("sys.argv", ["refresh"]), patch.object(refresh, "usage_guard", return_value={}), patch.object(refresh, "execute", return_value=record) as execute, patch.object(refresh, "export_source", return_value=100), patch.object(refresh, "validate_hot_transfers"), patch.object(refresh, "reduce_atomically") as reduce, patch.object(refresh, "run"), patch.object(refresh, "publish"):
                 self.assertEqual(refresh.main(), 0)
             self.assertEqual(execute.call_count, 1)
             self.assertEqual(execute.call_args.args[0]["key"], "xnet_transfers")
             reduce.assert_called_once_with(root / "transfers", None)
-            self.assertNotIn("bbb_dex", json.loads(state.read_text())["queries"])
+            # Configuration changes must not erase prior accepted provenance, so
+            # the disabled source's persisted entry is retained unchanged while it
+            # is neither submitted nor reduced.
+            self.assertEqual(json.loads(state.read_text())["queries"]["bbb_dex"], {"query_id": 2})
 
     def test_failed_reduction_restores_canonical_and_derived_data(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -72,7 +91,7 @@ class RefreshTests(unittest.TestCase):
             if path.endswith("/execute"):
                 return {"execution_id": "test"}
             return {"state": "QUERY_STATE_COMPLETED", "execution_cost_credits": 0.1, "result_metadata": {}}
-        with patch.object(refresh, "api", api), patch.object(refresh, "usage_guard", return_value={}):
+        with patch.object(refresh, "load_authoritative_state", return_value={}), patch.object(refresh, "api", api), patch.object(refresh, "usage_guard", return_value={}):
             result = refresh.execute({"query_id": 1, "max_run_credits": 0.35})
         self.assertEqual(result["execution_cost_credits"], 0.1)
         self.assertEqual(calls[0][1]["performance"], refresh.CONFIG["performance"])
@@ -82,12 +101,16 @@ class RefreshTests(unittest.TestCase):
         def api(path, payload=None):
             return {"execution_id": "test"} if path.endswith("/execute") else {
                 "state": "QUERY_STATE_COMPLETED", "execution_cost_credits": 2}
-        with patch.object(refresh, "api", api), patch.object(refresh, "usage_guard", return_value={}):
+        with patch.object(refresh, "load_authoritative_state", return_value={}), patch.object(refresh, "api", api), patch.object(refresh, "usage_guard", return_value={}):
             with self.assertRaisesRegex(RuntimeError, "exceeded"):
                 refresh.execute({"query_id": 1, "max_run_credits": 0.35})
 
-    def test_execute_4xx_is_definitive_submission_rejection(self):
-        for code in (400, 402, 409, 429):
+    def test_execute_http_failure_is_ambiguous_until_proven_nonacceptance(self):
+        # An accepted submission can be lost behind any HTTP status, including
+        # 4xx/408/429. Status alone is not proof of nonacceptance, so every
+        # execute HTTP failure stays ambiguous until a proven provider contract
+        # says otherwise; none of these may be treated as a definitive rejection.
+        for code in (400, 402, 408, 409, 429, 500):
             error = urllib.error.HTTPError(
                 url="https://api.dune.com/api/v1/query/1/execute",
                 code=code,
@@ -98,8 +121,9 @@ class RefreshTests(unittest.TestCase):
             with self.subTest(code=code), patch.dict(
                 "os.environ", {"DUNE_API_KEY": "test-key"}
             ), patch("urllib.request.urlopen", side_effect=error):
-                with self.assertRaises(refresh.SubmissionRejected):
+                with self.assertRaises(RuntimeError) as ctx:
                     refresh.api("query/1/execute", {"performance": "medium"})
+                self.assertNotIsInstance(ctx.exception, refresh.SubmissionRejected)
 
     def test_execute_5xx_remains_ambiguous(self):
         error = urllib.error.HTTPError(
@@ -131,40 +155,147 @@ class RefreshTests(unittest.TestCase):
             api.assert_not_called()
             self.assertEqual(record["estimated_export_credits"], 0)
 
-    def test_export_estimate_uses_megabytes_and_actual_response_bytes(self):
-        record = {"execution_id": "test", "result_metadata": {
-            "total_row_count": 1, "column_names": ["a"], "datapoint_count": 1, "total_result_set_bytes": 100}}
-        with patch.object(refresh, "api", return_value=({"result": {"rows": [{"a": 1}]}}, 200)), patch.object(refresh, "usage_guard", return_value={}), patch.object(refresh, "save"):
-            refresh.export_source(record, {"output": "unused"}, 3000)
-        self.assertEqual(record["export_wire_bytes"], 200)
-        self.assertAlmostEqual(record["estimated_export_credits"], 200 / 1000000 * refresh.CONFIG["export_credits_per_megabyte"])
+    def test_export_arithmetic_is_isolated_from_ambient_state(self):
+        """Fetch-path arithmetic must be provable without ambient authoritative hydration:
+        the fixture owns the spend-free cache lookup (a read-only miss), the wire-size risk,
+        admission, and the explicit budget totals, so this asserts accounting and ordering
+        only - lookup -> guard -> risk -> prune -> stamp -> download -> cache."""
+        source = next(s for s in refresh.CONFIG["sources"] if s["key"] == "xnet_transfers")
+        spec = {"output": "state/v3_transfer_hot_latest.json", "performance": source["performance"]}
+        params = {"lookback_hours": source["lookback_hours"]}
+        rows = [{"a_b": 1, "day": "2026-10-18"}, {"a_b": 2, "day": "2026-10-18"}]
+        record = {"execution_id": "01ARZ3NDEKTSV4RRFFQ69G5FAV", "query_id": source["query_id"],
+                  "query_parameters": params, "execution_cost_credits": 0.4,
+                  "result_metadata": {"total_row_count": 2, "column_names": ["a_b", "day"],
+                                      "datapoint_count": 4, "total_result_set_bytes": 1500000}}
+        state = {"queries": {}, "execution_history": [], "pending_executions": {},
+                 "result_exports": {"schema_version": 1, "requests": {}},
+                 "budget_decision": {"status": "admitted", "report": {"totals": {
+                     "limit_credits": 100.0, "usage_plus_reserve": 40.0, "dependencies_total": 10.0}}}}
+        cache = Mock()
+        cache.lookup.return_value = None  # read-only miss: nothing cached, nothing staged
+        order = Mock()
+        with patch.object(refresh, "result_cache", return_value=cache), \
+             patch.object(refresh, "export_risk", return_value=(5.0, ["3 comparable samples"])) as risk, \
+             patch.object(refresh, "usage_guard") as guard, \
+             patch.object(refresh, "api", return_value=({"state": "QUERY_STATE_COMPLETED",
+                 "execution_id": record["execution_id"], "result": {"rows": rows}}, 400)) as api, \
+             patch.object(refresh, "save") as save:
+            for name, mock in (("lookup", cache.lookup), ("usage_guard", guard), ("export_risk", risk),
+                               ("prune_consumed", cache.prune_consumed), ("prepare_export", cache.prepare_export),
+                               ("api", api), ("cache_result", cache.cache_result)):
+                order.attach_mock(mock, name)
+            remaining = refresh.export_source(record, spec, 3000, max_bytes=2000000, state=state)
+        self.assertEqual(remaining, 2996)  # 3000 point allowance minus 4 (2 rows x 2 columns)
+        self.assertEqual([entry[0] for entry in order.mock_calls],
+                         ["lookup", "usage_guard", "export_risk", "prune_consumed", "prepare_export", "api", "cache_result"])
+        guard.assert_called_once_with(state)
+        risk.assert_called_once_with(state, record, spec, 1500000)
+        binding = cache.lookup.call_args.args[2]  # the immutable execution binding, not a SQL-version guess
+        self.assertEqual(binding["query_id"], 8894037)
+        self.assertEqual(binding["parameters"], {"lookback_hours": 2})
+        self.assertEqual(binding["columns"], ["a_b", "day"])
+        self.assertEqual(len(binding["sql_sha256"]), 64)
+        cache.prepare_export.assert_called_once()
+        self.assertEqual(cache.prepare_export.call_args.args, (state, record, binding))
+        self.assertEqual((cache.prepare_export.call_args.kwargs["risk_credits"],
+                          cache.prepare_export.call_args.kwargs["evidence"]),
+                         (5.0, ["3 comparable samples"]))  # caller-supplied estimate, never inferred
+        api.assert_called_once_with(f'execution/{record["execution_id"]}/results?limit=10000&allow_partial_results=false', include_wire_size=True)
+        cache.cache_result.assert_called_once()
+        self.assertEqual(cache.cache_result.call_args.args,
+                         (state, record, binding,
+                          {"execution_id": record["execution_id"], "total_row_count": 2, "result_rows": rows}))
+        self.assertTrue(cache.cache_result.call_args.kwargs["timestamp"].endswith("Z"))
+        self.assertEqual(record["export_points"], 4)
+        self.assertEqual(record["export_wire_bytes"], 400)
+        # The charge is the larger of declared result bytes and observed wire bytes, per MB.
+        self.assertAlmostEqual(record["estimated_export_credits"],
+                               1500000 / 1000000 * refresh.CONFIG["export_credits_per_megabyte"])
+        self.assertEqual(save.call_args.args[0], refresh.ROOT / spec["output"])
+        self.assertEqual(save.call_args.args[1]["result"]["rows"], rows)
+
+    def test_cached_export_needs_no_admission_headroom_or_download(self):
+        """A validated cached reuse is spend-free: it stays possible with the
+        budget lane closed and must not consult admission, risk, or the provider."""
+        source = next(s for s in refresh.CONFIG["sources"] if s["key"] == "xnet_transfers")
+        spec = {"output": "state/v3_transfer_hot_latest.json", "performance": source["performance"]}
+        record = {"execution_id": "01ARZ3NDEKTSV4RRFFQ69G5FAV", "query_id": source["query_id"],
+                  "query_parameters": {"lookback_hours": source["lookback_hours"]},
+                  "execution_cost_credits": 0.4,
+                  "result_metadata": {"total_row_count": 1, "column_names": ["a_b", "day"],
+                                      "datapoint_count": 4, "total_result_set_bytes": 1500000}}
+        cached_rows = [{"a_b": 7, "day": "2026-10-17"}]
+        cache = Mock()
+        cache.lookup.return_value = {"execution_id": record["execution_id"], "result_rows": cached_rows,
+                                     "columns": ["a_b", "day"]}
+        state = {}  # no budget lane, no result_exports lane: the cached path needs neither
+        with patch.object(refresh, "result_cache", return_value=cache), \
+             patch.object(refresh, "export_risk") as risk, patch.object(refresh, "usage_guard") as guard, \
+             patch.object(refresh, "api") as api, patch.object(refresh, "save") as save:
+            self.assertEqual(refresh.export_source(record, spec, 3000, max_bytes=2000000, state=state), 2996)
+        api.assert_not_called()
+        guard.assert_not_called()
+        risk.assert_not_called()
+        cache.prune_consumed.assert_not_called()
+        cache.prepare_export.assert_not_called()
+        cache.cache_result.assert_not_called()
+        self.assertEqual(state, {})  # no intent stamped, no telemetry written
+        self.assertEqual(record["export_points"], 4)
+        saved = save.call_args.args[1]
+        self.assertEqual(saved["execution_id"], record["execution_id"])
+        self.assertEqual(saved["result"]["rows"], cached_rows)  # the exact served execution's rows
 
     def test_pause_prevents_execution(self):
         with tempfile.TemporaryDirectory() as directory:
             state = Path(directory) / "state.json"
-            state.write_text('{"paused": true}')
-            with patch.object(refresh, "STATE", state), patch("sys.argv", ["refresh"]), patch.object(refresh, "api") as api:
+            state.write_text('{"schema_version": 1, "queries": {}, "paused": true}')
+            # Keep the repo's real health file untouched: pause reporting writes
+            # HEALTH, so point it at an isolated path for this orchestration test.
+            health = Path(directory) / "health.json"
+            with patch.object(refresh, "STATE", state), patch.object(refresh, "HEALTH", health), patch.object(refresh, "load_authoritative_state", return_value={"schema_version": 1, "queries": {}, "paused": True}), patch("sys.argv", ["refresh"]), patch.object(refresh, "api") as api:
                 with self.assertRaisesRegex(SystemExit, "paused"):
                     refresh.main()
                 api.assert_not_called()
 
 
-    def test_scheduled_pause_is_reported_without_execution_or_state_change(self):
+    def test_scheduled_pause_publishes_independent_data_without_dune_or_state_change(self):
         import json
         with tempfile.TemporaryDirectory() as directory:
-            state = Path(directory) / "state.json"
-            original = json.dumps({"paused": True, "last_error": "cost anomaly", "queries": {}})
-            state.write_text(original)
-            summary = Path(directory) / "summary.md"
-            health = Path(directory) / "health.json"
+            root = Path(directory)
+            # refresh_independent_data() writes ROOT/data/... operational health
+            # and main() snapshots data/, so the fixture owns a real data dir.
+            (root / "data/current").mkdir(parents=True)
+            state = root / "data/current/v3_refresh_state.json"
+            original = {"schema_version": 1, "paused": True,
+                        "last_error": "cost anomaly", "queries": {}}
+            state.write_text(json.dumps(original))
+            summary = root / "summary.md"
+            health = root / "health.json"
             health.write_text('{"status": "HEALTHY", "last_refresh_completed_utc": "2026-10-09T08:25:19Z"}')
-            with patch.object(refresh, "STATE", state), patch.object(refresh, "HEALTH", health), patch("sys.argv", ["refresh"]), patch.dict("os.environ", {"EVENT": "schedule", "GITHUB_STEP_SUMMARY": str(summary)}), patch.object(refresh, "api") as api, patch.object(refresh, "publish") as publish:
+            with patch.object(refresh, "ROOT", root), patch.object(refresh, "STATE", state), patch.object(refresh, "HEALTH", health), patch.object(refresh, "load_authoritative_state", return_value=json.loads(json.dumps(original))), patch("sys.argv", ["refresh"]), patch.dict("os.environ", {"EVENT": "schedule", "GITHUB_STEP_SUMMARY": str(summary)}), patch.object(refresh, "api") as api, patch.object(refresh, "execute") as execute, patch.object(refresh, "export_source") as export, patch.object(refresh, "run") as run, patch.object(refresh, "publish") as publish:
                 self.assertEqual(refresh.main(), 0)
+            # No Dune work at all: no status calls, no submissions, no exports.
             api.assert_not_called()
-            publish.assert_called_once_with(state_only=True)
-            self.assertEqual(state.read_text(), original)
-            self.assertIn("paused", summary.read_text())
-            self.assertIn("cost anomaly", summary.read_text())
+            execute.assert_not_called()
+            export.assert_not_called()
+            # Independent, non-Dune upstream collection ran (its own cadence).
+            collected = [call.args[0] for call in run.call_args_list]
+            self.assertIn("v3_sync_network.py", collected)
+            self.assertIn("v3_build_live_bundle.py", collected)
+            publish.assert_called_once_with()
+            # The core journal is unchanged, including the retained pause, and no
+            # consumption was staged by the independent publication. The only
+            # addition is the internal operational-health provenance map.
+            committed = json.loads(state.read_text())
+            self.assertEqual(committed["schema_version"], original["schema_version"])
+            self.assertTrue(committed["paused"])
+            self.assertEqual(committed["last_error"], "cost anomaly")
+            self.assertEqual(committed["queries"], {})
+            self.assertEqual(committed.get("pending_executions", {}), {})
+            self.assertNotIn("consumed_executions", committed)
+            self.assertEqual(set(committed) - set(original), {"operational_incidents"})
+            self.assertIn("Chain pause retained: True", summary.read_text())
             self.assertEqual(json.loads(health.read_text())["status"], "PAUSED")
             self.assertEqual(json.loads(health.read_text())["last_refresh_completed_utc"], "2026-10-09T08:25:19Z")
 
@@ -200,7 +331,7 @@ class RefreshTests(unittest.TestCase):
         def api(path, payload=None):
             return {"execution_id": "observed"} if path.endswith("/execute") else {
                 "state": "QUERY_STATE_COMPLETED", "execution_cost_credits": observed_cost}
-        with patch.object(refresh, "api", api), patch.object(refresh, "usage_guard", return_value={}):
+        with patch.object(refresh, "load_authoritative_state", return_value={}), patch.object(refresh, "api", api), patch.object(refresh, "usage_guard", return_value={}):
             record = refresh.execute(tokenomics)
         self.assertEqual(record["execution_cost_credits"], observed_cost)
         self.assertGreater(refresh.CONFIG["monthly_spend_guard_credits"], 0)

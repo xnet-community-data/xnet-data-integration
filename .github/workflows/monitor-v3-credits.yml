@@ -4,6 +4,7 @@ on:
     - cron: "10 3 * * *"
   workflow_dispatch:
   push:
+    branches: [main]
     paths:
       - "scripts/v3_credit_usage.py"
       - ".github/workflows/monitor-v3-credits.yml"
@@ -27,12 +28,6 @@ jobs:
           DUNE_API_KEY: ${{ secrets.DUNE_API_KEY }}
         run: |
           git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
-          git fetch --depth 1 origin live-state
-          git switch --force-create live-state FETCH_HEAD
-          git show "${{ github.sha }}:scripts/v3_credit_usage.py" > /tmp/v3_credit_usage.py
-          DUNE_USAGE_STATE_PATH="$PWD/data/current/v3_credit_usage.json" python /tmp/v3_credit_usage.py
-          git config user.name "xnet-data-bot"
-          git config user.email "xnet-data-bot@users.noreply.github.com"
-          git add data/current/v3_credit_usage.json
-          git commit -m "Record daily Dune credit usage"
-          git push origin live-state
+          python scripts/v3_hydrate_live_state.py
+          python scripts/v3_credit_usage.py
+          bash scripts/v3_publish_live_state.sh --credit-usage-only

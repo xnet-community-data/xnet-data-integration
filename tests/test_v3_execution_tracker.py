@@ -303,7 +303,7 @@ class PublicationTests(unittest.TestCase):
             self.git(seed, "config", "user.name", "test")
             self.git(seed, "config", "user.email", "test@example.com")
             (seed / "data/current").mkdir(parents=True)
-            (seed / "data/current/v3_refresh_state.json").write_text('{}\n')
+            (seed / "data/current/v3_refresh_state.json").write_text('{"schema_version": 1, "queries": {}}\n')
             (seed / "data/current/xnet_chain_health.json").write_text('{"status": "HEALTHY"}\n')
             (seed / "data/xnet_defillama_revenue.json").write_text('"revenue unchanged"\n')
             self.git(seed, "add", ".")
@@ -315,13 +315,19 @@ class PublicationTests(unittest.TestCase):
             self.git(source, "remote", "add", "origin", str(origin))
             (source / "scripts").mkdir()
             shutil.copy(ROOT / "scripts/v3_publish_live_state.sh", source / "scripts")
-            (source / "data/current").mkdir(parents=True)
-            (source / "data/current/v3_refresh_state.json").write_text('{"pending_executions": {"current": {"execution_id": "saved"}}}\n')
+            shutil.copy(ROOT / "scripts/v3_live_state_store.py", source / "scripts")
+            shutil.copy(ROOT / "scripts/v3_hydrate_live_state.py", source / "scripts")
+            subprocess.run([sys.executable, "scripts/v3_hydrate_live_state.py"], cwd=source,
+                           check=True, capture_output=True)
+            (source / "data/current/v3_refresh_state.json").write_text(json.dumps({
+                "schema_version": 1, "queries": {}, "pending_executions": {"current": {
+                    "key": "current", "query_id": 1, "query_parameters": {},
+                    "submitted_at_utc": "2026-10-09T08:25:19Z", "execution_id": "saved"}}}) + '\n')
             (source / "data/current/xnet_chain_health.json").write_text('{"status": "PAUSED", "last_refresh_completed_utc": "2026-10-09T08:25:19Z"}\n')
             subprocess.run(["bash", "scripts/v3_publish_live_state.sh", "--refresh-state-only"],
                            cwd=source, check=True, capture_output=True, text=True)
             changed = self.git(origin, "diff", "--name-only", "live-state~1", "live-state")
-            self.assertEqual(set(changed.splitlines()), {"data/current/v3_refresh_state.json", "data/current/xnet_chain_health.json"})
+            self.assertEqual(set(changed.splitlines()), {"data/current/v3_refresh_state.json", "data/current/xnet_chain_health.json", "state/v3_live_generation.json"})
             self.assertEqual(json.loads(self.git(origin, "show", "live-state:data/current/xnet_chain_health.json"))["status"], "PAUSED")
             self.assertEqual(self.git(origin, "show", "live-state:data/xnet_defillama_revenue.json"), '"revenue unchanged"')
 
@@ -335,10 +341,13 @@ class RecoveryIntegrationTests(unittest.TestCase):
         self.addCleanup(self.directory.cleanup)
         self.root = Path(self.directory.name)
         self.state_path = self.root / "state.json"
+        # publish_data_generation() snapshots ROOT/data for pre-publish rollback,
+        # so the orchestration fixture must provide a data directory.
+        (self.root / "data" / "current").mkdir(parents=True, exist_ok=True)
         self.source = {"key": "xnet_transfers", "query_id": 1, "output": "transfers.json",
                        "max_run_credits": 1.5, "cadence_minutes": 30, "lookback_hours": 2}
         self.fixed = datetime(2026, 10, 7, 10, tzinfo=timezone.utc)
-        self.state = {"queries": {"xnet_transfers": {"query_id": 1,
+        self.state = {"schema_version": 1, "queries": {"xnet_transfers": {"query_id": 1,
                       "completed_at_utc": self.fixed.isoformat(),
                       "query_parameters": {"lookback_hours": 2}}},
                       "chain_completed_at_utc": self.fixed.isoformat(),
@@ -349,8 +358,14 @@ class RecoveryIntegrationTests(unittest.TestCase):
                           "submitted_at_utc": (self.fixed - timedelta(seconds=10)).isoformat(),
                           "timeout_seconds": 240, "billing": {}}}}
         self.state_path.write_text(json.dumps(self.state))
+        # main() now loads through the durable store (hydration receipt). These
+        # tests exercise orchestration, so supply the journal under test instead
+        # of weakening production load_authoritative_state().
         for name, value in {"ROOT": self.root, "STATE": self.state_path,
-                            "HEALTH": self.root / "health.json", "CONFIG": {
+                            "HEALTH": self.root / "health.json",
+                            "load_authoritative_state":
+                                lambda: json.loads(self.state_path.read_text()),
+                            "CONFIG": {
                                 **self.refresh.CONFIG, "sources": [self.source], "presentation": []}}.items():
             patcher = patch.object(self.refresh, name, value)
             patcher.start()
@@ -392,40 +407,62 @@ class RecoveryIntegrationTests(unittest.TestCase):
             state["pending_executions"] = {"current": {"execution_id": "existing"}}
             self.assertFalse(self.refresh.presentation_in_backoff(state, "current"))
 
-    def test_recovered_source_is_consumed_with_original_window_and_published_before_retirement(self):
+    def test_recovered_source_publishes_consumed_marker_and_no_pending_in_one_commit(self):
         status = {"state": "QUERY_STATE_COMPLETED", "execution_cost_credits": 0.1,
                   "execution_ended_at": self.fixed.isoformat(), "result_metadata": {}}
+        events = []
         publications = []
         def publish(state_only=False):
+            events.append("publish:state" if state_only else "publish:full")
             publications.append((state_only, json.loads(self.state_path.read_text())))
+        def reduce(*args, **kwargs):
+            events.append("reduce")
         with patch("sys.argv", ["refresh"]), patch.object(self.refresh, "now", return_value=self.fixed), \
              patch.object(self.refresh, "api", return_value=status) as api, \
              patch.object(self.refresh, "usage_guard", return_value={}), \
              patch.object(self.refresh, "export_source", return_value=3000) as export, \
-             patch.object(self.refresh, "reduce_atomically") as reduce, \
+             patch.object(self.refresh, "validate_hot_transfers") as validate, \
+             patch.object(self.refresh, "reduce_atomically", reduce), \
              patch.object(self.refresh, "run"), patch.object(self.refresh, "publish", publish):
             self.assertEqual(self.refresh.main(), 0)
         api.assert_called_once_with("execution/recover/status")
         self.assertEqual(export.call_args.args[0]["query_parameters"], {"lookback_hours": 48})
-        reduce.assert_called_once()
-        full_publish = next(state for only, state in publications if not only)
-        self.assertEqual(full_publish["queries"]["xnet_transfers"]["execution_id"], "recover")
-        self.assertIn("xnet_transfers", full_publish["pending_executions"])
+        self.assertEqual(validate.call_count, 1)
+        self.assertEqual(events.count("reduce"), 1)
+        # New invariant: publish_data_generation() stages the consumption marker and
+        # only then performs the single acceptance commit. The FULL publish must
+        # already contain the consumed marker and no pending id for the source;
+        # no acknowledge may follow it.
+        full_state = next(state for only, state in publications if not only)
+        self.assertIn("recover", full_state["consumed_executions"])
+        self.assertEqual(full_state["consumed_executions"]["recover"]["key"], "xnet_transfers")
+        self.assertNotIn("xnet_transfers", full_state.get("pending_executions", {}))
+        self.assertEqual(full_state["queries"]["xnet_transfers"]["execution_id"], "recover")
+        # The acceptance commit is ordered after the hot reduction.
+        self.assertLess(events.index("reduce"), events.index("publish:full"))
         self.assertFalse(json.loads(self.state_path.read_text())["pending_executions"])
 
-    def test_failed_source_consumption_retains_execution_for_safe_replay(self):
+    def test_failed_source_consumption_retains_execution_and_rolls_back_data(self):
         status = {"state": "QUERY_STATE_COMPLETED", "execution_cost_credits": 0.1,
                   "execution_ended_at": self.fixed.isoformat(), "result_metadata": {}}
+        partial = self.root / "data" / "current" / "reduce-partial.json"
+        def reduce(*args, **kwargs):
+            # Simulate a reducer that mutates canonical data and then fails.
+            partial.write_text('{"partial": true}\n')
+            raise RuntimeError("reducer failed")
         with patch("sys.argv", ["refresh"]), patch.object(self.refresh, "now", return_value=self.fixed), \
              patch.object(self.refresh, "api", return_value=status), \
              patch.object(self.refresh, "usage_guard", return_value={}), \
              patch.object(self.refresh, "export_source", return_value=3000), \
-             patch.object(self.refresh, "reduce_atomically", side_effect=RuntimeError("reducer failed")), \
-             patch.object(self.refresh, "publish"):
+             patch.object(self.refresh, "validate_hot_transfers"), \
+             patch.object(self.refresh, "reduce_atomically", reduce), \
+             patch.object(self.refresh, "run"), patch.object(self.refresh, "publish"):
             self.assertEqual(self.refresh.main(), 1)
         saved = json.loads(self.state_path.read_text())
         self.assertTrue(saved["paused"])
         self.assertEqual(saved["pending_executions"]["xnet_transfers"]["execution_id"], "recover")
+        # A pre-publish failure must roll the working data back to last-good.
+        self.assertFalse(partial.exists())
 
     def test_expensive_transfer_is_quarantined_while_dashboard_stays_live(self):
         status = {"state": "QUERY_STATE_COMPLETED",

@@ -2,6 +2,13 @@
 from copy import deepcopy
 from datetime import datetime
 import math
+import re
+
+try:  # Authoritative-state error shared with the durable store.
+    from v3_live_state_store import StateError
+except ImportError:  # pragma: no cover - store shipped alongside tracker
+    class StateError(RuntimeError):
+        """Fallback if the shared live-state store is unavailable."""
 
 TERMINAL = {
     "QUERY_STATE_COMPLETED",
@@ -23,6 +30,35 @@ HISTORY_TELEMETRY_FIELDS = (
     "export_wire_bytes",
     "estimated_export_credits",
 )
+
+# Dune execution IDs are ULIDs. We accept either a realistic ULID or a
+# conservative opaque token so existing fixtures stay valid, but never
+# whitespace, path separators, traversal, control characters or overlong input.
+MAX_EXECUTION_ID_LENGTH = 128
+_SAFE_EXECUTION_ID = re.compile(r"[A-Za-z0-9_-]+\Z")
+_ULID = re.compile(r"[0-9A-HJKMNP-TV-Z]{26}\Z")
+
+
+def valid_execution_id(value):
+    """Return True only for a non-empty, non-injecting execution ID."""
+    if not isinstance(value, str) or not value:
+        return False
+    if len(value) > MAX_EXECUTION_ID_LENGTH:
+        return False
+    return _SAFE_EXECUTION_ID.fullmatch(value) is not None
+
+
+def is_ulid(value):
+    """True when the value is a syntactically realistic ULID."""
+    return isinstance(value, str) and _ULID.fullmatch(value) is not None
+
+
+class CheckpointFailed(StateError):
+    """Durability barrier: a lifecycle checkpoint (state save/publication) failed.
+
+    This must never be downgraded to a retryable API/status error by reconcile()
+    or execute(); callers fail closed and leave durable intent for reconciliation.
+    """
 
 
 class ExecutionPending(RuntimeError):
@@ -59,6 +95,43 @@ class ExecutionTracker:
 
     def key(self, spec):
         return spec.get("key", str(spec["query_id"]))
+
+    def _checkpoint(self):
+        """Lifecycle durability barrier; failures are never API-retryable."""
+        try:
+            self.checkpoint()
+        except CheckpointFailed:
+            raise
+        except Exception as error:
+            raise CheckpointFailed(str(error)) from error
+
+    def _resolved_performance(self, spec):
+        return spec.get("performance", self.performance)
+
+    def _spec_identity(self, spec):
+        return {
+            "key": self.key(spec),
+            "query_id": spec["query_id"],
+            "performance": self._resolved_performance(spec),
+        }
+
+    def operation_evidence(self, pending):
+        """Original operation identity/parameters bound to a live execution."""
+        return {
+            "key": pending.get("key"),
+            "query_id": pending.get("query_id"),
+            "execution_id": pending.get("execution_id"),
+            "execution_id_format": pending.get("execution_id_format"),
+            "submitted_at_utc": pending.get("submitted_at_utc"),
+            "query_parameters": deepcopy(pending.get("query_parameters", {})),
+            "spec_identity": deepcopy(pending.get("spec_identity")),
+            "submission_error": pending.get("submission_error"),
+        }
+
+    def recovered_operations(self):
+        """Expose original evidence for every unresolved/recovered operation."""
+        return {key: self.operation_evidence(pending)
+                for key, pending in self.pending().items()}
 
     def observe(self, pending, status):
         remote_state = status.get("state")
@@ -100,7 +173,7 @@ class ExecutionTracker:
                 history.append(entry)
             self.state["execution_history"] = history[-1000:]
             pending["terminal_status"] = pending_status
-            self.checkpoint()
+            self._checkpoint()
         return True
 
     def check(self, pending):
@@ -121,7 +194,7 @@ class ExecutionTracker:
         remote_start = status.get("execution_started_at")
         if remote_start and not pending.get("execution_started_at"):
             pending["execution_started_at"] = remote_start
-            self.checkpoint()
+            self._checkpoint()
         started = pending.get("execution_started_at")
         submitted = datetime.fromisoformat(pending["submitted_at_utc"].replace("Z", "+00:00"))
         if "queue_timeout_seconds" in pending and "run_timeout_seconds" in pending:
@@ -140,7 +213,7 @@ class ExecutionTracker:
             # never establishes completion; only a terminal status does.
             if not pending.get("cancellation_requested_at_utc"):
                 pending["cancellation_requested_at_utc"] = self.stamp()
-                self.checkpoint()
+                self._checkpoint()
             self.api(f"execution/{execution_id}/cancel", {})
             status = self.api(f"execution/{execution_id}/status")
             self.observe(pending, status)
@@ -152,6 +225,8 @@ class ExecutionTracker:
         for key, pending in list(self.pending().items()):
             try:
                 self.check(pending)
+            except CheckpointFailed:
+                raise
             except Exception as error:
                 errors[key] = str(error)
         # Retry missing cost metadata without executions or result downloads.
@@ -163,13 +238,20 @@ class ExecutionTracker:
                 cost = status.get("execution_cost_credits")
                 if cost is not None and math.isfinite(float(cost)) and float(cost) >= 0:
                     entry["execution_cost_credits"] = float(cost)
-                    self.checkpoint()
+                    self._checkpoint()
+            except CheckpointFailed:
+                raise
             except Exception as error:
                 errors[entry["execution_id"]] = str(error)
         return errors
 
-    def acknowledge(self, spec, record):
-        """Retire completed work only after its result has been safely applied."""
+    def acknowledge(self, spec, record, checkpoint=True):
+        """Retire completed work only after its result has been safely applied.
+
+        With checkpoint=False the consumption marker is mutated in memory only;
+        the caller must publish state and the execution's effects atomically
+        (see stage_acknowledge/commit_checkpoint).
+        """
         key = self.key(spec)
         execution_id = record.get("execution_id")
         changed = False
@@ -213,8 +295,22 @@ class ExecutionTracker:
             del self.pending()[key]
             changed = True
 
-        if changed:
-            self.checkpoint()
+        if changed and checkpoint:
+            self._checkpoint()
+        return changed
+
+    def stage_acknowledge(self, spec, record):
+        """Atomically stage consumption without publishing.
+
+        Removes the pending marker and records telemetry in memory. The caller
+        must persist this state together with the accepted effects in a single
+        publication, then call commit_checkpoint() (the durability barrier).
+        """
+        return self.acknowledge(spec, record, checkpoint=False)
+
+    def commit_checkpoint(self):
+        """Durability barrier for staged consumption; raises CheckpointFailed."""
+        self._checkpoint()
 
     def execute(self, spec, params, enforce_cap, timeout_seconds):
         key = self.key(spec)
@@ -239,6 +335,7 @@ class ExecutionTracker:
                 "query_parameters": deepcopy(params or {}),
                 "submitted_at_utc": self.stamp(), "timeout_seconds": timeout_seconds,
                 "billing": billing, "execution_id": None,
+                "spec_identity": self._spec_identity(spec),
                 **({
                     "queue_timeout_seconds": int(spec["queue_timeout_seconds"]),
                     "run_timeout_seconds": int(spec["run_timeout_seconds"]),
@@ -247,39 +344,61 @@ class ExecutionTracker:
             self.pending()[key] = pending
             # If the POST response is lost or the runner dies, this intent blocks
             # automatic resubmission rather than guessing that nothing ran.
-            self.checkpoint()
+            self._checkpoint()
             body = {"performance": spec.get("performance", self.performance)}
             if params:
                 body["query_parameters"] = params
             try:
                 execution = self.api(f"query/{spec['query_id']}/execute", body)
-                pending["execution_id"] = execution["execution_id"]
-                if not pending["execution_id"]:
-                    raise RuntimeError("No execution ID returned")
+                candidate = execution.get("execution_id") if isinstance(execution, dict) else None
+                if not valid_execution_id(candidate):
+                    raise RuntimeError(f"Execute returned an invalid execution ID: {candidate!r}")
+                pending["execution_id"] = candidate
+                pending["execution_id_format"] = "ulid" if is_ulid(candidate) else "opaque"
             except SubmissionRejected as error:
-                # A confirmed 4xx validation/authorization rejection did NOT
-                # submit work. Preserve an audit record and release the intent.
+                # A confirmed nonacceptance (classification owned by the caller's
+                # transport layer) did NOT submit work. Audit and release intent.
                 self.state.setdefault("rejected_submissions", []).append({
                     "key": key, "query_id": spec["query_id"],
                     "at_utc": self.stamp(), "error": str(error),
                 })
                 self.state["rejected_submissions"] = self.state["rejected_submissions"][-50:]
                 del self.pending()[key]
-                self.checkpoint()
+                self._checkpoint()
+                raise
+            except CheckpointFailed:
                 raise
             except Exception as error:
+                # Lost response, 5xx/network ambiguity, or an unusable ID: retain
+                # the durable intent (no ID) rather than guessing nothing ran.
+                pending["execution_id"] = None
+                pending.pop("execution_id_format", None)
                 pending["submission_error"] = str(error)
-                self.checkpoint()
+                self._checkpoint()
                 raise ExecutionPending(
                     f"Query {spec['query_id']} submission is unresolved; replacement blocked: {error}"
                 ) from error
-            self.checkpoint()
+            self._checkpoint()
         elif pending["query_id"] != spec["query_id"]:
-            raise ExecutionPending("Query configuration changed with unresolved work; replacement blocked.")
+            raise ExecutionPending(
+                "Query id changed with unresolved work; replacement blocked; "
+                "original operation evidence retained."
+            )
+        elif (
+            "spec_identity" in pending
+            and pending["spec_identity"] != self._spec_identity(spec)
+        ):
+            raise ExecutionPending(
+                "Operation identity changed with unresolved work "
+                f"(original {pending['spec_identity']!r}); replacement blocked; "
+                "original parameters retained."
+            )
 
         while True:
             try:
                 status = pending.get("terminal_status") or self.check(pending)
+            except CheckpointFailed:
+                raise
             except ExecutionPending:
                 raise
             except Exception as error:
@@ -320,6 +439,7 @@ class ExecutionTracker:
             "execution_started_at": status.get("execution_started_at"),
             "execution_ended_at": status.get("execution_ended_at"),
             "query_parameters": deepcopy(pending["query_parameters"]),
+            "spec_identity": deepcopy(pending.get("spec_identity")),
             "result_metadata": status.get("result_metadata", {}), "billing": pending["billing"],
         }
         print(f"Query {spec['query_id']} execution {pending['execution_id']}: "

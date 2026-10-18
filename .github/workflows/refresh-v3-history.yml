@@ -8,6 +8,8 @@ on:
       - "scripts/v3_refresh_dashboard.py"
       - "scripts/v3_execution_tracker.py"
       - "scripts/v3_publish_live_state.sh"
+      - "scripts/v3_hydrate_live_state.py"
+      - "scripts/v3_live_state_store.py"
       - "scripts/v3_sync_network.py"
       - "scripts/v3_reduce_chain.py"
       - "scripts/v3_build_chain_snapshot.py"
@@ -25,6 +27,10 @@ on:
     inputs:
       resume:
         description: "Clear a reviewed spend/failure pause"
+        type: boolean
+        default: false
+      cached_only:
+        description: "Publish independent API/cache data without any Dune execution or export"
         type: boolean
         default: false
 
@@ -54,15 +60,17 @@ jobs:
         run: |
           git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
           python scripts/v3_hydrate_live_state.py
-      - name: Refresh live network APIs
-        run: python scripts/v3_sync_network.py
       - name: Refresh bounded sources and cached charts
         env:
           DUNE_API_KEY: ${{ secrets.DUNE_API_KEY }}
           RESUME: ${{ inputs.resume }}
+          # Deployments must never silently submit paid verification work.
+          CACHED_ONLY: ${{ github.event_name == 'push' || inputs.cached_only }}
           EVENT: ${{ github.event_name }}
         run: |
-          if [ "$RESUME" = "true" ]; then
+          if [ "$CACHED_ONLY" = "true" ]; then
+            python scripts/v3_refresh_dashboard.py --cached-only
+          elif [ "$RESUME" = "true" ]; then
             python scripts/v3_refresh_dashboard.py --resume
           else
             python scripts/v3_refresh_dashboard.py
@@ -74,5 +82,9 @@ jobs:
           name: xnet-v3-refresh-state
           path: |
             data/current/v3_refresh_state.json
+            .git/xnet-live-state/receipt.json
+            .git/xnet-live-state/pending.json
+            data/current/v3_operational_health.json
             state/v3_credit_benchmark.json
           retention-days: 14
+          include-hidden-files: true

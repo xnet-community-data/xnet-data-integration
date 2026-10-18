@@ -43,13 +43,41 @@ class NetworkPublishedStateTests(unittest.TestCase):
         failed = {**self.previous, "status": "preserved_last_good"}
         self.assertFalse(module.uncommitted_network_collection(failed, self.published))
 
-    def test_paused_pipeline_makes_no_upstream_calls(self):
+    def test_paused_chain_has_no_network_pause_gate(self):
+        """A Dune/chain pause is NOT a network gate.
+
+        v3_sync_network.py has no `paused` branch: independent, non-Dune
+        telemetry keeps its own cadence and still collects once when due, while
+        the chain pause is retained untouched. This is the intentional semantics,
+        not a suspension of network collection.
+        """
         with tempfile.TemporaryDirectory() as tmp:
-            state = Path(tmp) / "state.json"
-            state.write_text(json.dumps({"paused": True, "external_sources": {"network": self.previous}}))
-            with patch.object(module, "REFRESH_STATE", state), patch.object(module, "fetch_json") as fetch:
+            root = Path(tmp)
+            state = root / "state.json"
+            network = root / "network.json"
+            previous = {**self.previous, "last_attempt_utc": "2026-10-08T11:57:53Z"}
+            state.write_text(json.dumps({"schema_version": 1, "paused": True,
+                                         "external_sources": {"network": previous}}))
+            # Published cache already matches the earlier success, so the only
+            # reason for any upstream call is normal cadence — never the pause.
+            network.write_text(json.dumps({
+                "collected_at_utc": self.previous["last_success_utc"],
+                "offload": {"data_as_of": self.previous["offload_data_as_of"]},
+                "devices": {"data_as_of": self.previous["device_data_as_of"]},
+            }))
+            with patch.object(module, "REFRESH_STATE", state), \
+                 patch.object(module, "NETWORK_STATE", network), \
+                 patch.object(module, "DEVICE_HISTORY", root / "device_history.json"), \
+                 patch.object(module, "utc_now", return_value=self.now), \
+                 patch.object(module, "fetch_json",
+                              side_effect=RuntimeError("mock upstream failed")) as fetch:
                 self.assertEqual(module.main(), 0)
-                fetch.assert_not_called()
+            # Called once as ordinary due-cadence collection (no pause gate).
+            self.assertEqual(fetch.call_count, 1)
+            preserved = json.loads(state.read_text())
+            self.assertTrue(preserved["paused"], "chain pause must be preserved")
+            self.assertEqual(preserved["external_sources"]["network"]["status"],
+                             "preserved_last_good")
 
     def test_success_without_publication_is_rate_limited(self):
         with tempfile.TemporaryDirectory() as tmp:

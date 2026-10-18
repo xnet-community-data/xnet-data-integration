@@ -2,23 +2,34 @@
 """Bounded sources, status-only chart refreshes, and a persistent spend guard."""
 from __future__ import annotations
 import argparse
+from copy import deepcopy
 import csv
 import json
+import hashlib
 import math
 import os
 import shutil
+import statistics
 import subprocess
 import sys
 import time
 import tempfile
 import urllib.error
 import urllib.request
+from decimal import Decimal
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from v3_execution_tracker import (
     ExecutionPending, ExecutionCancelled, ExecutionTracker, SubmissionRejected,
     ExecutionCostExceeded, ExecutionFailed,
+    CheckpointFailed,
 )
+from v3_live_state_store import LiveStateStore, StateError, atomic_write, encoded, validate_journal
+from v3_budget_runtime import evaluate_budget
+from v3_operational_health import build_health
+from v3_result_cache import ResultCache, ManualExportReview, CacheError
+from v3_credit_budget import group_samples, sample_estimate
+from v3_budget_runtime import collect_sample_history
 
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG = json.loads((ROOT / "config/v3_refresh.json").read_text())
@@ -35,10 +46,14 @@ def load(path, default):
     return json.loads(path.read_text()) if path.exists() else default
 
 def save(path, value):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(json.dumps(value, indent=2) + "\n")
-    tmp.replace(path)
+    try:
+        atomic_write(path, encoded(value))
+    except (OSError, ValueError) as error:
+        raise CheckpointFailed(f"Unable to durably save {path.name}: {error}") from error
+
+
+def load_authoritative_state():
+    return LiveStateStore(ROOT).load_authoritative_journal()
 
 def api(path, payload=None, include_wire_size=False):
     key = os.environ.get("DUNE_API_KEY")
@@ -59,65 +74,113 @@ def api(path, payload=None, include_wire_size=False):
         except Exception:
             message = ""
         detail = f"Dune HTTP {error.code} at {path.split('?')[0]}: {message}; no automatic execution retry."
-        # Dune documents every 4xx as a request failure. For execute POSTs
-        # that means no execution ID was created, so it is safe to release the
-        # durable submission intent. Keep 5xx/network failures ambiguous because
-        # the server may have accepted work before the response was lost.
-        if path.endswith("/execute") and 400 <= error.code < 500:
-            raise SubmissionRejected(detail) from None
+        # HTTP status alone is not authoritative evidence of nonacceptance.
+        # Proxies/backends may lose an accepted response even for 4xx/408/429.
+        # Retain the durable intent for every execute HTTP failure. Only a future
+        # provider-specific, proven nonacceptance contract may raise SubmissionRejected.
         raise RuntimeError(detail) from None
 
-def usage_guard():
-    usage = api("usage", {"start_date": now().date().replace(day=1).isoformat(),
+class BudgetBlocked(RuntimeError):
+    """New spending is not admitted; metadata reconciliation may continue."""
+
+
+def usage_guard(state=None, proposed_spec=None, proposed_params=None):
+    if state is None:
+        state = load_authoritative_state()
+    usage = api("usage", {"start_date": (now().date() - timedelta(days=40)).isoformat(),
                           "end_date": (now().date() + timedelta(days=1)).isoformat()})
-    periods = usage.get("billing_periods", [])
-    today = now().date().isoformat()
-    active = [p for p in periods if str(p["start_date"])[:10] <= today < str(p["end_date"])[:10]]
-    if not active:
-        raise RuntimeError("Unable to identify active billing period; spending stopped.")
-    period = max(active, key=lambda p: p["start_date"])
-    used = float(period["credits_used"])
-    limit = min(float(period["credits_included"]), CONFIG["monthly_spend_guard_credits"])
-    if used + CONFIG["minimum_credit_reserve"] >= limit:
-        raise RuntimeError(f"Monthly spend guard reached: {used:.3f}/{limit:.0f} credits.")
-    start = datetime.fromisoformat(str(period["start_date"])[:10]).replace(tzinfo=timezone.utc)
-    end = datetime.fromisoformat(str(period["end_date"])[:10]).replace(tzinfo=timezone.utc)
-    elapsed_days = max((now() - start).total_seconds() / 86400, 1.0)
-    period_days = max((end - start).total_seconds() / 86400, 1.0)
-    projected = used / elapsed_days * period_days
-    target = min(float(CONFIG.get("monthly_target_credits", limit)), limit)
+    decision = evaluate_budget(state, CONFIG, usage, now(),
+                               proposed_spec=proposed_spec, proposed_params=proposed_params)
+    state["budget_decision"] = decision
+    report = decision["report"]
+    if decision["status"] != "admitted":
+        raise BudgetBlocked("Dune credit admission blocked: " + "; ".join(decision["blockers"]))
+    current, totals = report["current_usage"], report["totals"]
     return {
-        "credits_used": used,
-        "guard_credits": limit,
-        "target_credits": target,
-        "projected_period_credits": projected,
-        "period_start": period["start_date"],
-        "period_end": period["end_date"],
+        "credits_used": current["credits_used"], "guard_credits": totals["limit_credits"],
+        "target_credits": CONFIG["monthly_target_credits"],
+        "projected_period_credits": current["credits_used"] + totals["dependencies_total"],
+        "period_start": current["period_start_utc"], "period_end": current["period_end_utc"],
+        "forecast": report["forecast"],
     }
 
 def checkpoint(state):
     # Only Dune execution state is published here. Revenue/feed builders and
     # dashboard-data publication are deliberately excluded.
+    write_operational_health(state)
     save(STATE, state)
-    publish(state_only=True)
+    return publish(state_only=True)
 
-def tracker(state):
-    return ExecutionTracker(state, api, lambda: checkpoint(state), usage_guard,
+
+def write_operational_health(state):
+    """Internal-only provenance and stable incident identities; no public fields added."""
+    specs = [*CONFIG.get("sources", []), *CONFIG.get("presentation", [])]
+    config = {"domains": {s["key"]: {"source_key": s["key"],
+               "max_age_seconds": int(s.get("cadence_minutes", 30)) * 120}
+               for s in specs if s.get("enabled", True)}}
+    report = build_health({**state, "sources": state.get("queries", {}),
+                           "degraded_sources": state.get("source_errors", {})}, now(), config,
+                          {"blocked": state.get("budget_decision", {}).get("status") == "blocked"})
+    previous = state.get("operational_incidents", {})
+    incidents = {key: item["incident_id"] for key, item in report["domains"].items()
+                 if item["incident_id"]}
+    for key, identity in incidents.items():
+        if previous.get(key) != identity:
+            item = report["domains"][key]
+            print(f"::warning::XNET {key}: {item['status']} [{identity}]; {item['recovery_action']}", flush=True)
+    state["operational_incidents"] = incidents
+    save(ROOT / "data/current/v3_operational_health.json", report)
+
+def tracker(state, proposed_spec=None, proposed_params=None):
+    return ExecutionTracker(state, api, lambda: checkpoint(state),
+                            lambda: usage_guard(state, proposed_spec, proposed_params),
                             now, time.sleep, CONFIG["performance"])
 
 def execute(spec, params=None, enforce_cap=True, timeout_seconds=None, state=None):
     if state is None:
-        state = load(STATE, {"schema_version": 1, "queries": {}})
+        state = load_authoritative_state()
     if timeout_seconds is None:
         timeout_seconds = CONFIG.get("source_execution_timeout_seconds", 240)
-    return tracker(state).execute(spec, params, enforce_cap, timeout_seconds)
-def export_source(record, spec, remaining, max_bytes=None):
+    return tracker(state, spec, params).execute(spec, params, enforce_cap, timeout_seconds)
+
+
+def result_cache():
+    public_ids = {int(s["query_id"]) for s in CONFIG.get("sources", [])}
+    if CONFIG.get("reconciliation"):
+        public_ids.add(int(CONFIG["reconciliation"]["manifest_query_id"]))
+    return ResultCache(ROOT, checkpoint, allowed_query_ids=public_ids)
+
+
+def export_risk(state, record, spec, result_bytes):
+    """Comparable wire-size envelope, not a configured download/spend ceiling."""
+    samples, _ = collect_sample_history(state, default_performance=CONFIG["performance"],
+                                       performance_by_key={})
+    estimate = sample_estimate(group_samples(samples, CONFIG["performance"]),
+        record["query_id"], record.get("query_parameters", {}), now_utc=now(),
+        performance=spec.get("performance", CONFIG["performance"]),
+        export_rate_per_mb=CONFIG["export_credits_per_megabyte"])
+    evidence = estimate["evidence"]
+    values = evidence["export_cost_values"]
+    if len(values) < 3 or result_bytes > (evidence["export_bytes_max"] or 0):
+        raise ManualExportReview("Export size/cost lacks three comparable recent wire observations; explicit review required.")
+    return max(max(values), statistics.mean(values) + 3 * statistics.pstdev(values)), [
+        "Comparable query/parameters/engine; >=3 recent observed wire charges; max(mean+3sigma, observed max)"]
+
+
+def export_source(record, spec, remaining, max_bytes=None, state=None):
     meta = record["result_metadata"]
-    rows = int(meta.get("total_row_count", meta.get("row_count", 0)))
     if "column_names" not in meta or "total_row_count" not in meta:
         raise RuntimeError("Missing complete result metadata; source export stopped.")
-    points = int(meta.get("datapoint_count", rows * len(meta["column_names"])))
-    result_bytes = int(meta.get("total_result_set_bytes", meta.get("result_set_bytes", 0)))
+    def count(value):
+        if type(value) is not int or value < 0:
+            raise RuntimeError("Invalid nonnegative integer source result metadata")
+        return value
+    rows = count(meta["total_row_count"])
+    if not isinstance(meta["column_names"], list):
+        raise RuntimeError("Invalid source result columns")
+    points = max(count(meta.get("datapoint_count", rows * len(meta["column_names"]))),
+                 rows * len(meta["column_names"]))
+    result_bytes = count(meta.get("total_result_set_bytes", meta.get("result_set_bytes", 0)))
     if max_bytes is None:
         max_bytes = CONFIG["max_export_bytes_per_run"]
     if result_bytes > max_bytes:
@@ -128,11 +191,56 @@ def export_source(record, spec, remaining, max_bytes=None):
         result = {"state": "QUERY_STATE_COMPLETED", "result": {"rows": [], "metadata": meta}}
         wire_bytes = 0
     else:
-        usage_guard()
+        if state is None:
+            state = load_authoritative_state()
+        # Bind the immutable provider execution and original params; no SQL-version
+        # inference is needed to reuse that exact execution's validated response.
+        binding = {"query_id": record["query_id"], "parameters": record.get("query_parameters", {}),
+                   "columns": meta["column_names"],
+                   "sql_sha256": hashlib.sha256(encoded({"execution_id": record["execution_id"],
+                       "query_id": record["query_id"], "parameters": record.get("query_parameters", {})})).hexdigest()}
+        cache = result_cache()
+        # Cached reuse is spend-free and remains possible while admission is closed.
+        cached = cache.lookup(state, record, binding)
+        if cached is not None:
+            result = {"execution_id": record["execution_id"], "state": "QUERY_STATE_COMPLETED",
+                      "result": {"rows": cached["result_rows"], "metadata": meta}}
+            save(ROOT / spec["output"], result)
+            record["export_points"] = points
+            prior = next((entry for entry in state.get("execution_history", [])
+                          if entry.get("execution_id") == record["execution_id"]), {})
+            for name in ("export_wire_bytes", "estimated_export_credits"):
+                if name in prior:
+                    record[name] = prior[name]
+            return remaining - points
+        usage_guard(state)
+        risk, evidence = export_risk(state, record, spec, result_bytes)
+        totals = state["budget_decision"]["report"]["totals"]
+        spare = totals["limit_credits"] - totals["usage_plus_reserve"] - totals["dependencies_total"]
+        if risk > spare:
+            raise BudgetBlocked("Export risk exceeds headroom after all remaining scheduled obligations")
+        # Prune only after a prior full acceptance. Never evict pending source work.
+        cache.prune_consumed(state)
+        cache.prepare_export(state, record, binding, risk_credits=risk, evidence=evidence, timestamp=stamp())
         result, wire_bytes = api(f'execution/{record["execution_id"]}/results?limit=10000&allow_partial_results=false', include_wire_size=True)
         fetched = result.get("result", {}).get("rows", [])
-        if len(fetched) != rows or result.get("next_uri") or result.get("next_offset"):
+        if (result.get("state") != "QUERY_STATE_COMPLETED" or not isinstance(fetched, list)
+                or len(fetched) != rows or result.get("next_uri") or result.get("next_offset")
+                or (result.get("execution_id") is not None and
+                    result["execution_id"] != record["execution_id"])):
             raise RuntimeError("Source result is incomplete; canonical state not reduced.")
+        incurred = max(result_bytes, wire_bytes) / 1000000 * CONFIG["export_credits_per_megabyte"]
+        record.update(export_points=points, export_wire_bytes=wire_bytes,
+                      estimated_export_credits=incurred)
+        for marker in state["result_exports"]["requests"].values():
+            if marker["execution_id"] == record["execution_id"]:
+                marker["risk_credits"] = max(marker["risk_credits"], incurred)
+        for entry in state.get("execution_history", []):
+            if entry.get("execution_id") == record["execution_id"]:
+                entry.update(export_points=points, export_wire_bytes=wire_bytes,
+                             estimated_export_credits=incurred, result_bytes=result_bytes)
+        cache.cache_result(state, record, binding, {"execution_id": record["execution_id"],
+            "total_row_count": rows, "result_rows": fetched}, timestamp=stamp())
     record["export_points"] = points
     record["export_wire_bytes"] = wire_bytes
     record["estimated_export_credits"] = max(result_bytes, wire_bytes) / 1000000 * CONFIG["export_credits_per_megabyte"]
@@ -169,6 +277,8 @@ def record_source_issue(state, key, error, unresolved=False):
 
 
 def source_in_backoff(state, key):
+    if state.get("source_errors", {}).get(key, {}).get("manual_reconciliation_required"):
+        return True
     pending = state.get("pending_executions", {})
     if key in pending:
         return False  # Always reconcile an existing execution ID.
@@ -420,6 +530,15 @@ def reconcile_historical_manifest(state, billing):
         return False
 
     recon = state.setdefault("reconciliation", {})
+    # Existing repairs use CURRENT_DATE-relative offsets, with no saved SQL/version
+    # and immutable window proof bound to their original execution. Do NOT download,
+    # reduce, consume, or resubmit them after midnight (or on any other recovery).
+    if "historical_repair" in state.get("pending_executions", {}):
+        quarantine_source(state, "historical_repair", REPAIR_QUARANTINE)
+        recon["repair_manual_review_required"] = True
+        return False
+    if recon.get("repair_manual_review_required"):
+        return False  # An aggregate manifest is not permission to repair by union.
     if historical_cost_quarantined(state):
         # Result caps are observed after Dune execution, not pre-charge caps.
         # Preserve last-good history until an operator reviews cost and clears
@@ -498,9 +617,8 @@ def reconcile_historical_manifest(state, billing):
             manifest_spec,
             int(policy["manifest_max_export_points"]),
             max_bytes=int(policy["manifest_max_export_bytes"]),
+            state=state,
         )
-        tracker(state).acknowledge(manifest_spec, record)
-
         result = load(ROOT / manifest_spec["output"], {})
         rows = result.get("result", {}).get("rows", [])
         remote = normalize_manifest_rows(rows)
@@ -520,6 +638,8 @@ def reconcile_historical_manifest(state, billing):
             "last_manifest_execution_id": record["execution_id"],
             "last_manifest_cost_credits": record["execution_cost_credits"],
             "last_manifest_mismatch_days": mismatches,
+            "manifest_identity_verified": False,
+            "manifest_decision": "aggregate_mismatch_manual_review" if mismatches else "aggregate_match_advisory_only",
         })
         if mode in {"daily", "weekly"}:
             recon[f"last_{mode}_manifest_utc"] = recon["last_manifest_utc"]
@@ -531,98 +651,20 @@ def reconcile_historical_manifest(state, billing):
 
         if not mismatches:
             recon.pop("pending_mismatch_days", None)
-            state.setdefault("source_errors", {}).pop("historical_reconciliation", None)
-            state["chain_repaired_at_utc"] = recon["last_manifest_utc"]
-            if force_wide and holder_integrity_degraded(state):
-                recon["integrity_manifest_clean_at_utc"] = recon["last_manifest_utc"]
-            save(STATE, state)
+            # Counts/weighted totals cannot prove owner, amount, deletion, or event
+            # identity. Never turn aggregate equality into an integrity clearance.
+            recon.pop("integrity_manifest_clean_at_utc", None)
+            stage_consumption(state, manifest_spec, record, "manifest_decision")
+            checkpoint(state)  # decision AND its consumption marker in one commit
             return False
-
-        max_days = int(policy["max_repair_days_per_run"])
-        repair_days = mismatches[:max_days]
-        changed = False
-        repaired = []
-
-        repair_spec = {
-            "key": "historical_repair",
-            "query_id": int(policy["repair_query_id"]),
-            "max_run_credits": float(policy["repair_max_run_credits"]),
-            "output": "state/v3_transfer_repair_latest.json",
-            "performance": CONFIG["performance"],
-        }
-
-        today = now().date()
-        for day_text in repair_days:
-            day = datetime.fromisoformat(day_text).date()
-            days_ago = (today - day).days
-            if days_ago < 1 or days_ago > lookback_days:
-                raise RuntimeError(f"Refusing out-of-window historical repair for {day_text}")
-
-            before = canonical_transfer_manifest(lookback_days).get(day_text)
-            repair_record = execute(
-                repair_spec,
-                {
-                    "oldest_days_ago": days_ago,
-                    "newest_days_ago": days_ago,
-                },
-                state=state,
-                timeout_seconds=CONFIG.get("source_execution_timeout_seconds", 240),
-            )
-            export_source(
-                repair_record,
-                repair_spec,
-                int(policy["repair_max_export_points"]),
-                max_bytes=int(policy["repair_max_export_bytes"]),
-            )
-            reduce_atomically(ROOT / repair_spec["output"])
-            tracker(state).acknowledge(repair_spec, repair_record)
-
-            after = canonical_transfer_manifest(lookback_days).get(day_text)
-            expected = remote.get(day_text)
-            if expected != after:
-                raise RuntimeError(
-                    f"Historical repair verification failed for {day_text}: "
-                    "canonical manifest still differs from Dune."
-                )
-            if before != after:
-                changed = True
-            repaired.append({
-                "day": day_text,
-                "execution_id": repair_record["execution_id"],
-                "cost_credits": repair_record["execution_cost_credits"],
-            })
-
-        remaining = manifest_mismatches(remote, canonical_transfer_manifest(lookback_days))
-        recon["last_repaired_days"] = repaired
-        recon["pending_mismatch_days"] = remaining
-        recon["last_completed_utc"] = stamp()
-        recon["last_mode"] = "selective_repair"
-        recon["last_lookback_hours"] = lookback_days * 24
-        state["chain_repaired_at_utc"] = recon["last_completed_utc"]
-        state["chain_completed_at_utc"] = recon["last_completed_utc"]
-
-        sync_holder_integrity_error(state)
-
-        if remaining:
-            state.setdefault("source_errors", {})["historical_reconciliation"] = {
-                "error": f"{len(remaining)} manifest mismatch day(s) remain after bounded repair.",
-                "failed_at_utc": stamp(),
-                "pending_days": remaining,
-                "automatic_recheck": True,
-            }
-        else:
-            state.setdefault("source_errors", {}).pop("historical_reconciliation", None)
-            recon.pop("pending_mismatch_days", None)
-
-        if changed:
-            forced = set(state.get("forced_presentations", []))
-            forced.update(policy.get("dependent_presentations", []))
-            state["forced_presentations"] = sorted(forced)
-            recon["presentation_invalidated_at_utc"] = stamp()
-
-        save(STATE, state)
-        return changed
-
+        recon["pending_mismatch_days"] = mismatches
+        recon["repair_manual_review_required"] = True
+        quarantine_source(state, "historical_reconciliation", REPAIR_QUARANTINE)
+        stage_consumption(state, manifest_spec, record, "manifest_decision")
+        checkpoint(state)
+        return False
+    except StateError:
+        raise  # Publication failure is a terminal lifecycle barrier, not a source issue.
     except ExecutionPending as error:
         record_source_issue(state, "historical_reconciliation", error, unresolved=True)
         return False
@@ -634,6 +676,116 @@ def reconcile_historical_manifest(state, billing):
     except (SubmissionRejected, ExecutionFailed, RuntimeError) as error:
         record_source_issue(state, "historical_reconciliation", error)
         return False
+
+
+REPAIR_QUARANTINE = (
+    "Manual reconciliation required: relative CURRENT_DATE/day-offset repair has no "
+    "execution-bound immutable UTC scope, pinned SQL identity, exact row/deletion proof "
+    "or verified seed/overlap replacement. Pending execution retained; no reduction or consumption."
+)
+
+
+class ManualReviewRequired(RuntimeError):
+    """Candidate cannot be accepted safely; preserve pending provider evidence."""
+
+
+def quarantine_source(state, key, reason):
+    previous = state.setdefault("source_errors", {}).get(key, {})
+    state["source_errors"][key] = {
+        **previous, "error": reason,
+        "failed_at_utc": previous.get("failed_at_utc") or stamp(),
+        "manual_reconciliation_required": True, "automatic_recheck": False,
+        "unresolved_execution": key in state.get("pending_executions", {}),
+        "next_retry_at_utc": None,
+    }
+
+
+def stage_consumption(state, spec, record, effect):
+    """Stage an execution's acceptance effect; caller supplies the durable commit."""
+    execution_id = record["execution_id"]
+    identity = {"key": spec["key"], "query_id": int(record["query_id"]),
+                "query_parameters": deepcopy(record.get("query_parameters", {})), "effect": effect}
+    consumed = state.setdefault("consumed_executions", {})
+    previous = consumed.get(execution_id)
+    if previous and any(previous.get(field) != value for field, value in identity.items()):
+        raise StateError("Consumed execution identity/effect changed; reviewed reconciliation required")
+    tracker(state).stage_acknowledge(spec, record)
+    if not previous:
+        consumed[execution_id] = {**identity, "accepted_at_utc": stamp()}
+    return not previous
+
+
+def validate_hot_transfers(path, state):
+    """Non-destructive hot union only. Ambiguous corrections are NOT additions.
+
+    The reducer's event ID contains amount but omits owner/multiplicity. Without
+    instruction ordinals or an exact replacement proof, changed rows sharing a
+    stable transaction/token-account locator must be quarantined, not unioned.
+    """
+    from v3_reduce_chain import normalise_transfer, parse_ts
+    result = load(path, {})
+    if result.get("state") != "QUERY_STATE_COMPLETED":
+        raise ManualReviewRequired("Transfer result is not complete")
+    rows = result.get("result", {}).get("rows")
+    if not isinstance(rows, list):
+        raise ManualReviewRequired("Missing complete transfer rows")
+    def normalized(row):
+        row = dict(row)
+        try:
+            for field in ("amount_raw", "block_slot", "event_multiplicity"):
+                number = Decimal(str(row.get(field, "1" if field == "event_multiplicity" else "")))
+                if not number.is_finite() or number != number.to_integral_value() or number < (1 if field == "event_multiplicity" else 0):
+                    raise ValueError(field)
+                row[field] = str(int(number))
+            if not row.get("tx_id") or row.get("action") not in {"mint", "burn", "transfer"}:
+                raise ValueError("transfer identity/action")
+            timestamp = parse_ts(str(row["block_time"]))
+            if str(row["block_date"])[:10] != timestamp.date().isoformat():
+                raise ValueError("transfer date/time")
+            row["block_time"] = timestamp.isoformat()
+            row["block_date"] = timestamp.date().isoformat()
+            row["amount_xnet"] = format(Decimal(row["amount_raw"]) / Decimal(100000000), "f")
+        except (KeyError, ValueError, ArithmeticError) as error:
+            raise ManualReviewRequired(f"Invalid transfer row: {error}") from error
+        return normalise_transfer(row)
+    def locator(row):
+        return tuple(row[key] for key in ("tx_id", "block_slot", "action", "from_token_account", "to_token_account"))
+    def signature(row):
+        return tuple(row[key] for key in ("amount_raw", "from_owner", "to_owner", "event_multiplicity", "block_time"))
+    canonical_path = ROOT / "data/canonical/xnet_transfers.csv"
+    if not canonical_path.exists():
+        raise ManualReviewRequired("Canonical transfer ledger missing")
+    canonical = {}
+    with canonical_path.open(newline="") as source:
+        for row in csv.DictReader(source):
+            row = normalized(row)
+            canonical.setdefault(locator(row), set()).add(signature(row))
+    recon = state.get("reconciliation", {})
+    repaired_days = {item["day"] for item in recon.get("last_repaired_days", []) if item.get("day")}
+    legacy_cutoff = recon.get("last_completed_utc") if recon.get("last_mode") == "selective_repair" else None
+    seed = load(ROOT / "data/xnet_owner_balances_seed_metadata.json", {})
+    seed_cutoff = seed.get("latest_balance_event_time")
+    normalized_rows, seen = [], {}
+    for row in rows:
+        row = normalized(row)
+        key, value = locator(row), signature(row)
+        old = canonical.get(key, set())
+        if old and value not in old:
+            raise ManualReviewRequired("Hot overlap changes amount/owner/multiplicity/time; exact scoped replacement required")
+        if key in seen:
+            # A duplicate group or multiple amount variants without instruction
+            # identity cannot be represented safely by this union reducer.
+            raise ManualReviewRequired("Ambiguous duplicate hot transfer locator")
+        seen[key] = value
+        if value not in old:
+            timestamp = parse_ts(row["block_time"])
+            if (row["block_date"] in repaired_days or
+                    (legacy_cutoff and timestamp <= parse_ts(legacy_cutoff)) or
+                    (seed_cutoff and timestamp <= parse_ts(seed_cutoff))):
+                raise ManualReviewRequired("Hot row overlaps a repaired/seeded window; stale resurrection fenced")
+        normalized_rows.append(row)
+    # Canonical IDs are formed from normalized raw integers, not JSON float text.
+    save(path, {**result, "result": {**result["result"], "rows": normalized_rows}})
 
 
 def reduce_atomically(transfer_path, bbb_path=None):
@@ -652,19 +804,119 @@ def reduce_atomically(transfer_path, bbb_path=None):
             raise
 
 def publish(state_only=False):
-    args = ["bash", "scripts/v3_publish_live_state.sh"]
-    if state_only:
-        args.append("--refresh-state-only")
-    subprocess.run(args, cwd=ROOT, check=True)
+    try:
+        return LiveStateStore(ROOT).publish("checkpoint" if state_only else "full")
+    except StateError:
+        raise
+    except Exception as error:
+        raise CheckpointFailed(f"Publication durability failed: {error}") from error
+
+
+def publish_data_generation(state, paths, source_records):
+    """Validate/build candidate effects, then commit data + consumption together.
+
+    No tracker/provider calls may checkpoint a half-built generation. Pre-publish
+    failures restore last-good data and in-memory acceptance state. Once publication
+    is attempted, uncertainty is a durability barrier: preserve the exact candidate
+    for the store's recovery, never publish a compensating stale snapshot.
+    """
+    before = deepcopy(state)
+    publishing = False
+    with tempfile.TemporaryDirectory() as directory:
+        backup = Path(directory) / "data"
+        shutil.copytree(ROOT / "data", backup)
+        try:
+            if "xnet_transfers" in paths:
+                validate_hot_transfers(paths["xnet_transfers"], state)
+                reduce_atomically(paths["xnet_transfers"], paths.get("bbb_dex"))
+                sync_holder_integrity_error(state)
+                state["chain_completed_at_utc"] = stamp()
+                for spec, record in source_records.values():
+                    state["queries"][spec["key"]] = record
+                    state.setdefault("source_errors", {}).pop(spec["key"], None)
+                    stage_consumption(state, spec, record, "non_destructive_hot_union")
+            # Keep public health shape compatible; Astra owns broader health policy.
+            health = load(HEALTH, {})
+            health.update({"schema_version": 2,
+                "last_refresh_completed_utc": state.get("chain_completed_at_utc"),
+                "status": "DEGRADED" if state.get("source_errors") else "HEALTHY",
+                "cadence_minutes": CONFIG["chain_cadence_minutes"],
+                "paused_due_to_cost": False,
+                "sources": {spec["key"]: state["queries"][spec["key"]]
+                            for spec in CONFIG["sources"] if spec["key"] in state["queries"]},
+                "degraded_sources": state.get("source_errors", {}),
+                "reconciliation": state.get("reconciliation", {}), "automatic_retry": True})
+            save(HEALTH, health)
+            run("v3_build_chain_snapshot.py")
+            try:
+                run("v3_collect_market.py")
+            except subprocess.CalledProcessError as error:
+                if not (ROOT / "data/current/xnet_market_state.json").exists():
+                    raise
+                state.setdefault("source_errors", {})["market"] = {
+                    "error": str(error), "failed_at_utc": stamp(), "automatic_recheck": True}
+            else:
+                state.setdefault("source_errors", {}).pop("market", None)
+            run("v3_build_live_bundle.py")
+            write_operational_health(state)
+            save(STATE, state)
+            publishing = True
+            return publish()  # the only acceptance commit, including staged markers
+        except Exception:
+            if not publishing:
+                shutil.rmtree(ROOT / "data")
+                shutil.copytree(backup, ROOT / "data")
+                state.clear()
+                state.update(before)
+            raise
+
+def refresh_independent_data(state):
+    """No Dune API routes at all; retain the exact chain pause and accepted ledger."""
+    try:
+        run("v3_sync_network.py")
+        # The source collector records its own provenance, not Dune acceptance.
+        refreshed = validate_journal(STATE.read_bytes())
+        state.clear()
+        state.update(refreshed)
+        try:
+            run("v3_collect_market.py")
+        except subprocess.CalledProcessError as error:
+            if not (ROOT / "data/current/xnet_market_state.json").exists():
+                raise
+            state.setdefault("source_errors", {})["market"] = {
+                "error": str(error), "failed_at_utc": stamp(), "automatic_recheck": True}
+        run("v3_build_live_bundle.py")
+        write_operational_health(state)
+        save(STATE, state)
+        receipt = publish()
+        summary = os.environ.get("GITHUB_STEP_SUMMARY")
+        if summary:
+            with open(summary, "a") as report:
+                report.write("## XNET independent data publication\n\n")
+                report.write("No Dune executions or result exports. Chain pause retained: "
+                             + str(state.get("paused", False)) + ".\n\n")
+                report.write("Generation revision: " + str((receipt or {}).get("revision", "see state receipt")) + "\n")
+        return 0
+    except Exception as error:
+        # Do not publish a compensating snapshot after uncertain acceptance.
+        print(f"Independent publication failed; last remote generation retained: {error}", file=sys.stderr)
+        return 1
+
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--resume", action="store_true", help="Explicitly clear a reviewed pause; never used by cron")
+    parser.add_argument("--cached-only", action="store_true", help="Publish independent API/cache data; never submit or export Dune work")
     parser.add_argument("--benchmark", action="store_true", help="Measure query costs without changing canonical state")
     parser.add_argument("--benchmark-sources", action="store_true", help="Measure bounded sources only")
     parser.add_argument("--benchmark-batches", type=int, choices=range(1, 4), default=1)
     parser.add_argument("--benchmark-repetitions", type=int, choices=range(1, 7), default=1)
     args = parser.parse_args()
+    state = load_authoritative_state()
+    if args.cached_only:
+        return refresh_independent_data(state)
+    if state.get("paused") and (args.benchmark or args.benchmark_sources):
+        raise SystemExit("Refresh paused; benchmark cannot bypass the production pause.")
     if args.benchmark or args.benchmark_sources:
         records = []
         # Start with the smallest presentation query, then each shared query.
@@ -682,17 +934,27 @@ def main():
                         if lookback is not None
                         else None
                     )
-                    benchmark_state = load(STATE, {"schema_version": 1, "queries": {}})
+                    benchmark_state = state
+                    # Benchmarks have a distinct metadata-only acceptance effect;
+                    # never retire a pending production-source operation by name.
+                    spec = {**spec, "key": "benchmark:" + spec["key"]}
                     records.append({"batch": batch, "repetition": repetition,
                         "key": spec["key"], "lookback_hours": lookback,
                         **execute(spec, params, enforce_cap=False, state=benchmark_state)})
-                    tracker(benchmark_state).acknowledge(spec, records[-1])
                     save(ROOT / "state/v3_credit_benchmark.json", {"generated_at_utc": stamp(), "performance": CONFIG["performance"], "queries": records})
+                    stage_consumption(benchmark_state, spec, records[-1], "benchmark_metadata")
+                    checkpoint(benchmark_state)
                     print(batch, repetition, spec["key"], records[-1]["execution_cost_credits"], "credits", flush=True)
                     if records[-1]["execution_cost_credits"] > 2 or sum(r["execution_cost_credits"] for r in records) > 30:
                         raise RuntimeError("Benchmark safety allowance reached; costs saved for review.")
         return 0
-    state = load(STATE, {"schema_version": 1, "queries": {}})
+    if not state.get("paused") or args.resume:
+        # Startup receipt was checked before any producer mutation. Network is a
+        # separate non-Dune domain; import only its journal update in this run.
+        run("v3_sync_network.py")
+        refreshed = validate_journal(STATE.read_bytes())
+        state.clear()
+        state.update(refreshed)
     reconciliation_errors = tracker(state).reconcile()
     for key, error in reconciliation_errors.items():
         print(f"::warning::Execution reconciliation {key}: {error}", flush=True)
@@ -707,26 +969,20 @@ def main():
                 "automatic_retry": False,
             })
             save(HEALTH, old_health)
-            if os.environ.get("EVENT") in {"schedule", "push"}:
-                publish(state_only=True)
-        message = "Refresh remains paused after a previous failure; no queries submitted."
         if os.environ.get("EVENT") in {"schedule", "push"}:
-            print(f"::warning::{message}")
-            summary = os.environ.get("GITHUB_STEP_SUMMARY")
-            if summary:
-                with open(summary, "a") as report:
-                    report.write("## XNET refresh paused\n\n")
-                    report.write(message + "\n\n")
-                    report.write("Last error: " + str(state.get("last_error", "unknown")) + "\n")
-            return 0
+            # Independent public APIs remain available during a chain hold.
+            return refresh_independent_data(state)
+        message = "Refresh remains paused after a previous failure; no queries submitted."
         raise SystemExit("Refresh paused after previous failure; review state and manually resume.")
     state.update({"paused": False, "started_at_utc": stamp()})
-    for source in CONFIG["sources"]:
-        if not source.get("enabled", True):
-            state["queries"].pop(source["key"], None)
-    consumed_sources = []
+    # Configuration changes must not erase prior accepted provenance/known IDs.
+    paths, source_records = {}, {}
     try:
-        billing = usage_guard()
+        try:
+            billing = usage_guard(state)
+        except BudgetBlocked as error:
+            billing = None
+            print(f"::warning::{error}", flush=True)
         health = load(HEALTH, {})
         last = state.get("chain_completed_at_utc") or health.get("last_refresh_completed_utc")
         repair = due(state.get("chain_repaired_at_utc"), CONFIG["repair_cadence_minutes"])
@@ -949,7 +1205,7 @@ def main():
                 except ExecutionPending as error:
                     record_source_issue(state, spec["key"], error, unresolved=True)
                     continue
-                except (SubmissionRejected, ExecutionCostExceeded, ExecutionFailed) as error:
+                except (SubmissionRejected, ExecutionCostExceeded, ExecutionFailed, BudgetBlocked) as error:
                     record_source_issue(state, spec["key"], error)
                     continue
 
@@ -1045,18 +1301,18 @@ def main():
                     )
 
                 _, export_max_bytes = export_limits_for_mode(actual_mode)
-                remaining = export_source(
-                    record,
-                    spec,
-                    remaining,
-                    max_bytes=export_max_bytes,
-                )
+                try:
+                    remaining = export_source(record, spec, remaining,
+                                              max_bytes=export_max_bytes, state=state)
+                except BudgetBlocked as error:
+                    record_source_issue(state, spec["key"], error, unresolved=True)
+                    continue
+                except CacheError as error:
+                    quarantine_source(state, spec["key"], str(error))
+                    checkpoint(state)
+                    continue
                 source_modes[spec["key"]] = actual_mode
                 source_lookbacks[spec["key"]] = int(lookback)
-
-                state["queries"][
-                    spec["key"]
-                ] = record
 
                 paths[
                     spec["key"]
@@ -1065,124 +1321,14 @@ def main():
                     / spec["output"]
                 )
                 successful_sources.append(spec)
+                source_records[spec["key"]] = (spec, record)
 
-                save(
-                    STATE,
-                    state,
-                )
-
-            # The transfer source is the canonical reducer clock and remains
-            # on the 30-minute cadence. BBB DEX is deliberately daily; when
-            # it is not due, its canonical CSV and derived state are preserved.
-            if "xnet_transfers" in paths:
-                reduce_atomically(
-                    paths["xnet_transfers"],
-                    paths.get("bbb_dex"),
-                )
-                holder_quality = sync_holder_integrity_error(state)
-                state["chain_completed_at_utc"] = stamp()
-
-                transfer_mode = source_modes.get("xnet_transfers")
-                if transfer_mode in {"daily", "approved_backfill", "integrity"}:
-                    state["chain_repaired_at_utc"] = state["chain_completed_at_utc"]
-                    recon = state.setdefault("reconciliation", {})
-                    recon.update({
-                        "last_mode": transfer_mode,
-                        "last_completed_utc": state["chain_completed_at_utc"],
-                        "last_lookback_hours": source_lookbacks["xnet_transfers"],
-                    })
-                    if transfer_mode == "approved_backfill":
-                        recon["generation"] = int(
-                            CONFIG.get("reconciliation_generation", 0)
-                        )
-
-                    if holder_quality.get("status") == "HEALTHY":
-                        recon["integrity_attempts"] = 0
-                        recon.pop("last_integrity_attempt_utc", None)
-                    elif (
-                        holder_quality.get("status") == "DEGRADED"
-                        and transfer_mode in {"approved_backfill", "integrity"}
-                    ):
-                        recon["integrity_attempts"] = int(
-                            recon.get("integrity_attempts", 0)
-                        ) + 1
-                        recon["last_integrity_attempt_utc"] = (
-                            state["chain_completed_at_utc"]
-                        )
-
-                consumed_sources = successful_sources
-
-            health_sources = {
-                spec["key"]:
-                    state.get(
-                        "queries",
-                        {},
-                    ).get(
-                        spec["key"],
-                        {},
-                    )
-                for spec in active_sources
-                if state.get(
-                    "queries",
-                    {},
-                ).get(
-                    spec["key"]
-                )
-            }
-
-            save(
-                HEALTH,
-                {
-                    "schema_version": 2,
-                    "last_refresh_completed_utc":
-                        state.get(
-                            "chain_completed_at_utc"
-                        ),
-                    "status": "DEGRADED" if state.get("source_errors") else "HEALTHY",
-                    "cadence_minutes":
-                        CONFIG[
-                            "chain_cadence_minutes"
-                        ],
-                    "paused_due_to_cost": False,
-                    "sources":
-                        health_sources,
-                    "degraded_sources": state.get("source_errors", {}),
-                    "reconciliation": state.get("reconciliation", {}),
-                    "automatic_retry": True,
-                },
-            )
-        historical_changed = reconcile_historical_manifest(state, billing)
+        # No canonical files or accepted source clocks have been mutated yet.
+        # A manifest decision can checkpoint safely before the data transaction.
+        historical_changed = reconcile_historical_manifest(state, billing) if billing is not None else False
         if historical_changed:
             sync_holder_integrity_error(state)
-
-        run("v3_build_chain_snapshot.py")
-        try:
-            run("v3_collect_market.py")
-        except subprocess.CalledProcessError as error:
-            if not (ROOT / "data/current/xnet_market_state.json").exists():
-                raise  # No verified fallback available.
-            state.setdefault("source_errors", {})["market"] = {
-                "error": str(error),
-                "failed_at_utc": stamp(),
-                "automatic_recheck": True,
-            }
-            print("::warning::Market refresh failed; keeping last-good market data.", flush=True)
-        else:
-            state.setdefault("source_errors", {}).pop("market", None)
-
-        # Publish one coherent payload for Dune LiveFetch. The component files
-        # remain available for provenance/debugging, but the live Current
-        # Snapshot reads this single bundle so it cannot straddle Git commits.
-        run("v3_build_live_bundle.py")
-        save(STATE, state)
-        publish()
-        # Canonical data, rebuilt snapshots and their clock are now durable.
-        # A killed runner before this point can replay the same source result.
-        for spec in consumed_sources:
-            tracker(state).acknowledge(spec, state["queries"][spec["key"]])
-            state.setdefault("source_errors", {}).pop(spec["key"], None)
-        # Any failure to publish/reduce stays global fail-closed, never masked.
-        save(STATE, state)
+        publish_data_generation(state, paths, source_records)
         forced = set(state.get("forced_presentations", []))
         due_presentation = []
         # Historical corrections take priority over ordinary cadence so Dune
@@ -1200,6 +1346,9 @@ def main():
         # Confirmed terminal failures wait for bounded backoff. Pending work is
         # exempt so existing execution IDs are always reconciled first.
         due_presentation = [s for s in due_presentation if not presentation_in_backoff(state, s["key"])]
+        if billing is None:
+            due_presentation = [s for s in due_presentation
+                                if state.get("pending_executions", {}).get(s["key"], {}).get("execution_id")]
         unknown = ambiguous_submission_keys(state)
         if unknown:
             # A Dune execute HTTP 5xx may have accepted work. One such
@@ -1211,7 +1360,8 @@ def main():
                 "reconciliation required. No new Dune queries submitted.",
                 flush=True,
             )
-            due_presentation = []
+            due_presentation = [s for s in due_presentation
+                                if state.get("pending_executions", {}).get(s["key"], {}).get("execution_id")]
 
         # Bound each cron run so one slow cached chart cannot consume the
         # whole GitHub Actions timeout. Overdue charts simply remain due for
@@ -1225,20 +1375,32 @@ def main():
 
         presentation_errors = {}
         for spec in due_presentation[:max_presentation]:
+            acceptance_before = None
             try:
                 # Do not download presentation rows: charts use Dune's cached
                 # executions. Presentation failures are fail-soft because the
                 # previous successful Dune result remains valid.
-                state["queries"][spec["key"]] = execute(
+                record = execute(
                     spec,
                     timeout_seconds=presentation_timeout,
                     state=state,
                 )
-                tracker(state).acknowledge(spec, state["queries"][spec["key"]])
+                # Execute/checkpoints are already durable. Roll back only the
+                # local acceptance attempt if its validation fails, never the ID.
+                acceptance_before = deepcopy(state)
+                stage_consumption(state, spec, record, "presentation_terminal_success")
+                state["queries"][spec["key"]] = record
                 state.get("presentation_errors", {}).pop(spec["key"], None)
                 forced.discard(spec["key"])
                 state["forced_presentations"] = sorted(forced)
+                checkpoint(state)
+            except StateError:
+                raise
             except Exception as error:
+                if acceptance_before is not None:
+                    state.clear()
+                    state.update(acceptance_before)
+                    forced = set(state.get("forced_presentations", []))
                 previous = state.get("presentation_errors", {}).get(spec["key"], {})
                 terminal = isinstance(error, (
                     ExecutionCancelled, ExecutionFailed, ExecutionCostExceeded,
@@ -1265,7 +1427,11 @@ def main():
                 presentation_errors
             )
             save(STATE, state)
-        state.update({"completed_at_utc": stamp(), "last_error": None, "billing": usage_guard()})
+        try:
+            state["billing"] = usage_guard(state)
+        except BudgetBlocked:
+            pass  # New spending denied; accepted known work remains publishable.
+        state.update({"completed_at_utc": stamp(), "last_error": None})
         # Health is reconciled after successful source commits, not before them.
         if HEALTH.exists():
             health = load(HEALTH, {})
@@ -1274,9 +1440,18 @@ def main():
             health["reconciliation"] = state.get("reconciliation", {})
             health["automatic_retry"] = True
             save(HEALTH, health)
-        save(STATE, state)
-        publish()
+        checkpoint(state)
         return 0
+    except ManualReviewRequired as error:
+        quarantine_source(state, "xnet_transfers", str(error))
+        checkpoint(state)
+        print(f"::warning::{error}", flush=True)
+        return 0
+    except StateError as error:
+        # Never follow an uncertain publication with a compensating publication.
+        # The exact candidate, its journal and store intent remain recovery evidence.
+        print(f"Durability barrier: {error}; preserve diagnostic artifacts and reconcile.", file=sys.stderr)
+        return 1
     except ExecutionPending as error:
         # Recover unresolved work on the next schedule without a global pause.
         state.update({"last_pending_error": str(error), "pending_at_utc": stamp()})
@@ -1296,7 +1471,7 @@ def main():
         save(HEALTH, old_health)
         # Preserve last verified measurements but expose pause in health metadata.
         try:
-            publish()
+            checkpoint(state)
         except Exception:
             print("Could not persist pause. Review workflow artifact before resuming.", file=sys.stderr)
         print(str(error), file=sys.stderr)

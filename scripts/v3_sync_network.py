@@ -572,9 +572,7 @@ def main() -> int:
         REFRESH_STATE,
         {"schema_version": 1, "queries": {}},
     )
-    if refresh_state.get("paused"):
-        print("Dune globally paused; deferring network source calls until recovery.")
-        return 0
+    # Chain/Dune holds must not disable independent, non-Dune telemetry.
     previous = (
         refresh_state.get("external_sources", {})
         .get("network", {})

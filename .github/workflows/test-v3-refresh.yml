@@ -6,6 +6,7 @@ on:
     paths:
       - "scripts/v3_*.py"
       - "tests/test_v3_*.py"
+      - "requirements-test.txt"
       - "scripts/sync_revenue.py"
       - "tests/test_sync_revenue_epoch.py"
       - "scripts/v3_refresh_dashboard.py"
@@ -30,6 +31,7 @@ on:
     paths:
       - "scripts/v3_*.py"
       - "tests/test_v3_*.py"
+      - "requirements-test.txt"
       - "scripts/sync_revenue.py"
       - "tests/test_sync_revenue_epoch.py"
       - "scripts/v3_refresh_dashboard.py"
@@ -63,6 +65,8 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
+      - name: Install pinned test dependencies
+        run: python -m pip install -r requirements-test.txt
       - name: Test complete offline regression and fault-injection suite
         run: python -m unittest discover -s tests -p 'test_*.py' -v
       - name: Check publisher syntax

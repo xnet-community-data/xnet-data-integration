@@ -7,6 +7,8 @@ Fail-safe rules:
 - device history is merged into the last-known-good history
 - network outputs are replaced only after both upstreams validate
 - upstream failure preserves the current network files
+- a missing or invalid execution journal refuses the run: this source never
+  initializes or blanks the authoritative journal it only annotates
 - cadence is read from config/v3_pipeline.json
 """
 from __future__ import annotations
@@ -20,6 +22,8 @@ import urllib.error
 import urllib.request
 from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
+
+from v3_live_state_store import StateError, validate_journal
 
 ROOT = Path(__file__).resolve().parents[1]
 PIPELINE = ROOT / "config/v3_pipeline.json"
@@ -49,6 +53,23 @@ def load_json(path: Path, default):
     if not path.exists():
         return default
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def load_journal() -> dict:
+    """Load the authoritative execution journal, refusing anything invalid.
+
+    This source only annotates ``external_sources.network``, so it must never
+    create or replace the journal: a missing or invalid journal raises instead
+    of being initialized, which prevents a standalone invocation from blanking
+    the accepted ledger it has no authority over.
+    """
+    try:
+        raw = REFRESH_STATE.read_bytes()
+    except OSError as error:
+        raise StateError(
+            f"authoritative execution journal is unreadable at {REFRESH_STATE}: {error}"
+        ) from error
+    return validate_journal(raw)
 
 
 def save_json(path: Path, value) -> None:
@@ -527,7 +548,10 @@ def replace_network_outputs(network_state, device_history, offload_monthly):
 
 
 def mark_attempt(status: str, error: str | None = None, success=None):
-    state = load_json(REFRESH_STATE, {"schema_version": 1, "queries": {}})
+    # Re-validate immediately before the write: the journal is reloaded from disk
+    # and must still be a valid v1 journal, so this path can neither invent nor
+    # truncate the accepted ledger.
+    state = load_journal()
     external = state.setdefault("external_sources", {})
     previous = external.get("network", {})
     record = {
@@ -568,10 +592,17 @@ def uncommitted_network_collection(previous: dict, published: dict) -> bool:
 
 
 def main() -> int:
-    refresh_state = load_json(
-        REFRESH_STATE,
-        {"schema_version": 1, "queries": {}},
-    )
+    # The journal is validated before the cadence check and before any fetch, so
+    # an absent or invalid journal is refused rather than silently initialized
+    # (the chain and --cached-only paths both arrive here with a validated one).
+    try:
+        refresh_state = load_journal()
+    except StateError as error:
+        print(
+            "WARNING: refusing network refresh; authoritative execution journal "
+            f"is not valid: {error}"
+        )
+        return 1
     # Chain/Dune holds must not disable independent, non-Dune telemetry.
     previous = (
         refresh_state.get("external_sources", {})
@@ -674,7 +705,16 @@ def main() -> int:
         json.JSONDecodeError,
     ) as exc:
         message = str(exc)
-        mark_attempt("preserved_last_good", error=message)
+        try:
+            mark_attempt("preserved_last_good", error=message)
+        except StateError as journal_error:
+            # The attempt record needs a valid journal; refuse rather than write
+            # anything over an invalid accepted ledger.
+            print(
+                "WARNING: refusing network refresh; authoritative execution journal "
+                f"is not valid: {journal_error}"
+            )
+            return 1
         print(
             "WARNING: network API refresh unavailable or invalid; "
             "preserving last-good network files:",

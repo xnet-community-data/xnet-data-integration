@@ -13,18 +13,6 @@
   "execution_history": [
     {
       "cancellation_requested_at_utc": null,
-      "execution_cost_credits": 0.116441177,
-      "execution_ended_at": "2026-10-11T03:23:42.2438136Z",
-      "execution_id": "01M4MFSNCNSNZYF5GH02GTPRXE",
-      "execution_started_at": "2026-10-11T03:23:42.026816572Z",
-      "key": "current",
-      "query_id": 8894185,
-      "query_parameters": {},
-      "state": "QUERY_STATE_COMPLETED",
-      "submitted_at_utc": "2026-10-11T03:23:38Z"
-    },
-    {
-      "cancellation_requested_at_utc": null,
       "execution_cost_credits": 0.113008374,
       "execution_ended_at": "2026-10-11T03:23:50.869006573Z",
       "execution_id": "01M4MFSYPEX2FZ6V9S75BX3VY5",
@@ -14806,6 +14794,24 @@
       "result_row_count": 4,
       "state": "QUERY_STATE_COMPLETED",
       "submitted_at_utc": "2026-10-16T21:00:06Z"
+    },
+    {
+      "cancellation_requested_at_utc": null,
+      "execution_cost_credits": 0.0,
+      "execution_ended_at": null,
+      "execution_id": "01M5B1HQBFK0629R29YBC6QYWW",
+      "execution_started_at": null,
+      "financial_attempt_id": null,
+      "key": "approved_repair_20261016",
+      "performance": null,
+      "query_id": 8894038,
+      "query_parameters": {
+        "newest_days_ago": 3,
+        "oldest_days_ago": 3
+      },
+      "shape_version": null,
+      "state": "QUERY_STATE_FAILED",
+      "submitted_at_utc": "2026-10-19T21:37:05.436639Z"
     }
   ],
   "external_sources": {
@@ -27201,7 +27207,7 @@
         "unresolved": false
       },
       "exec:01M5B1HQBFK0629R29YBC6QYWW": {
-        "cost_credits": null,
+        "cost_credits": 0.0,
         "execution_id": "01M5B1HQBFK0629R29YBC6QYWW",
         "incurred_at_utc": null,
         "kind": "execution",
@@ -27213,7 +27219,7 @@
         },
         "submission_id": null,
         "submitted_at_utc": "2026-10-19T21:37:05.436639Z",
-        "unresolved": true
+        "unresolved": false
       },
       "legacy_export:exec:01M4NGGNCRHPSAY36DY4VZ24M1:73bf9803160dc862cc8c01d8ce957b339fcbb0704e3838b884fc7d40f0d545c3:0": {
         "basis": "metered_legacy",
@@ -28531,7 +28537,6 @@
     "holders": "inc-a9e02f071baf30af",
     "network": "inc-b5a4f5bf2e573922",
     "pools": "inc-2a05dc1712aa4fd1",
-    "revenue": "inc-92bf01e82e3bdbf7",
     "tokenomics": "inc-f43de459c85104b2",
     "xnet_transfers": "inc-5def365d9f95bc93"
   },
@@ -28763,8 +28768,21 @@
       },
       "submitted_at_utc": "2026-10-19T21:37:05.436639Z",
       "terminal_status": {
-        "execution_cost_credits": null,
-        "state": "QUERY_STATE_FAILED"
+        "error": {
+          "message": "line 13:10: Failed analyzing stored view 'delta_prod.tokens_solana.transfers': line 3:3: Failed analyzing stored view 'delta_prod.sqlmesh__tokens_solana.tokens_solana__transfers__729276291': Metadata not found in transaction log for sqlmesh__tokens_solana.tokens_solana__sol_close_account_2022_transfers_001__2613867455 at line 13, position 10 [Execution ID: 01M5B1HQBFK0629R29YBC6QYWW]",
+          "metadata": {
+            "column": 10,
+            "line": 13
+          },
+          "type": "FAILED_TYPE_EXECUTION_FAILED"
+        },
+        "execution_cost_credits": 0.0,
+        "execution_id": "01M5B1HQBFK0629R29YBC6QYWW",
+        "expires_at": "2027-01-17T21:37:25.295383Z",
+        "is_execution_finished": true,
+        "query_id": 8894038,
+        "state": "QUERY_STATE_FAILED",
+        "submitted_at": "2026-10-19T21:37:12.559921Z"
       },
       "timeout_seconds": 360
     }

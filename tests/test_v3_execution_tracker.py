@@ -456,15 +456,18 @@ class RecoveryIntegrationTests(unittest.TestCase):
              patch.object(self.refresh, "export_source", return_value=3000), \
              patch.object(self.refresh, "validate_hot_transfers"), \
              patch.object(self.refresh, "reduce_atomically", reduce), \
-             patch.object(self.refresh, "run"), patch.object(self.refresh, "publish"):
-            self.assertEqual(self.refresh.main(), 1)
+             patch.object(self.refresh, "run") as run, patch.object(self.refresh, "publish") as publish:
+            self.assertEqual(self.refresh.main(), 0)
         saved = json.loads(self.state_path.read_text())
-        self.assertTrue(saved["paused"])
+        self.assertFalse(saved["paused"])
+        self.assertIn("reducer failed", saved["source_errors"]["xnet_transfers"]["error"])
         self.assertEqual(saved["pending_executions"]["xnet_transfers"]["execution_id"], "recover")
         # A pre-publish failure must roll the working data back to last-good.
         self.assertFalse(partial.exists())
+        self.assertIn("v3_build_live_bundle.py", [call.args[0] for call in run.call_args_list])
+        publish.assert_any_call()  # Independent dashboard generation still published.
 
-    def test_expensive_transfer_is_quarantined_while_dashboard_stays_live(self):
+    def test_known_expensive_transfer_reaches_validation_with_audit_and_no_resubmit(self):
         status = {"state": "QUERY_STATE_COMPLETED",
                   "execution_cost_credits": 7.14,
                   "execution_ended_at": self.fixed.isoformat(),
@@ -477,7 +480,13 @@ class RecoveryIntegrationTests(unittest.TestCase):
             self.assertEqual(self.refresh.main(), 0)
         saved = json.loads(self.state_path.read_text())
         self.assertFalse(saved["paused"])
-        self.assertTrue(saved["source_errors"]["xnet_transfers"]["next_retry_at_utc"])
+        # Cost is already spent. Recovery reaches source validation, which in
+        # this fixture refuses a missing canonical ledger, NOT the post-run cap.
+        self.assertTrue(saved["source_errors"]["xnet_transfers"]["manual_reconciliation_required"])
+        self.assertIsNone(saved["source_errors"]["xnet_transfers"]["next_retry_at_utc"])
+        self.assertEqual(saved["pending_executions"]["xnet_transfers"]["execution_id"], "recover")
+        self.assertEqual(saved["cost_outliers"]["recover"]["observed_cost_credits"], 7.14)
+        self.assertEqual(saved["cost_outliers"]["recover"]["recovery_policy"], "accept_completed_outlier")
         self.assertEqual(json.loads((self.root / "health.json").read_text())["status"], "DEGRADED")
         reduce.assert_not_called()
         with patch("sys.argv", ["refresh"]), patch.object(self.refresh, "now", return_value=self.fixed), \

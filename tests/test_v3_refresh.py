@@ -76,6 +76,11 @@ class RefreshTests(unittest.TestCase):
             self.assertEqual(original.read_text(), "last good data")
             self.assertFalse((root / "data/partial.json").exists())
 
+    def test_bbb_only_reducer_invocation_does_not_fetch_or_rebuild_transfers(self):
+        with patch.object(refresh, "run") as run:
+            refresh.reduce_atomically(None, "bbb.json")
+        run.assert_called_once_with("v3_reduce_chain.py", "--bbb-result", "bbb.json", "--allow-stale-holders")
+
     def test_cadence_skips_early_runs_and_catches_up(self):
         from datetime import timedelta
         fixed = refresh.now()
@@ -174,8 +179,18 @@ class RefreshTests(unittest.TestCase):
                      "limit_credits": 100.0, "usage_plus_reserve": 40.0, "dependencies_total": 10.0}}}}
         cache = Mock()
         cache.lookup.return_value = None  # read-only miss: nothing cached, nothing staged
+        def cache_factory(callback):
+            def prepare(candidate, record, binding, **kwargs):
+                candidate["result_exports"]["requests"]["fixture-key"] = {
+                    "execution_id": record["execution_id"], "status": "requested",
+                    "requested_at_utc": kwargs["timestamp"], "risk_credits": kwargs["risk_credits"]}
+                callback(candidate)
+            cache.prepare_export.side_effect = prepare
+            return cache
         order = Mock()
-        with patch.object(refresh, "result_cache", return_value=cache), \
+        with patch.object(refresh, "result_cache", side_effect=cache_factory), \
+             patch.object(refresh, "checkpoint"), \
+             patch.object(refresh, "require_operation_approval", return_value={"operation_id": "fixture-read"}), \
              patch.object(refresh, "export_risk", return_value=(5.0, ["3 comparable samples"])) as risk, \
              patch.object(refresh, "usage_guard") as guard, \
              patch.object(refresh, "api", return_value=({"state": "QUERY_STATE_COMPLETED",
@@ -209,9 +224,9 @@ class RefreshTests(unittest.TestCase):
         self.assertTrue(cache.cache_result.call_args.kwargs["timestamp"].endswith("Z"))
         self.assertEqual(record["export_points"], 4)
         self.assertEqual(record["export_wire_bytes"], 400)
-        # The charge is the larger of declared result bytes and observed wire bytes, per MB.
+        # Provider metadata is not a wire charge. Only this completed read is metered.
         self.assertAlmostEqual(record["estimated_export_credits"],
-                               1500000 / 1000000 * refresh.CONFIG["export_credits_per_megabyte"])
+                               400 / 1000000 * refresh.CONFIG["export_credits_per_megabyte"])
         self.assertEqual(save.call_args.args[0], refresh.ROOT / spec["output"])
         self.assertEqual(save.call_args.args[1]["result"]["rows"], rows)
 
@@ -294,7 +309,7 @@ class RefreshTests(unittest.TestCase):
             self.assertEqual(committed["queries"], {})
             self.assertEqual(committed.get("pending_executions", {}), {})
             self.assertNotIn("consumed_executions", committed)
-            self.assertEqual(set(committed) - set(original), {"operational_incidents"})
+            self.assertEqual(set(committed) - set(original), {"operational_incidents", "source_errors", "financial_journal", "pending_executions"})
             self.assertIn("Chain pause retained: True", summary.read_text())
             self.assertEqual(json.loads(health.read_text())["status"], "PAUSED")
             self.assertEqual(json.loads(health.read_text())["last_refresh_completed_utc"], "2026-10-09T08:25:19Z")

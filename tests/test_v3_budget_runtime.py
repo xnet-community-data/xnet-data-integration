@@ -22,6 +22,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 import v3_budget_runtime as rt
 import v3_result_cache as v3cache
 from v3_credit_budget import BudgetInputError
+from v3_financial_journal import export_attempt_id, synchronize_financial_journal, record_export_outcome
 
 CONFIG_PATH = ROOT / "config" / "v3_refresh.json"
 REAL_CONFIG = json.loads(CONFIG_PATH.read_text()) if CONFIG_PATH.exists() else None
@@ -112,6 +113,8 @@ def tracker_history(base_utc="2026-11-03T21:00:00Z"):
             }
             if result_bytes is not None:
                 row["result_bytes"] = result_bytes
+                row["export_wire_bytes"] = result_bytes
+                row["export_requested_at_utc"] = ended
             rows.append(row)
     return rows
 
@@ -304,13 +307,14 @@ class LiabilityIntegrationTests(unittest.TestCase):
         ))
 
     def test_export_and_compute_liabilities_share_the_row_id_pair(self):
-        items = run()["report"]["outstanding_liabilities"]["items"]
+        state = tracker_state()
+        synchronize_financial_journal(state)
+        items = run(state=state)["report"]["outstanding_liabilities"]["items"]
         by_id = {item["liability_id"]: item for item in items}
-        for item in by_id.values():
-            if item["kind"] != "export":
-                continue
-            base = item["liability_id"][len("export:"):]
-            self.assertIn(f"exec:{base}", by_id)
+        for row in state["execution_history"]:
+            if row.get("export_attempt_id"):
+                self.assertIn(row["export_attempt_id"], by_id)
+                self.assertIn(f"exec:{row['execution_id']}", by_id)
 
     def test_consumed_executions_are_not_settlement_proof(self):
         """``consumed_executions`` does not certify the cost sits inside the
@@ -334,7 +338,7 @@ class LiabilityIntegrationTests(unittest.TestCase):
             result["diagnostics"]["liabilities"]["settled_ids_flagged"], []
         )
 
-    def test_cost_reconciliation_lane_is_honored_with_snapshot_evidence(self):
+    def test_numerically_bound_snapshot_is_not_charge_inclusion_proof(self):
         settled = [f"{key}#0" for key, _, _, _, _ in SCHEDULE_SOURCES]
         result = run(state=tracker_state(reconcile={
             "usage_snapshot": {
@@ -345,19 +349,14 @@ class LiabilityIntegrationTests(unittest.TestCase):
             "settled_execution_ids": settled,
         }))
         self.assertEqual(result["status"], "admitted")
-        expected = TOTAL_OUTSTANDING - RECONCILE_SUBSET_COST
+        expected = TOTAL_OUTSTANDING
         self.assertAlmostEqual(
             result["report"]["totals"]["outstanding_liability_credits"],
             expected,
         )
         flagged = result["diagnostics"]["liabilities"]["settled_ids_flagged"]
-        # Every `{key}#0` compute row plus the byte-bearing export rows in
-        # that subset (xnet, bbb, both manifests): 11 + 4.
-        self.assertEqual(len(flagged), 2 * 4 + 7)
-        self.assertIn("exec:manifest:daily#0", flagged)
-        self.assertIn("export:manifest:daily#0", flagged)
-        self.assertIn("exec:presentation:current#0", flagged)
-        self.assertNotIn("export:presentation:current#0", flagged)
+        self.assertEqual(flagged, [])
+        self.assertTrue(result["diagnostics"]["liabilities"]["legacy_settlement_ignored"])
 
     def test_top_level_settled_ids_are_not_settlement_proof(self):
         state = tracker_state()
@@ -495,7 +494,7 @@ class LiabilityIntegrationTests(unittest.TestCase):
         result = run(state=tracker_state(history=history))
         self.assertEqual(result["status"], "blocked")
         self.assertTrue(any(
-            blocker.startswith("unknown_outstanding_liability:export:e-hint")
+            blocker.startswith("unknown_outstanding_liability:legacy_export:exec:e-hint")
             for blocker in result["blockers"]
         ))
 
@@ -521,7 +520,7 @@ class LiabilityIntegrationTests(unittest.TestCase):
         export_item = next(
             item for item in items
             if item["kind"] == "export"
-            and item["liability_id"] == "export:e-metered-export"
+            and item["liability_id"].startswith("legacy_export:exec:e-metered-export:")
         )
         self.assertAlmostEqual(export_item["cost_credits"], 3.25)
 
@@ -540,6 +539,8 @@ class BillingPeriodLiabilityTests(unittest.TestCase):
             "execution_cost_credits": 2.5,
             "query_parameters": {"lookback_hours": 2},
             "result_bytes": 200_000 if with_export else 0,
+            "export_wire_bytes": 200_000 if with_export else 0,
+            "export_requested_at_utc": ended_at,
         }
         if ended_at is not None:
             row["execution_ended_at"] = ended_at
@@ -550,17 +551,19 @@ class BillingPeriodLiabilityTests(unittest.TestCase):
             self.prior_row("e-prior-1", "2026-09-20T12:00:00Z"),
             self.prior_row("e-prior-2", "2026-10-04T00:00:00Z"),
         ]
-        result = run(state=tracker_state(history=history))
+        state = tracker_state(history=history)
+        synchronize_financial_journal(state)
+        result = run(state=state)
         self.assertEqual(result["status"], "admitted")
         # Both the compute AND the export side of prior-period rows vanish.
         self.assertAlmostEqual(
             result["report"]["totals"]["outstanding_liability_credits"],
             TOTAL_OUTSTANDING,
         )
-        self.assertEqual(
-            result["diagnostics"]["liabilities"]["prior_period_excluded_ids"],
-            ["exec:e-prior-1", "exec:e-prior-2"],
-        )
+        expected_exports = {row["export_attempt_id"] for row in state["execution_history"]
+                            if row["execution_id"] in {"e-prior-1", "e-prior-2"}}
+        self.assertEqual(set(result["diagnostics"]["liabilities"]["prior_period_excluded_ids"]),
+                         {"exec:e-prior-1", "exec:e-prior-2"} | expected_exports)
 
     def test_row_ended_exactly_at_period_start_is_retained(self):
         history = tracker_history() + [
@@ -856,14 +859,10 @@ class MalformedIntegrationTests(unittest.TestCase):
 
 
 class ResultExportLaneTests(unittest.TestCase):
-    """Every ``result_exports`` marker counts until an authoritative
-    cost_reconciliation proof settles it: cached/consumed markers carry
-    their ``risk_credits`` estimate as a distinct export liability,
-    requested/in_progress/unknown are UNKNOWN and dominate. Anchors that
-    exist in history share the row's ``export:<execution-id>`` liability id
-    (max-merge prevents double counting); anchorless intents fall back to
-    ``result_export:<key>``. Missing lane: schema stays optional; malformed
-    lane raises."""
+    """Export attempts, not execution IDs, identify possible charges.
+
+    Cached/consumed risk is a reservation, not an observed charge or inclusion proof.
+    """
 
     def setUp(self):
         if REAL_CONFIG is None:
@@ -904,7 +903,7 @@ class ResultExportLaneTests(unittest.TestCase):
         items, diagnostics = rt.collect_outstanding_liabilities(
             deepcopy(state), REAL_CONFIG
         )
-        liability_id = f"export:{EXEC_ID}"
+        liability_id = export_attempt_id(key, "2026-10-18 12:00:00")
         self.assertIn(liability_id, diagnostics["unknown_liability_ids"])
         self.assertIn(
             liability_id, diagnostics["result_export_liability_ids"]
@@ -933,14 +932,15 @@ class ResultExportLaneTests(unittest.TestCase):
         items, diagnostics = rt.collect_outstanding_liabilities(
             state, REAL_CONFIG
         )
-        liability_id = "result_export:" + "aa" * 32
+        liability_id = export_attempt_id("aa" * 32, "2026-10-18 12:00:00")
         matching = [
             item for item in items if item["liability_id"] == liability_id
         ]
         self.assertEqual(len(matching), 1)
         self.assertIn(liability_id, diagnostics["result_export_liability_ids"])
-        self.assertEqual(matching[0].get("cost_credits"), 0.4)
-        self.assertIn(liability_id, diagnostics["known_liability_ids"])
+        self.assertIsNone(matching[0].get("cost_credits"))
+        self.assertEqual(matching[0]["reserved_credits"], 0.4)
+        self.assertIn(liability_id, diagnostics["unknown_liability_ids"])
 
     def test_cached_marker_is_counted_until_reconciled_even_when_consumed(self):
         state, key, cache, spec = self._stamped_state()
@@ -954,7 +954,12 @@ class ResultExportLaneTests(unittest.TestCase):
             {"execution_id": EXEC_ID, "total_row_count": 1, "result_rows": rows},
             timestamp="2026-10-18 12:05:00",
         )
-        liability_id = f"export:{EXEC_ID}"
+        liability_id = export_attempt_id(key, "2026-10-18 12:00:00")
+        # A complete cached payload does not meter its own wire charge.
+        _items, before = rt.collect_outstanding_liabilities(state, REAL_CONFIG)
+        self.assertIn(liability_id, before["unknown_liability_ids"])
+        synchronize_financial_journal(state)
+        record_export_outcome(state, liability_id, observed_credits=0.5)
         items, diagnostics = rt.collect_outstanding_liabilities(
             deepcopy(state), REAL_CONFIG
         )
@@ -1018,9 +1023,9 @@ class ResultExportLaneTests(unittest.TestCase):
 
 
 class ResultExportMergeTests(unittest.TestCase):
-    """Shared ``export:<execution-id>`` ids merge with a max numeric fold;
-    unknown contributions dominate known numbers so the same charge can
-    never be counted twice nor laundered into a known figure."""
+    """Only an explicit shared ATTEMPT id permits max-merge of telemetry.
+    Unknown attempts dominate known telemetry; execution dates do not date exports.
+    """
 
     def setUp(self):
         if REAL_CONFIG is None:
@@ -1045,16 +1050,22 @@ class ResultExportMergeTests(unittest.TestCase):
         return marker
 
     def _state(self, export_credits, marker):
+        key = hashlib.sha256(EXEC_ID.encode()).hexdigest()
+        row = self._history_row(export_credits)
+        row["export_attempt_id"] = export_attempt_id(key, marker["requested_at_utc"])
+        row["export_requested_at_utc"] = marker["requested_at_utc"]
         return {
-            "execution_history": [self._history_row(export_credits)],
+            "execution_history": [row],
             "pending_executions": {},
-            "result_exports": {"requests": {hashlib.sha256(
-                EXEC_ID.encode()).hexdigest(): marker}},
+            "result_exports": {"requests": {key: marker}},
         }
+
+    def _attempt_id(self, requested="2026-10-18 12:00:00"):
+        return export_attempt_id(hashlib.sha256(EXEC_ID.encode()).hexdigest(), requested)
 
     def test_history_and_cached_marker_merge_on_max_cost(self):
         for history_cost, marker_cost, expected in (
-            (0.7, 0.5, 0.7), (0.3, 0.5, 0.5),
+            (0.7, 0.5, 0.7), (0.3, 0.5, 0.3),
         ):
             with self.subTest(history=history_cost, marker=marker_cost):
                 state = self._state(
@@ -1063,13 +1074,14 @@ class ResultExportMergeTests(unittest.TestCase):
                 items, diagnostics = rt.collect_outstanding_liabilities(
                     state, REAL_CONFIG
                 )
-                liability_id = f"export:{EXEC_ID}"
+                liability_id = self._attempt_id()
                 merged = [
                     item for item in items
                     if item["liability_id"] == liability_id
                 ]
                 self.assertEqual(len(merged), 1)
                 self.assertAlmostEqual(merged[0]["cost_credits"], expected)
+                self.assertAlmostEqual(merged[0]["reserved_credits"], marker_cost)
                 self.assertIn(
                     liability_id, diagnostics["result_export_liability_ids"]
                 )
@@ -1087,12 +1099,12 @@ class ResultExportMergeTests(unittest.TestCase):
         )
         merged = [
             item for item in items
-            if item["liability_id"] == f"export:{EXEC_ID}"
+            if item["liability_id"] == self._attempt_id()
         ]
         self.assertEqual(len(merged), 1)
         self.assertNotIn("cost_credits", merged[0])  # unknown dominates
         self.assertIn(
-            f"export:{EXEC_ID}", _diagnostics["unknown_liability_ids"]
+            self._attempt_id(), _diagnostics["unknown_liability_ids"]
         )
 
     def test_unknown_estimate_is_not_assumed_cheap(self):
@@ -1104,24 +1116,10 @@ class ResultExportMergeTests(unittest.TestCase):
                 "requested_at_utc": "2026-10-18 12:00:00",
             }}},
         }
-        items, diagnostics = rt.collect_outstanding_liabilities(
-            state, REAL_CONFIG
-        )
-        matching = [
-            item for item in items
-            if item["liability_id"] == "result_export:" + "bb" * 32
-        ]
-        self.assertEqual(len(matching), 1)
-        self.assertNotIn("cost_credits", matching[0])
-        self.assertIn(
-            "result_export:" + "bb" * 32,
-            diagnostics["unknown_liability_ids"],
-        )
+        with self.assertRaises(BudgetInputError):
+            rt.collect_outstanding_liabilities(state, REAL_CONFIG)
 
-    def test_marker_prior_period_follows_provider_then_requested_at(self):
-        # Provider exists and ended in the current period: provider rule
-        # wins over an old requested_at stamp (2026-09-01). The row must
-        # stay in the fold and may not be prior-excluded.
+    def test_export_period_uses_attempt_not_provider_execution_date(self):
         state = self._state(0.3, {
             "status": "cached",
             "execution_id": EXEC_ID,
@@ -1132,13 +1130,9 @@ class ResultExportMergeTests(unittest.TestCase):
             deepcopy(state), REAL_CONFIG,
             period_start_utc=rt.parse_instant(PERIOD_START, "period"),
         )
-        self.assertEqual(
-            evaluated[1]["prior_period_excluded_ids"], []
-        )
-        self.assertIn(
-            f"export:{EXEC_ID}",
-            [item["liability_id"] for item in evaluated[0]],
-        )
+        self.assertEqual(evaluated[1]["prior_period_excluded_ids"],
+                         [self._attempt_id("2026-09-01T00:00:00Z")])
+        self.assertIn(f"exec:{EXEC_ID}", [item["liability_id"] for item in evaluated[0]])
 
     def test_prior_period_requested_marker_is_excluded_but_dated(self):
         # No history provider: the marker's requested_at_utc places it in
@@ -1153,11 +1147,14 @@ class ResultExportMergeTests(unittest.TestCase):
                 "requested_at_utc": "2026-09-15T00:00:00Z",
             }}},
         }
+        synchronize_financial_journal(state)
+        record_export_outcome(state, export_attempt_id("cc" * 32, "2026-09-15T00:00:00Z"),
+                              observed_credits=0.5)
         evaluated = rt.collect_outstanding_liabilities(
             deepcopy(state), REAL_CONFIG,
             period_start_utc=rt.parse_instant(PERIOD_START, "period"),
         )
-        key_id = "result_export:" + "cc" * 32
+        key_id = export_attempt_id("cc" * 32, "2026-09-15T00:00:00Z")
         self.assertIn(key_id, evaluated[1]["prior_period_excluded_ids"])
         self.assertFalse(any(
             item["liability_id"] == key_id for item in evaluated[0]
@@ -1171,12 +1168,11 @@ class ResultExportMergeTests(unittest.TestCase):
             period_start_utc=rt.parse_instant(PERIOD_START, "period"),
         )
         self.assertIn(
-            key_id, [item["liability_id"] for item in evaluated[0]]
+            export_attempt_id("cc" * 32, "not-a-moment"),
+            [item["liability_id"] for item in evaluated[0]]
         )
 
-    def test_bound_reconciliation_settles_shared_marker_and_row(self):
-        # Bound snapshot (equal credits + equal period bounds) + settled
-        # execution id: the shared export liability is covered by usage.
+    def test_bound_snapshot_does_not_settle_attempt_or_compute(self):
         state = self._state(0.5, self._marker("cached", risk=0.5))
         state["cost_reconciliation"] = {
             "usage_snapshot": {
@@ -1193,13 +1189,13 @@ class ResultExportMergeTests(unittest.TestCase):
                            "period_start_utc": PERIOD_START,
                            "period_end_utc": PERIOD_END},
         )
-        self.assertIn(
-            f"export:{EXEC_ID}", evaluated[1]["settled_ids_flagged"]
-        )
+        self.assertEqual(evaluated[1]["settled_ids_flagged"], [])
+        self.assertIn(self._attempt_id(), evaluated[1]["known_liability_ids"])
+        self.assertIn(f"exec:{EXEC_ID}", evaluated[1]["known_liability_ids"])
 
 
 class ReconciliationBindingTests(unittest.TestCase):
-    """The settle skip only honors proven, bound evidence."""
+    """Neither stale nor numerically matching aggregate usage proves inclusion."""
 
     def test_stale_snapshot_never_skips(self):
         settled = [f"{key}#0" for key, _, _, _, _ in SCHEDULE_SOURCES]

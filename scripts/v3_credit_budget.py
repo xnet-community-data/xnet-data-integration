@@ -24,10 +24,10 @@ knowable before running it; exports charge per MB; usage may lag. Therefore:
   without evidence is an unknown cost that blocks. Byte caps are never
   quotes and are rejected as inputs;
 - unsettled liabilities (pending executions with unknown terminal cost,
-  unknown export intents) block; known compute/export costs stay outstanding
-  until the caller marks them ``included_in_confirmed_usage`` backed by
-  reconciliation evidence. Duplicate liability ids resolve to the MAXIMUM
-  known cost;
+  unknown export intents) block; known compute/export costs stay outstanding.
+  Legacy inclusion booleans and aggregate usage equality are not settlement
+  evidence. Duplicate liability ids resolve to the MAXIMUM known cost, with
+  unknown contributors dominating;
 - ceilings: ``limit = min(credits_included, guard, monthly_target)`` (the
   emergency guard must stay configured) plus, optionally, an unforecastable
   buffer below the monthly target.
@@ -239,6 +239,38 @@ def select_active_period(billing_periods, now_utc):
     return {"period": None, "reasons": reasons, "candidates": candidates}
 
 
+def normalize_usage(usage, now_utc):
+    """One period/counter parser for admission AND liability attribution.
+
+    No date-only renewal inference, settlement inference, or network I/O.
+    Normalized legacy payloads may omit a start; that cannot authorize period
+    attribution or a period allowance, but remains readable by v1 callers.
+    """
+    now = parse_instant(now_utc, "now_utc")
+    if not isinstance(usage, dict):
+        raise BudgetInputError("usage must be an object")
+    if "billing_periods" in usage or "billingPeriods" in usage:
+        selected = select_active_period(
+            usage.get("billing_periods", usage.get("billingPeriods")), now)
+        return {"period": selected["period"], "reasons": selected["reasons"],
+                "blockers": [] if selected["period"] else ["no_active_billing_period"]}
+    used = _finite_nonnegative_number(usage.get("credits_used"), "usage credits_used")
+    included = _finite_nonnegative_number(usage.get("credits_included"), "usage credits_included")
+    start = usage.get("period_start_utc")
+    start = None if start is None else parse_instant(start, "usage period_start_utc")
+    end_raw = usage.get("period_end_utc")
+    inexact = _is_date_only(end_raw) or usage.get("exact_end") is False
+    end = None if inexact else parse_instant(end_raw, "usage period_end_utc")
+    if start is not None and end is not None and start >= end:
+        raise BudgetInputError("billing period start must precede end")
+    return {"period": {"credits_used": used, "credits_included": included,
+                       "period_start_utc": start, "period_end_utc": end,
+                       "inexact_source_end_date": end_raw if inexact else None},
+            "blockers": ["period_end_not_exact_utc"] if inexact else [],
+            "reasons": ["period_end_not_exact_utc: date-only or declared-inexact renewal; "
+                        "midnight truncation is refused"] if inexact else []}
+
+
 # ---- observed samples and the estimator -------------------------------------
 
 _SHAPE_KEYS = ("shape_version", "shape", "schema_version")
@@ -268,8 +300,7 @@ def _sample_anchor(record, index):
 def _sample_export_bytes(record, index):
     """Number of bytes this sample is evidence the operation must move."""
     value = _EXPORT_UNSET
-    for key in ("total_result_set_bytes", "result_bytes", "result_set_bytes",
-                "export_wire_bytes"):
+    for key in ("export_wire_bytes",):
         if record.get(key) is not None:
             candidate = _finite_nonnegative_number(
                 record[key], f"sample[{index}].{key}"
@@ -478,7 +509,6 @@ def _estimate_rows(grouped_rows, *, now_utc, max_age_hours, min_count,
 
     costs = [row["execution_cost_credits"] for row in comparable]
     mean = statistics.fmean(costs)
-    spread = statistics.stdev(costs)
     observed_max = max(costs)
     estimate = _uplifted_envelope(costs, uplift_sigma)
     export_values = []
@@ -500,6 +530,8 @@ def _estimate_rows(grouped_rows, *, now_utc, max_age_hours, min_count,
     return {
         "status": "sampled",
         "estimate": estimate,
+        "estimate_is_hard_cap": False,
+        "estimate_quality": "single_observation_no_dispersion" if len(costs) == 1 else "empirical_envelope",
         "reasons": [],
         "evidence": {
             "comparable_count": len(comparable),
@@ -544,16 +576,22 @@ def outstanding_liabilities(items, *, export_credits_per_megabyte=None):
       - ``cost_credits``: observed execution cost, or
         ``total_result_set_bytes``/``result_set_bytes`` for a computed export
         charge using the passed per-MB scale,
-      - ``included_in_confirmed_usage``: True only when the caller has
-        reconciled that Dune's ``credits_used`` already covers this item;
-        then it is skipped (no double counting).
+      - ``included_in_confirmed_usage``: legacy readable boolean, ignored.
+        A flag or numerically matching usage is not charge-level evidence.
 
     Duplicate ids no longer discard the higher risk: when two entries for the
     same id disagree on cost, the MAXIMUM is used and the conflict is recorded
     in ``reasons``. Items without a credible cost are returned in ``unknown``
     and the caller must block; nothing is capped or guessed.
 
-    Returns {"total", "items", "skipped", "unknown", "reasons"}."""
+    ``total`` and ``known_floor_credits`` retain the known numeric portion even
+    when the same identity has unknown exposure. ``exposure_is_fully_known`` is
+    false in that case; items carry ``cost_is_lower_bound`` and must NOT be
+    interpreted as a complete estimate or permission to spend. Refolding those
+    items preserves the unknown signal.
+
+    Returns {"total", "known_floor_credits", "exposure_is_fully_known",
+             "items", "skipped", "unknown", "reasons"}."""
     if not isinstance(items, (list, tuple)):
         raise BudgetInputError("outstanding liabilities must be a list")
     if export_credits_per_megabyte is not None:
@@ -588,25 +626,20 @@ def outstanding_liabilities(items, *, export_credits_per_megabyte=None):
             )
         else:
             included = False
-        if included and identity in items_by_id:
-            reasons.append(
-                f"liability[{identity}] later entry already settled "
-                "(first-wins on conflict with a settled item:"
-                " no double counting)"
-            )
-            skipped.append({"liability_id": identity, "reason": "settled_entry_ignored"})
-            continue
         if included:
             reasons.append(
-                f"liability[{identity}] skipped: caller-verified already "
-                "inside confirmed usage (no double counting)"
+                f"liability[{identity}] legacy inclusion flag ignored: "
+                "a boolean is not charge-level billing inclusion evidence"
             )
-            skipped.append(
-                {"liability_id": identity, "reason": "already_in_confirmed_usage"}
-            )
-            continue
 
-        if item.get("cost_credits") is not None:
+        is_floor = item.get("known_cost_floor_credits") is not None
+        if is_floor:
+            unknown.append({"liability_id": identity, "kind": kind,
+                            "reason": "unknown_above_observed_floor"})
+            observed = item.get("cost_credits")
+            cost = max(_finite_nonnegative_number(item["known_cost_floor_credits"], "known cost floor"),
+                       _finite_nonnegative_number(0 if observed is None else observed, "known cost"))
+        elif item.get("cost_credits") is not None:
             cost = _finite_nonnegative_number(
                 item["cost_credits"], f"liability[{index}] cost_credits"
             )
@@ -631,26 +664,9 @@ def outstanding_liabilities(items, *, export_credits_per_megabyte=None):
                 continue
             cost = export_liability_estimate(raw_bytes, export_credits_per_megabyte)
         else:
-            if identity in items_by_id:
-                reasons.append(
-                    f"liability[{identity}] duplicate carries no cost; the "
-                    "first known cost is retained"
-                )
-                skipped.append(
-                    {"liability_id": identity, "reason": "dup_without_cost"}
-                )
-            else:
-                reasons.append(
-                    f"liability[{identity}] has no sample-backed or computed "
-                    "cost; cap-based guessing is refused"
-                )
-                unknown.append(
-                    {
-                        "liability_id": identity,
-                        "kind": kind,
-                        "reason": "no_cost_estimate_available",
-                    }
-                )
+            reasons.append(f"liability[{identity}] unknown cost; no cap-based guessing")
+            unknown.append({"liability_id": identity, "kind": kind,
+                            "reason": "no_cost_estimate_available"})
             continue
 
         if identity in items_by_id:
@@ -683,8 +699,19 @@ def outstanding_liabilities(items, *, export_credits_per_megabyte=None):
             "cost_credits": cost,
         }
 
+    # Unknown dominates ADMISSION, not the observed numeric floor. Never report
+    # the known portion as zero, or misrepresent that floor as a complete bound.
+    unknown = list({item["liability_id"]: item for item in unknown}.values())
+    for item in unknown:
+        previous = items_by_id.get(item["liability_id"])
+        if previous is not None:
+            item["known_cost_floor_credits"] = previous["cost_credits"]
+            previous["known_cost_floor_credits"] = previous["cost_credits"]
+            previous["cost_is_lower_bound"] = True
     return {
         "total": total,
+        "known_floor_credits": total,
+        "exposure_is_fully_known": not unknown,
         "items": list(items_by_id.values()),
         "skipped": skipped,
         "unknown": unknown,
@@ -926,17 +953,15 @@ def scheduled_forecast(
 
 def _estimator_policy(kwargs, rate):
     """Fold the shared estimator policy from budget_admission kwargs."""
+    quorum = kwargs.get("min_comparable_samples", DEFAULT_MIN_COMPARABLE_SAMPLES)
+    if type(quorum) is not int or quorum < 1:
+        raise BudgetInputError("min_comparable_samples must be a positive integer")
     return {
         "max_age_hours": _finite_nonnegative_number(
             kwargs.get("sample_max_age_hours", DEFAULT_SAMPLE_MAX_AGE_HOURS),
             "sample_max_age_hours",
         ),
-        "min_comparable_samples": int(
-            _finite_nonnegative_number(
-                kwargs.get("min_comparable_samples", DEFAULT_MIN_COMPARABLE_SAMPLES),
-                "min_comparable_samples",
-            )
-        ),
+        "min_comparable_samples": quorum,
         "variance_uplift_sigma": _finite_nonnegative_number(
             kwargs.get("variance_uplift_sigma", DEFAULT_VARIANCE_UPLIFT_SIGMA),
             "variance_uplift_sigma",
@@ -1010,11 +1035,8 @@ def budget_admission(
     blockers = []
     inexact_marker = None
 
-    if isinstance(usage, dict) and (
-        "billing_periods" in usage or "billingPeriods" in usage
-    ):
-        periods = usage.get("billing_periods", usage.get("billingPeriods"))
-        selection = select_active_period(periods, now)
+    selection = normalize_usage(usage, now)
+    if selection["period"] is None:
         reasons.extend(selection["reasons"])
         period = selection["period"]
         if period is None:
@@ -1045,42 +1067,14 @@ def budget_admission(
                 "forecast": None,
                 "totals": None,
             }
-        credits_used = period["credits_used"]
-        credits_included = period["credits_included"]
-        period_start = period["period_start_utc"]
-        exact_end = period["period_end_utc"]
-    else:
-        if not isinstance(usage, dict):
-            raise BudgetInputError(
-                f"usage must be a dict with billing_periods or a normalized "
-                f"period, got {type(usage).__name__}"
-            )
-        credits_used = _finite_nonnegative_number(
-            usage.get("credits_used"), "usage credits_used"
-        )
-        credits_included = _finite_nonnegative_number(
-            usage.get("credits_included"), "usage credits_included"
-        )
-        start_raw = usage.get("period_start_utc")
-        period_start = (
-            None if start_raw is None else parse_instant(start_raw, "usage period_start_utc")
-        )
-        end_raw = usage.get("period_end_utc")
-        if _is_date_only(end_raw):
-            inexact_marker = end_raw
-            exact_end = None
-        elif usage.get("exact_end") is False:
-            inexact_marker = usage.get("inexact_source_end_date") or "declared inexact"
-            exact_end = None
-        else:
-            exact_end = parse_instant(end_raw, "usage period_end_utc")
-        if inexact_marker is not None:
-            reasons.append(
-                "period_end_not_exact_utc: billing end came as a date-only or "
-                f"declared-inexact value ({inexact_marker}); midnight "
-                "truncation is refused"
-            )
-            blockers.append("period_end_not_exact_utc")
+    period = selection["period"]
+    reasons.extend(selection["reasons"])
+    blockers.extend(selection["blockers"])
+    credits_used = period["credits_used"]
+    credits_included = period["credits_included"]
+    period_start = period["period_start_utc"]
+    exact_end = period["period_end_utc"]
+    inexact_marker = period.get("inexact_source_end_date")
 
     ceilings = [
         ("included credits", credits_included),
@@ -1199,6 +1193,8 @@ def budget_admission(
             "usage_plus_reserve": usage_plus_reserve,
             "headroom_after_reserve": headroom_after_reserve,
             "outstanding_liability_credits": liabilities["total"],
+            "outstanding_known_floor_credits": liabilities["known_floor_credits"],
+            "outstanding_exposure_is_fully_known": liabilities["exposure_is_fully_known"],
             "scheduled_forecast_credits": None
             if forecast is None
             else forecast["total"],
@@ -1265,5 +1261,7 @@ def execution_admission(
         "cost_estimate_credits": estimate["estimate"],
         "sample_count": estimate["evidence"]["comparable_count"],
         "export_cost_max": estimate["evidence"]["export_cost_max"],
+        "estimate_is_hard_cap": False,
+        "estimate_quality": estimate["estimate_quality"],
         "reasons": [],
     }

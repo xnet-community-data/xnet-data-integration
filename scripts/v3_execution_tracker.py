@@ -1,25 +1,19 @@
 """Durable, single-flight Dune executions; status checks never fetch results."""
 from copy import deepcopy
-from datetime import datetime
+from datetime import datetime, timedelta
 import math
 import re
+import uuid
+from v3_credit_budget import BudgetInputError, parse_instant, canon_parameters
+from v3_financial_journal import (
+    synchronize_financial_journal, reject_submission, amount, COMPUTE_TERMINAL_STATES as TERMINAL,
+)
 
 try:  # Authoritative-state error shared with the durable store.
     from v3_live_state_store import StateError
 except ImportError:  # pragma: no cover - store shipped alongside tracker
     class StateError(RuntimeError):
         """Fallback if the shared live-state store is unavailable."""
-
-TERMINAL = {
-    "QUERY_STATE_COMPLETED",
-    "QUERY_STATE_COMPLETED_PARTIAL",
-    "QUERY_STATE_FAILED",
-    # Dune's current docs use CANCELED; older/live responses have also used
-    # CANCELLED. Accept both so a spelling change can never strand work.
-    "QUERY_STATE_CANCELED",
-    "QUERY_STATE_CANCELLED",
-    "QUERY_STATE_EXPIRED",
-}
 
 CANCELED_STATES = {"QUERY_STATE_CANCELED", "QUERY_STATE_CANCELLED"}
 
@@ -29,6 +23,11 @@ HISTORY_TELEMETRY_FIELDS = (
     "export_points",
     "export_wire_bytes",
     "estimated_export_credits",
+    "export_attempt_id",
+    "export_requested_at_utc",
+    "export_reused",
+    "financial_history_id",
+    "cost_outlier",
 )
 
 # Dune execution IDs are ULIDs. We accept either a realistic ULID or a
@@ -74,7 +73,11 @@ class SubmissionRejected(RuntimeError):
 
 
 class ExecutionCostExceeded(RuntimeError):
-    """A completed execution exceeded its permitted spending cap."""
+    """Post-run threshold exceeded; the unconsumed completed ID is retained."""
+
+
+class CostBreakerOpen(ExecutionPending):
+    """New source/shape spending needs cooldown and a fresh approved quote."""
 
 
 class ExecutionFailed(RuntimeError):
@@ -86,6 +89,7 @@ class ExecutionTracker:
         self.state, self.api, self.checkpoint = state, api, checkpoint
         self.guard, self.now, self.sleep = guard, now, sleep
         self.performance = performance
+        self._checkpoint_error = None
 
     def stamp(self):
         return self.now().isoformat(timespec="seconds").replace("+00:00", "Z")
@@ -98,12 +102,21 @@ class ExecutionTracker:
 
     def _checkpoint(self):
         """Lifecycle durability barrier; failures are never API-retryable."""
+        self._require_durable_session()
         try:
+            synchronize_financial_journal(self.state)
             self.checkpoint()
-        except CheckpointFailed:
+        except CheckpointFailed as error:
+            self._checkpoint_error = str(error)
             raise
         except Exception as error:
+            self._checkpoint_error = str(error)
             raise CheckpointFailed(str(error)) from error
+
+    def _require_durable_session(self):
+        if self._checkpoint_error is not None:
+            raise CheckpointFailed("Prior checkpoint failed; recover and rehydrate authoritative state: "
+                                   + self._checkpoint_error)
 
     def _resolved_performance(self, spec):
         return spec.get("performance", self.performance)
@@ -114,6 +127,109 @@ class ExecutionTracker:
             "query_id": spec["query_id"],
             "performance": self._resolved_performance(spec),
         }
+
+    def cost_breaker_status(self, spec, params=None):
+        """Spend-free future-admission check. Never gates recovery of a known ID.
+
+        Caller verifies the quote/approval out of band. A quote is an estimate,
+        not a precharge cap, and never replaces guard() or operation approval.
+        """
+        breakers = self.state.get("cost_breakers", {})
+        if not isinstance(breakers, dict):
+            raise StateError("Malformed source cost breakers")
+        affected = []
+        for breaker in breakers.values():
+            if not isinstance(breaker, dict):
+                raise StateError("Malformed source cost breaker")
+            if (breaker.get("source_key") == self.key(spec)
+                    or (breaker.get("query_id") == spec["query_id"]
+                        and breaker.get("performance") == self._resolved_performance(spec)
+                        and breaker.get("shape_version") == spec.get("shape_version"))):
+                affected.append(breaker)
+        if not affected:
+            return {"status": "clear", "blockers": [], "authorization_required": True}
+        now = parse_instant(self.now(), "now")
+        blockers = []
+        for breaker in affected:
+            if now < parse_instant(breaker.get("cooldown_until_utc"), "breaker cooldown"):
+                blockers.append("cost_breaker_cooldown")
+        quote = spec.get("cost_admission_quote")
+        try:
+            if not isinstance(quote, dict):
+                raise BudgetInputError("No future quote")
+            identity = {"query_id": spec["query_id"], "performance": self._resolved_performance(spec),
+                        "shape_version": spec.get("shape_version")}
+            if any(quote.get(k) != v for k, v in identity.items()):
+                raise BudgetInputError("Quote shape/engine changed")
+            if canon_parameters(quote.get("query_parameters")) != canon_parameters(params):
+                raise BudgetInputError("Quote parameters changed")
+            operation_id = spec.get("financial_attempt_id")
+            if not valid_execution_id(operation_id) or quote.get("operation_id") != operation_id:
+                raise BudgetInputError("Quote must bind the next financial attempt")
+            amount(quote.get("cost_estimate_credits"), "future cost estimate")
+            for field in ("estimate_evidence", "approval_ref"):
+                if not isinstance(quote.get(field), str) or not quote[field].strip():
+                    raise BudgetInputError("Missing future quote evidence/approval")
+            quoted = parse_instant(quote.get("quoted_at_utc"), "quote time")
+            expires = parse_instant(quote.get("valid_until_utc"), "quote expiry")
+            if not quoted <= now < expires:
+                raise BudgetInputError("Future quote is stale or not yet valid")
+            reviewed = quote.get("outlier_execution_ids", [])
+            if not isinstance(reviewed, list):
+                raise BudgetInputError("Quote must address the observed outliers")
+            for breaker in affected:
+                if (breaker.get("execution_id") not in reviewed
+                        or quoted < parse_instant(breaker.get("opened_at_utc"), "breaker opened")):
+                    raise BudgetInputError("Quote predates or omits the cost outlier")
+        except (BudgetInputError, TypeError):
+            blockers.append("cost_breaker_fresh_operation_quote_required")
+        return {"status": "blocked" if blockers else "ready_for_admission",
+                "blockers": sorted(set(blockers)), "breakers": deepcopy(affected),
+                "authorization_required": True, "estimate_is_hard_cap": False}
+
+    def _record_cost_outlier(self, pending, spec, cost, threshold, recovery_policy=None):
+        """Audit spent compute once; replay never restarts its finite cooldown."""
+        outliers = self.state.setdefault("cost_outliers", {})
+        breakers = self.state.setdefault("cost_breakers", {})
+        if not isinstance(outliers, dict) or not isinstance(breakers, dict):
+            raise StateError("Malformed cost outlier audit/breaker lane")
+        execution_id = pending["execution_id"]
+        audit = outliers.get(execution_id)
+        if audit is None:
+            cooldown = amount(spec.get("cost_breaker_cooldown_seconds", 1800), "cost breaker cooldown")
+            if cooldown <= 0:
+                raise BudgetInputError("Cost breaker cooldown must be positive and finite")
+            try:
+                until = self.now() + timedelta(seconds=cooldown)
+            except OverflowError as error:
+                raise BudgetInputError("Cost breaker cooldown is outside the clock range") from error
+            audit = {"execution_id": execution_id, "source_key": pending["key"],
+                     "query_id": pending["query_id"],
+                     "query_parameters": deepcopy(pending["query_parameters"]),
+                     "performance": (pending.get("spec_identity") or {}).get("performance"),
+                     "shape_version": pending.get("shape_version"),
+                     "observed_cost_credits": cost, "post_run_threshold_credits": threshold,
+                     "detected_at_utc": self.stamp(), "threshold_is_precharge_cap": False,
+                     "cooldown_until_utc": until.isoformat().replace("+00:00", "Z")}
+            outliers[execution_id] = audit
+            breakers[pending["key"]] = {key: deepcopy(audit[key]) for key in (
+                "execution_id", "source_key", "query_id", "performance", "shape_version",
+                "observed_cost_credits", "cooldown_until_utc")}
+            breakers[pending["key"]]["opened_at_utc"] = audit["detected_at_utc"]
+        elif not isinstance(audit, dict):
+            raise StateError("Malformed completed cost outlier")
+        audit["observed_cost_credits"] = max(audit["observed_cost_credits"], cost)
+        if recovery_policy is not None:
+            audit["recovery_policy"] = recovery_policy
+            audit.setdefault("returned_for_validation_at_utc", self.stamp())
+        pending["cost_outlier"] = deepcopy(audit)
+        for entry in self.state.get("execution_history", []):
+            if entry.get("execution_id") == execution_id:
+                entry["cost_outlier"] = deepcopy(audit)
+        # Even an unchanged replay crosses the barrier before returning work or
+        # refusing it. Never let a failed prior publication look like acceptance.
+        self._checkpoint()
+        return deepcopy(audit)
 
     def operation_evidence(self, pending):
         """Original operation identity/parameters bound to a live execution."""
@@ -141,6 +257,8 @@ class ExecutionTracker:
             return False
         cost = status.get("execution_cost_credits")
         if cost is not None:
+            if isinstance(cost, bool):
+                raise ExecutionPending("Invalid boolean execution cost; replacement blocked.")
             cost = float(cost)
             if not math.isfinite(cost) or cost < 0:
                 raise ExecutionPending("Invalid execution cost; replacement blocked.")
@@ -153,12 +271,18 @@ class ExecutionTracker:
             "state": remote_state, "execution_cost_credits": cost,
             "query_parameters": pending["query_parameters"],
             "cancellation_requested_at_utc": pending.get("cancellation_requested_at_utc"),
+            "performance": (pending.get("spec_identity") or {}).get("performance"),
+            "shape_version": pending.get("shape_version"),
+            "financial_attempt_id": pending.get("financial_attempt_id"),
         }
         history = self.state.setdefault("execution_history", [])
         previous = next((e for e in history if e["execution_id"] == entry["execution_id"]), None)
         if previous and cost is None:
             entry["execution_cost_credits"] = previous.get("execution_cost_credits")
         if previous:
+            for field in ("performance", "shape_version", "financial_attempt_id"):
+                if entry.get(field) is None and previous.get(field) is not None:
+                    entry[field] = previous[field]
             # Status reconciliation must not erase telemetry recorded after a
             # paid result export has been safely consumed.
             for field in HISTORY_TELEMETRY_FIELDS:
@@ -170,13 +294,19 @@ class ExecutionTracker:
             if previous is not None:
                 history[history.index(previous)] = entry
             else:
+                # The financial lane is not the bounded estimator sample lane.
+                # Copy ALL old obligations before discarding any telemetry.
+                try:
+                    synchronize_financial_journal(self.state)
+                except Exception as error:
+                    raise CheckpointFailed(str(error)) from error
                 history.append(entry)
             self.state["execution_history"] = history[-1000:]
             pending["terminal_status"] = pending_status
             self._checkpoint()
         return True
 
-    def check(self, pending):
+    def check(self, pending, metadata_only=False):
         cached = pending.get("terminal_status")
         if cached and cached.get("execution_cost_credits") is not None:
             return cached
@@ -189,6 +319,8 @@ class ExecutionTracker:
         status = self.api(f"execution/{execution_id}/status")
         if self.observe(pending, status):
             return status
+        if metadata_only:
+            return status  # A hold/reconciliation scan must never issue a POST.
         # Queueing and actual computation are separate budgets. Save the
         # engine-reported start to retain correct deadlines after restarts.
         remote_start = status.get("execution_started_at")
@@ -219,25 +351,44 @@ class ExecutionTracker:
             self.observe(pending, status)
         return status
 
-    def reconcile(self):
+    def reconcile(self, metadata_only=False):
         """Resolve/cancel existing work even when new spending is paused."""
+        self._require_durable_session()
         errors = {}
         for key, pending in list(self.pending().items()):
             try:
-                self.check(pending)
+                self.check(pending, metadata_only=metadata_only)
             except CheckpointFailed:
                 raise
             except Exception as error:
                 errors[key] = str(error)
-        # Retry missing cost metadata without executions or result downloads.
-        for entry in list(self.state.get("execution_history", [])):
+        # Include costless obligations whose telemetry was already trimmed.
+        # Persist legacy migration even if this run has no pending executions.
+        if not any(self.state.get(name) for name in (
+                "execution_history", "pending_executions", "result_exports", "financial_journal")):
+            return errors  # A spend-free empty legacy journal needs no migration commit.
+        if synchronize_financial_journal(self.state):
+            self._checkpoint()
+        candidates = {entry["execution_id"]: entry
+                      for entry in self.state.get("execution_history", [])}
+        for obligation in self.state["financial_journal"]["obligations"].values():
+            if obligation.get("kind") == "execution" and obligation.get("execution_id"):
+                candidates.setdefault(obligation["execution_id"], obligation)
+        for entry in candidates.values():
+            financial = self.state["financial_journal"]["obligations"].get(f"exec:{entry['execution_id']}", {})
+            if financial.get("cost_credits") is not None:
+                continue
             if entry.get("execution_cost_credits") is not None:
                 continue
             try:
                 status = self.api(f"execution/{entry['execution_id']}/status")
                 cost = status.get("execution_cost_credits")
-                if cost is not None and math.isfinite(float(cost)) and float(cost) >= 0:
-                    entry["execution_cost_credits"] = float(cost)
+                if (status.get("state") in TERMINAL and cost is not None and not isinstance(cost, bool)
+                        and math.isfinite(float(cost)) and float(cost) >= 0):
+                    financial["cost_credits"] = float(cost)
+                    financial["unresolved"] = False
+                    if "liability_id" not in entry:
+                        entry["execution_cost_credits"] = float(cost)
                     self._checkpoint()
             except CheckpointFailed:
                 raise
@@ -252,6 +403,7 @@ class ExecutionTracker:
         the caller must publish state and the execution's effects atomically
         (see stage_acknowledge/commit_checkpoint).
         """
+        self._require_durable_session()
         key = self.key(spec)
         execution_id = record.get("execution_id")
         changed = False
@@ -282,6 +434,9 @@ class ExecutionTracker:
                 "export_points",
                 "export_wire_bytes",
                 "estimated_export_credits",
+                "export_attempt_id",
+                "export_requested_at_utc",
+                "export_reused",
             ):
                 if field in record:
                     telemetry[field] = record[field]
@@ -291,6 +446,7 @@ class ExecutionTracker:
                     changed = True
 
         pending = self.pending().get(key)
+        synchronize_financial_journal(self.state)
         if pending and pending.get("execution_id") == execution_id:
             del self.pending()[key]
             changed = True
@@ -313,6 +469,9 @@ class ExecutionTracker:
         self._checkpoint()
 
     def execute(self, spec, params, enforce_cap, timeout_seconds):
+        self._require_durable_session()
+        if type(spec.get("accept_completed_outlier", False)) is not bool:
+            raise BudgetInputError("accept_completed_outlier must be a bool")
         key = self.key(spec)
         pending = self.pending().get(key)
         if pending is None:
@@ -329,18 +488,47 @@ class ExecutionTracker:
                     f"({', '.join(unknown)}); all new submissions blocked "
                     "pending reviewed reconciliation."
                 )
+            breaker = self.cost_breaker_status(spec, params)
+            if breaker["status"] == "blocked":
+                raise CostBreakerOpen("New execution held: " + "; ".join(breaker["blockers"]))
             billing = self.guard()
+            attempt_id = spec.get("financial_attempt_id") or uuid.uuid4().hex
+            if not valid_execution_id(attempt_id):
+                raise ExecutionPending("Invalid financial attempt identity; no submission")
+            financial_id = "submission:" + attempt_id
+            if any(row.get("submission_id") == financial_id or row.get("liability_id") == financial_id
+                   for row in self.state.get("financial_journal", {}).get("obligations", {}).values()):
+                raise ExecutionPending("Financial attempt already recorded; reconcile instead of resubmitting")
             pending = {
                 "key": key, "query_id": spec["query_id"],
                 "query_parameters": deepcopy(params or {}),
-                "submitted_at_utc": self.stamp(), "timeout_seconds": timeout_seconds,
+                # Reservation timestamps retain subsecond precision. Truncating
+                # this intent to seconds could falsely put it BEFORE its own
+                # already-durable reservation and deadlock allowance coverage.
+                "submitted_at_utc": self.now().isoformat().replace("+00:00", "Z"),
+                "timeout_seconds": timeout_seconds,
                 "billing": billing, "execution_id": None,
                 "spec_identity": self._spec_identity(spec),
+                "financial_attempt_id": attempt_id,
+                "shape_version": spec.get("shape_version"),
+                "post_run_threshold_credits": spec.get("max_run_credits"),
                 **({
                     "queue_timeout_seconds": int(spec["queue_timeout_seconds"]),
                     "run_timeout_seconds": int(spec["run_timeout_seconds"]),
                 } if "queue_timeout_seconds" in spec and "run_timeout_seconds" in spec else {}),
             }
+            # Only the admission boundary's verified evidence, never an unchecked
+            # spec marker. Preserve the exact ordinary approval before the POST.
+            for field in ("operation_approval", "operation_quote"):
+                if isinstance(billing, dict) and field in billing:
+                    pending[field] = deepcopy(billing[field])
+            if breaker["status"] == "ready_for_admission":
+                # Preserve the actual reviewed admission basis before POST, not
+                # an arbitrary caller payload or a subsequently changed quote.
+                pending["cost_admission_quote"] = {field: deepcopy(spec["cost_admission_quote"].get(field))
+                    for field in ("operation_id", "query_id", "query_parameters", "performance", "shape_version",
+                                  "cost_estimate_credits", "estimate_evidence", "approval_ref", "quoted_at_utc",
+                                  "valid_until_utc", "outlier_execution_ids")}
             self.pending()[key] = pending
             # If the POST response is lost or the runner dies, this intent blocks
             # automatic resubmission rather than guessing that nothing ran.
@@ -363,6 +551,7 @@ class ExecutionTracker:
                     "at_utc": self.stamp(), "error": str(error),
                 })
                 self.state["rejected_submissions"] = self.state["rejected_submissions"][-50:]
+                reject_submission(self.state, pending)
                 del self.pending()[key]
                 self._checkpoint()
                 raise
@@ -394,6 +583,9 @@ class ExecutionTracker:
                 "original parameters retained."
             )
 
+        if not valid_execution_id(pending.get("execution_id")):
+            raise ExecutionPending(f"Query {pending['query_id']} has an unresolved submission without an ID "
+                                   "or with an invalid ID; manual reconciliation required, replacement blocked.")
         while True:
             try:
                 status = pending.get("terminal_status") or self.check(pending)
@@ -427,10 +619,20 @@ class ExecutionTracker:
             raise ExecutionFailed(f"Execution {pending['execution_id']}: {status['state']}; no automatic retry.")
         if cost is None:
             raise ExecutionPending(f"Execution {pending['execution_id']} has no cost metadata; replacement blocked.")
-        if enforce_cap and float(cost) > spec["max_run_credits"]:
-            self.acknowledge(spec, pending)
+        threshold = pending.get("post_run_threshold_credits")
+        threshold = amount(spec["max_run_credits"] if threshold is None else threshold, "post-run threshold")
+        outlier = None
+        prior_outliers = self.state.get("cost_outliers", {})
+        if not isinstance(prior_outliers, dict):
+            raise StateError("Malformed completed cost outlier audit")
+        if float(cost) > threshold or pending.get("cost_outlier") or pending["execution_id"] in prior_outliers:
+            policy = ("accept_completed_outlier" if spec.get("accept_completed_outlier", False)
+                      else "cap_enforcement_disabled" if not enforce_cap else None)
+            outlier = self._record_cost_outlier(pending, spec, float(cost), threshold, policy)
+            threshold = outlier["post_run_threshold_credits"]
+        if outlier and enforce_cap and not spec.get("accept_completed_outlier", False):
             raise ExecutionCostExceeded(
-                f"Query {spec['query_id']} cost {cost} exceeded {spec['max_run_credits']}; source quarantined."
+                f"Query {spec['query_id']} cost {cost} exceeded {threshold}; completed ID retained for explicit recovery."
             )
         record = {
             "query_id": pending["query_id"], "execution_id": pending["execution_id"],
@@ -441,7 +643,13 @@ class ExecutionTracker:
             "query_parameters": deepcopy(pending["query_parameters"]),
             "spec_identity": deepcopy(pending.get("spec_identity")),
             "result_metadata": status.get("result_metadata", {}), "billing": pending["billing"],
+            "financial_attempt_id": pending.get("financial_attempt_id"),
+            "performance": (pending.get("spec_identity") or {}).get("performance"),
+            "shape_version": pending.get("shape_version"),
         }
+        if outlier:
+            record["cost_outlier"] = {**outlier, "returned_for_validation": True,
+                                      "recovery_policy": policy}
         print(f"Query {spec['query_id']} execution {pending['execution_id']}: "
-              f"{status['state']}, {float(cost):.6f} credits (limit {spec['max_run_credits']})", flush=True)
+              f"{status['state']}, {float(cost):.6f} credits (post-run threshold {threshold})", flush=True)
         return record

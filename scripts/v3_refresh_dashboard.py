@@ -28,8 +28,11 @@ from v3_live_state_store import LiveStateStore, StateError, atomic_write, encode
 from v3_budget_runtime import evaluate_budget
 from v3_operational_health import build_health
 from v3_result_cache import ResultCache, ManualExportReview, CacheError
-from v3_credit_budget import group_samples, sample_estimate
-from v3_budget_runtime import collect_sample_history
+from v3_credit_budget import group_samples, sample_estimate, parse_instant, BudgetInputError
+from v3_budget_runtime import collect_sample_history, _budget_policy
+from v3_financial_journal import (
+    synchronize_financial_journal, record_export_attempt, record_export_outcome, amount,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG = json.loads((ROOT / "config/v3_refresh.json").read_text())
@@ -47,6 +50,8 @@ def load(path, default):
 
 def save(path, value):
     try:
+        if path == STATE:
+            synchronize_financial_journal(value, CONFIG["export_credits_per_megabyte"])
         atomic_write(path, encoded(value))
     except (OSError, ValueError) as error:
         raise CheckpointFailed(f"Unable to durably save {path.name}: {error}") from error
@@ -65,7 +70,12 @@ def api(path, payload=None, include_wire_size=False):
     try:
         with urllib.request.urlopen(request, timeout=45) as response:
             body = response.read()
-            value = json.loads(body)
+            try:
+                value = json.loads(body)
+            except (ValueError, UnicodeError):
+                if not include_wire_size:
+                    raise
+                value = None  # Completed transport is still metered; content is invalid.
             return (value, len(body)) if include_wire_size else value
     except urllib.error.HTTPError as error:
         try:
@@ -84,9 +94,40 @@ class BudgetBlocked(RuntimeError):
     """New spending is not admitted; metadata reconciliation may continue."""
 
 
+def require_operation_approval(spec, kind, quote, params=None, execution_id=None):
+    """Fail closed without an externally reviewed, exact-operation approval.
+
+    This validates a supplied decision, never creates user authority. The trusted
+    operator must verify approval_ref/evidence before installing it in the spec.
+    Estimates are risk allocations, not provider charge caps.
+    """
+    approval = spec.get("operation_approval") or {}
+    try:
+        for field in ("operation_id", "approval_ref", "estimate_evidence"):
+            if not isinstance(approval.get(field), str) or not approval[field].strip():
+                raise BudgetInputError("Missing explicit operation approval/evidence")
+        if (approval.get("kind") != kind or approval.get("query_id") != spec.get("query_id")
+                or (approval.get("query_parameters") or {}) != (params or {})
+                or approval.get("execution_id") != execution_id
+                or approval.get("performance") != spec.get("performance", CONFIG["performance"])
+                or approval.get("shape_version") != spec.get("shape_version")
+                or amount(approval.get("quote_credits"), "approved quote") != quote):
+            raise BudgetInputError("Approval does not bind the exact operation and estimate")
+        if kind == "execution" and approval["operation_id"] != spec.get("financial_attempt_id"):
+            raise BudgetInputError("Approval must bind the durable submission attempt")
+        if not (parse_instant(approval.get("approved_at_utc"), "approved at") <= now()
+                < parse_instant(approval.get("valid_until_utc"), "approval expiry")):
+            raise BudgetInputError("Operation approval is not current")
+    except BudgetInputError as error:
+        raise BudgetBlocked(str(error)) from error
+    return approval
+
+
 def usage_guard(state=None, proposed_spec=None, proposed_params=None):
     if state is None:
         state = load_authoritative_state()
+    if global_hold(state):
+        raise BudgetBlocked("Global hold prohibits new paid operations")
     usage = api("usage", {"start_date": (now().date() - timedelta(days=40)).isoformat(),
                           "end_date": (now().date() + timedelta(days=1)).isoformat()})
     decision = evaluate_budget(state, CONFIG, usage, now(),
@@ -95,6 +136,12 @@ def usage_guard(state=None, proposed_spec=None, proposed_params=None):
     report = decision["report"]
     if decision["status"] != "admitted":
         raise BudgetBlocked("Dune credit admission blocked: " + "; ".join(decision["blockers"]))
+    approval_evidence = {}
+    if proposed_spec is not None:
+        approval = require_operation_approval(proposed_spec, "execution",
+            decision["proposed_evaluation"]["cost_estimate_credits"], proposed_params)
+        approval_evidence = {"operation_approval": deepcopy(approval),
+                             "operation_quote": deepcopy(decision["proposed_evaluation"])}
     current, totals = report["current_usage"], report["totals"]
     return {
         "credits_used": current["credits_used"], "guard_credits": totals["limit_credits"],
@@ -102,6 +149,7 @@ def usage_guard(state=None, proposed_spec=None, proposed_params=None):
         "projected_period_credits": current["credits_used"] + totals["dependencies_total"],
         "period_start": current["period_start_utc"], "period_end": current["period_end_utc"],
         "forecast": report["forecast"],
+        **approval_evidence,
     }
 
 def checkpoint(state):
@@ -118,9 +166,33 @@ def write_operational_health(state):
     config = {"domains": {s["key"]: {"source_key": s["key"],
                "max_age_seconds": int(s.get("cadence_minutes", 30)) * 120}
                for s in specs if s.get("enabled", True)}}
-    report = build_health({**state, "sources": state.get("queries", {}),
-                           "degraded_sources": state.get("source_errors", {})}, now(), config,
-                          {"blocked": state.get("budget_decision", {}).get("status") == "blocked"})
+    sources = deepcopy(state.get("queries", {}))
+    def evidence(key, path, field, *, daily=False, max_age=86400):
+        value = load(ROOT / path, {})
+        at = value
+        for part in field.split("."):
+            at = at.get(part) if isinstance(at, dict) else None
+        if daily and isinstance(at, str) and len(at) == 10:
+            at += "T00:00:00Z"  # Date precision is explicit, never process time.
+        sources[key] = {**sources.get(key, {}), "source_asof": at}
+        config["domains"][key] = {"source_key": key, "max_age_seconds": max_age}
+    evidence("xnet_transfers", "data/current/xnet_supply_state.json", "latest_transfer_event_utc")
+    evidence("holders", "data/current/xnet_holder_state.json", "latest_transfer_event_utc")
+    evidence("bbb_dex", "data/current/xnet_bbb_trade_state.json", "latest_trade_utc", max_age=172800)
+    evidence("devices", "data/current/xnet_network_state.json", "devices.observed_at_utc", max_age=172800)
+    evidence("offload", "data/current/xnet_network_state.json", "offload.data_as_of", daily=True, max_age=172800)
+    evidence("revenue", "data/current/xnet_revenue_state.json", "live_fee_accrual.as_of", daily=True, max_age=172800)
+    evidence("market", "data/current/xnet_market_state.json", "fetched_at_utc", max_age=7200)
+    issues = deepcopy(state.get("source_errors", {}))
+    if "holder_integrity" in issues or "holders" in state.get("domain_holds", {}):
+        issues["holders"] = issues.get("holder_integrity", state.get("domain_holds", {}).get("holders"))
+    # Report source freshness separately from permission to spend. A Dune guard
+    # cannot make an observed device, revenue, market or accepted transfer paused.
+    report = build_health({"sources": sources, "pending_executions": state.get("pending_executions", {}),
+                           "degraded_sources": issues}, now(), config)
+    report["admission"] = {"global_hold": global_hold(state),
+                           "budget_blocked": state.get("budget_decision", {}).get("status") == "blocked",
+                           "domain_holds": deepcopy(state.get("domain_holds", {}))}
     previous = state.get("operational_incidents", {})
     incidents = {key: item["incident_id"] for key, item in report["domains"].items()
                  if item["incident_id"]}
@@ -141,30 +213,43 @@ def execute(spec, params=None, enforce_cap=True, timeout_seconds=None, state=Non
         state = load_authoritative_state()
     if timeout_seconds is None:
         timeout_seconds = CONFIG.get("source_execution_timeout_seconds", 240)
+    # Recovery policy applies ONLY to an already known pending ID. A future POST
+    # keeps post-run refusal and the source breaker's independent quote barrier.
+    pending = state.get("pending_executions", {}).get(spec.get("key", str(spec["query_id"])), {})
+    spec = {**spec, "accept_completed_outlier": bool(pending.get("execution_id"))}
     return tracker(state, spec, params).execute(spec, params, enforce_cap, timeout_seconds)
 
 
-def result_cache():
+def result_cache(checkpoint_callback=None):
     public_ids = {int(s["query_id"]) for s in CONFIG.get("sources", [])}
     if CONFIG.get("reconciliation"):
         public_ids.add(int(CONFIG["reconciliation"]["manifest_query_id"]))
-    return ResultCache(ROOT, checkpoint, allowed_query_ids=public_ids)
+        # The selective repair is the same public XNET transfer contract as hot
+        # collection. Excluding it would fail cache_result AFTER a paid read.
+        public_ids.add(int(CONFIG["reconciliation"]["repair_query_id"]))
+    return ResultCache(ROOT, checkpoint_callback or checkpoint, allowed_query_ids=public_ids)
 
 
 def export_risk(state, record, spec, result_bytes):
     """Comparable wire-size envelope, not a configured download/spend ceiling."""
     samples, _ = collect_sample_history(state, default_performance=CONFIG["performance"],
                                        performance_by_key={})
+    policy = _budget_policy(CONFIG)
     estimate = sample_estimate(group_samples(samples, CONFIG["performance"]),
         record["query_id"], record.get("query_parameters", {}), now_utc=now(),
         performance=spec.get("performance", CONFIG["performance"]),
+        shape_version=spec.get("shape_version"), max_age_hours=policy["sample_max_age_hours"],
+        min_comparable_samples=policy["min_comparable_samples"],
+        variance_uplift_sigma=policy["variance_uplift_sigma"],
         export_rate_per_mb=CONFIG["export_credits_per_megabyte"])
     evidence = estimate["evidence"]
     values = evidence["export_cost_values"]
-    if len(values) < 3 or result_bytes > (evidence["export_bytes_max"] or 0):
-        raise ManualExportReview("Export size/cost lacks three comparable recent wire observations; explicit review required.")
-    return max(max(values), statistics.mean(values) + 3 * statistics.pstdev(values)), [
-        "Comparable query/parameters/engine; >=3 recent observed wire charges; max(mean+3sigma, observed max)"]
+    if (not values or evidence["export_evidence_count"] < policy["min_comparable_samples"]
+            or evidence["export_bytes_max"] is None or result_bytes > evidence["export_bytes_max"]):
+        raise ManualExportReview("Export size/cost lacks policy-comparable recent wire observations; explicit review required.")
+    risk = max(max(values), statistics.mean(values) + policy["variance_uplift_sigma"] * statistics.pstdev(values))
+    return risk, ["Comparable exact query/parameters/engine/shape; observed wire risk, NOT a hard cap; "
+                  + json.dumps({**policy, "evidence": evidence}, sort_keys=True)]
 
 
 def export_source(record, spec, remaining, max_bytes=None, state=None):
@@ -199,7 +284,24 @@ def export_source(record, spec, remaining, max_bytes=None, state=None):
                    "columns": meta["column_names"],
                    "sql_sha256": hashlib.sha256(encoded({"execution_id": record["execution_id"],
                        "query_id": record["query_id"], "parameters": record.get("query_parameters", {})})).hexdigest()}
-        cache = result_cache()
+        staged_attempt = {}
+        def export_checkpoint(candidate):
+            # Cache owns the canonical binding key. Its callback sees the staged
+            # intent BEFORE publication, so both lanes cross one durability barrier.
+            if staged_attempt and not staged_attempt.get("recorded"):
+                markers = [(key, marker) for key, marker in candidate["result_exports"]["requests"].items()
+                           if marker["execution_id"] == record["execution_id"]
+                           and marker["requested_at_utc"] == staged_attempt["timestamp"]
+                           and marker["status"] == "requested"]
+                if len(markers) != 1:
+                    raise StateError("Export intent does not identify exactly one cache marker")
+                record_export_attempt(candidate, staged_attempt["attempt_id"],
+                    execution_id=record["execution_id"], requested_at_utc=staged_attempt["timestamp"],
+                    risk_credits=staged_attempt["risk"], estimate_evidence=staged_attempt["evidence"],
+                    cache_marker_key=markers[0][0])
+                staged_attempt["recorded"] = True
+            return checkpoint(candidate)
+        cache = result_cache(export_checkpoint)
         # Cached reuse is spend-free and remains possible while admission is closed.
         cached = cache.lookup(state, record, binding)
         if cached is not None:
@@ -207,9 +309,10 @@ def export_source(record, spec, remaining, max_bytes=None, state=None):
                       "result": {"rows": cached["result_rows"], "metadata": meta}}
             save(ROOT / spec["output"], result)
             record["export_points"] = points
+            record["export_reused"] = True
             prior = next((entry for entry in state.get("execution_history", [])
                           if entry.get("execution_id") == record["execution_id"]), {})
-            for name in ("export_wire_bytes", "estimated_export_credits"):
+            for name in ("export_wire_bytes", "estimated_export_credits", "export_attempt_id", "export_requested_at_utc"):
                 if name in prior:
                     record[name] = prior[name]
             return remaining - points
@@ -219,31 +322,43 @@ def export_source(record, spec, remaining, max_bytes=None, state=None):
         spare = totals["limit_credits"] - totals["usage_plus_reserve"] - totals["dependencies_total"]
         if risk > spare:
             raise BudgetBlocked("Export risk exceeds headroom after all remaining scheduled obligations")
+        approval = require_operation_approval({**spec, "query_id": record["query_id"]}, "export", risk,
+                                              record.get("query_parameters"), record["execution_id"])
         # Prune only after a prior full acceptance. Never evict pending source work.
         cache.prune_consumed(state)
-        cache.prepare_export(state, record, binding, risk_credits=risk, evidence=evidence, timestamp=stamp())
+        requested_at = now().isoformat().replace("+00:00", "Z")
+        staged_attempt.update(attempt_id=approval["operation_id"], timestamp=requested_at,
+                              risk=risk, evidence="; ".join(evidence))
+        reused = cache.prepare_export(state, record, binding, risk_credits=risk, evidence=evidence, timestamp=requested_at)
+        if reused is not None or not staged_attempt.get("recorded"):
+            raise StateError("No durable exact export attempt; refusing HTTP retrieval")
         result, wire_bytes = api(f'execution/{record["execution_id"]}/results?limit=10000&allow_partial_results=false', include_wire_size=True)
-        fetched = result.get("result", {}).get("rows", [])
-        if (result.get("state") != "QUERY_STATE_COMPLETED" or not isinstance(fetched, list)
-                or len(fetched) != rows or result.get("next_uri") or result.get("next_offset")
-                or (result.get("execution_id") is not None and
-                    result["execution_id"] != record["execution_id"])):
-            raise RuntimeError("Source result is incomplete; canonical state not reduced.")
-        incurred = max(result_bytes, wire_bytes) / 1000000 * CONFIG["export_credits_per_megabyte"]
+        if type(wire_bytes) is not int or wire_bytes < 0:
+            raise RuntimeError("Missing actual export wire metering; retain unknown attempt")
+        incurred = wire_bytes / 1000000 * CONFIG["export_credits_per_megabyte"]
+        record_export_outcome(state, approval["operation_id"], observed_credits=incurred,
+                              completed_transport_observed_at_utc=now().isoformat().replace("+00:00", "Z"))
         record.update(export_points=points, export_wire_bytes=wire_bytes,
-                      estimated_export_credits=incurred)
-        for marker in state["result_exports"]["requests"].values():
-            if marker["execution_id"] == record["execution_id"]:
-                marker["risk_credits"] = max(marker["risk_credits"], incurred)
+                       estimated_export_credits=incurred, export_attempt_id=approval["operation_id"],
+                       export_requested_at_utc=requested_at, export_reused=False)
         for entry in state.get("execution_history", []):
             if entry.get("execution_id") == record["execution_id"]:
                 entry.update(export_points=points, export_wire_bytes=wire_bytes,
-                             estimated_export_credits=incurred, result_bytes=result_bytes)
+                             estimated_export_credits=incurred, result_bytes=result_bytes,
+                             export_attempt_id=approval["operation_id"], export_requested_at_utc=requested_at,
+                             export_reused=False)
+        checkpoint(state)  # Charge evidence is durable independently of data acceptance.
+        fetched = result.get("result", {}).get("rows") if isinstance(result, dict) and isinstance(result.get("result"), dict) else None
+        if (not isinstance(result, dict) or result.get("state") != "QUERY_STATE_COMPLETED"
+                or not isinstance(fetched, list) or len(fetched) != rows
+                or result.get("next_uri") or result.get("next_offset")
+                or (result.get("execution_id") is not None and result["execution_id"] != record["execution_id"])):
+            raise ManualExportReview("Source result is incomplete; canonical state not reduced.")
         cache.cache_result(state, record, binding, {"execution_id": record["execution_id"],
             "total_row_count": rows, "result_rows": fetched}, timestamp=stamp())
     record["export_points"] = points
     record["export_wire_bytes"] = wire_bytes
-    record["estimated_export_credits"] = max(result_bytes, wire_bytes) / 1000000 * CONFIG["export_credits_per_megabyte"]
+    record["estimated_export_credits"] = wire_bytes / 1000000 * CONFIG["export_credits_per_megabyte"]
     save(ROOT / spec["output"], result)
     return remaining - points
 
@@ -310,6 +425,86 @@ def reconciliation_generation_due(state):
 
 def holder_integrity_degraded(state):
     return "holder_integrity" in state.get("source_errors", {})
+
+
+LEGACY_HOLDER_ERROR = ("Negative holder balance after reduction: "
+    "5QsyByFVJcg7oN76Ma26KEDFQdHt1tsiVExK94zURzfd = -51907.828371000000000000")
+HOLDER_MIGRATION = "legacy_bbb_negative_holder_v1"
+
+
+def _holder_quality_proven(quality, holder):
+    """File evidence, not an arbitrary domain-hold label or generated timestamp."""
+    try:
+        at = parse_instant(quality.get("holder_data_as_of_utc"), "holder asof")
+        checked = parse_instant(quality.get("checked_at_utc"), "holder checked")
+        valid_status = ((quality.get("status") == "DEGRADED"
+                         and quality.get("reason") == "holder_balance_integrity"
+                         and str(quality.get("error", "")).startswith("Negative holder balance after reduction:"))
+                        or (quality.get("status") == "HEALTHY" and not quality.get("error")))
+        return (valid_status and quality.get("methodology_changed") is False
+                and quality["holder_data_as_of_utc"] == holder.get("latest_transfer_event_utc")
+                and at <= checked <= now())
+    except BudgetInputError:
+        return False
+
+
+def _holder_migration_origin(state):
+    migration = state.get("holder_pause_migration", {})
+    origin = migration.get("origin", {})
+    quality = origin.get("quality", {})
+    return (migration.get("migration_code") == HOLDER_MIGRATION
+            and state.get("last_error") == quality.get("error") == LEGACY_HOLDER_ERROR
+            and origin.get("failed_at_utc") == state.get("failed_at_utc")
+            and quality.get("status") == "DEGRADED"
+            and _holder_quality_proven(quality, {"latest_transfer_event_utc": origin.get("holder_asof")}))
+
+
+def migrate_holder_hold(state):
+    """One exact known incident, with persisted quality AND last-good evidence.
+
+    Preserve the original pause/error as audit. This is not resume, holder repair,
+    execution authorization, or permission to widen the financial guard.
+    """
+    if not state.get("paused") or state.get("last_error") != LEGACY_HOLDER_ERROR:
+        return False
+    if "holder_pause_migration" in state:
+        return False  # Immutable origin; never re-migrate a changed diagnosis.
+    quality = load(ROOT / "data/current/xnet_holder_integrity.json", {})
+    holder = load(ROOT / "data/current/xnet_holder_state.json", {})
+    if quality.get("error") != LEGACY_HOLDER_ERROR or not _holder_quality_proven(quality, holder):
+        return False
+    state["holder_pause_migration"] = {
+        "migration_code": HOLDER_MIGRATION,
+        "origin": {"quality": deepcopy(quality), "holder_asof": holder["latest_transfer_event_utc"],
+                   "failed_at_utc": state.get("failed_at_utc")},
+        "current_quality": deepcopy(quality), "holder_sha256": hashlib.sha256(encoded(holder)).hexdigest()}
+    state.setdefault("domain_holds", {})["holders"] = {
+        "migration_code": HOLDER_MIGRATION, "error": LEGACY_HOLDER_ERROR,
+        "holder_data_as_of_utc": quality["holder_data_as_of_utc"], "automatic_clearance": False}
+    sync_holder_integrity_error(state)
+    return True
+
+
+def global_hold(state):
+    classified = _holder_migration_origin(state)
+    if classified:
+        migration = state["holder_pause_migration"]
+        quality = load(ROOT / "data/current/xnet_holder_integrity.json", {})
+        holder = load(ROOT / "data/current/xnet_holder_state.json", {})
+        classified = (_holder_quality_proven(quality, holder) and quality == migration.get("current_quality")
+                      and hashlib.sha256(encoded(holder)).hexdigest() == migration.get("holder_sha256"))
+        source = migration.get("accepted_source")
+        if source:
+            consumed = state.get("consumed_executions", {}).get(source.get("execution_id"), {})
+            classified = (classified and consumed.get("key") == "xnet_transfers"
+                          and consumed.get("effect") == "non_destructive_hot_union"
+                          and consumed.get("query_id") == source.get("query_id"))
+        else:
+            classified = classified and quality == migration["origin"]["quality"]
+        if quality.get("status") == "HEALTHY":
+            supply = load(ROOT / "data/current/xnet_supply_state.json", {})
+            classified = classified and bool(source) and supply.get("latest_transfer_event_utc") == holder.get("latest_transfer_event_utc")
+    return bool(state.get("paused") and not classified)
 
 
 def integrity_repair_due(state):
@@ -499,8 +694,33 @@ def reconciliation_weekly_allowed(billing):
     )
 
 
-def sync_holder_integrity_error(state):
+def sync_holder_integrity_error(state, accepted_source=None):
     quality = load(ROOT / "data/current/xnet_holder_integrity.json", {})
+    if accepted_source is not None and _holder_migration_origin(state):
+        holder = load(ROOT / "data/current/xnet_holder_state.json", {})
+        migration = state["holder_pause_migration"]
+        consumed = state.get("consumed_executions", {}).get(accepted_source.get("execution_id"), {})
+        if (consumed.get("key") != "xnet_transfers" or consumed.get("effect") != "non_destructive_hot_union"
+                or consumed.get("query_id") != accepted_source.get("query_id")
+                or not _holder_quality_proven(quality, holder)
+                or parse_instant(quality["checked_at_utc"], "holder checked")
+                < parse_instant(accepted_source.get("completed_at_utc"), "accepted source completed")
+                or parse_instant(quality["holder_data_as_of_utc"], "holder asof")
+                < parse_instant(migration["origin"]["holder_asof"], "original holder asof")):
+            raise ManualReviewRequired("Holder transition lacks matching fresh source/quality evidence")
+        if quality["status"] == "HEALTHY":
+            supply = load(ROOT / "data/current/xnet_supply_state.json", {})
+            if supply.get("latest_transfer_event_utc") != holder.get("latest_transfer_event_utc"):
+                raise ManualReviewRequired("Healthy holder evidence does not match accepted chain asof")
+            state.setdefault("domain_holds", {}).pop("holders", None)
+        else:
+            state.setdefault("domain_holds", {})["holders"] = {
+                "migration_code": HOLDER_MIGRATION, "error": quality["error"],
+                "holder_data_as_of_utc": quality["holder_data_as_of_utc"], "automatic_clearance": False}
+        migration.update(current_quality=deepcopy(quality), holder_sha256=hashlib.sha256(encoded(holder)).hexdigest(),
+                         accepted_source={"execution_id": accepted_source["execution_id"],
+                                          "query_id": accepted_source["query_id"],
+                                          "completed_at_utc": accepted_source["completed_at_utc"]})
     if quality.get("status") == "DEGRADED":
         state.setdefault("source_errors", {})["holder_integrity"] = {
             "error": quality["error"],
@@ -788,15 +1008,19 @@ def validate_hot_transfers(path, state):
     save(path, {**result, "result": {**result["result"], "rows": normalized_rows}})
 
 
-def reduce_atomically(transfer_path, bbb_path=None):
+def reduce_atomically(transfer_path=None, bbb_path=None):
     # A failed reduction must preserve canonical data and all derived state.
     with tempfile.TemporaryDirectory() as directory:
         backup = Path(directory) / "data"
         shutil.copytree(ROOT / "data", backup)
         try:
-            args = ["--transfer-result", str(transfer_path)]
+            args = []
+            if transfer_path is not None:
+                args.extend(["--transfer-result", str(transfer_path)])
             if bbb_path:
                 args.extend(["--bbb-result", str(bbb_path)])
+            if not args:
+                raise RuntimeError("No source result to reduce")
             run("v3_reduce_chain.py", *args, "--allow-stale-holders")
         except Exception:
             shutil.rmtree(ROOT / "data")
@@ -826,15 +1050,47 @@ def publish_data_generation(state, paths, source_records):
         backup = Path(directory) / "data"
         shutil.copytree(ROOT / "data", backup)
         try:
-            if "xnet_transfers" in paths:
-                validate_hot_transfers(paths["xnet_transfers"], state)
-                reduce_atomically(paths["xnet_transfers"], paths.get("bbb_dex"))
-                sync_holder_integrity_error(state)
-                state["chain_completed_at_utc"] = stamp()
-                for spec, record in source_records.values():
+            # Each reducer invocation has its own data rollback. Refusing one
+            # source must not suppress a valid independent source or presentation.
+            for key in ("xnet_transfers", "bbb_dex"):
+                if key not in paths:
+                    continue
+                spec, record = source_records[key]
+                source_before = deepcopy(state)
+                source_backup = Path(directory) / ("before-" + key)
+                shutil.copytree(ROOT / "data", source_backup)
+                try:
+                    # Validate/stage the clock-marker pair before any reducer
+                    # mutation. No checkpoint occurs until the full generation.
+                    stage_consumption(state, spec, record,
+                                      "non_destructive_hot_union" if key == "xnet_transfers" else "bbb_trade_union")
+                    if key == "xnet_transfers":
+                        validate_hot_transfers(paths[key], state)
+                        reduce_atomically(paths[key], None)
+                        sync_holder_integrity_error(state, accepted_source=record)
+                    else:
+                        reduce_atomically(None, paths[key])
+                except StateError:
+                    raise
+                except (ManualReviewRequired, CacheError) as error:
+                    shutil.rmtree(ROOT / "data")
+                    shutil.copytree(source_backup, ROOT / "data")
+                    state.clear()
+                    state.update(source_before)
+                    quarantine_source(state, key, str(error))
+                    continue
+                except (RuntimeError, subprocess.CalledProcessError, OSError, ValueError) as error:
+                    shutil.rmtree(ROOT / "data")
+                    shutil.copytree(source_backup, ROOT / "data")
+                    state.clear()
+                    state.update(source_before)
+                    record_source_issue(state, key, error)
+                    continue
+                else:
+                    if key == "xnet_transfers":
+                        state["chain_completed_at_utc"] = stamp()
                     state["queries"][spec["key"]] = record
                     state.setdefault("source_errors", {}).pop(spec["key"], None)
-                    stage_consumption(state, spec, record, "non_destructive_hot_union")
             # Keep public health shape compatible; Astra owns broader health policy.
             health = load(HEALTH, {})
             health.update({"schema_version": 2,
@@ -870,14 +1126,24 @@ def publish_data_generation(state, paths, source_records):
                 state.update(before)
             raise
 
+def sync_independent_network(state):
+    """Import ONLY the collector-owned lane; never replace financial recovery."""
+    try:
+        run("v3_sync_network.py")
+        refreshed = validate_journal(STATE.read_bytes())
+        if "network" in refreshed.get("external_sources", {}):
+            state.setdefault("external_sources", {})["network"] = refreshed["external_sources"]["network"]
+        state.setdefault("source_errors", {}).pop("network", None)
+    except StateError:
+        raise
+    except (subprocess.CalledProcessError, OSError, RuntimeError) as error:
+        record_source_issue(state, "network", error)
+
+
 def refresh_independent_data(state):
     """No Dune API routes at all; retain the exact chain pause and accepted ledger."""
     try:
-        run("v3_sync_network.py")
-        # The source collector records its own provenance, not Dune acceptance.
-        refreshed = validate_journal(STATE.read_bytes())
-        state.clear()
-        state.update(refreshed)
+        sync_independent_network(state)
         try:
             run("v3_collect_market.py")
         except subprocess.CalledProcessError as error:
@@ -915,6 +1181,7 @@ def main():
     state = load_authoritative_state()
     if args.cached_only:
         return refresh_independent_data(state)
+    migrate_holder_hold(state)
     if state.get("paused") and (args.benchmark or args.benchmark_sources):
         raise SystemExit("Refresh paused; benchmark cannot bypass the production pause.")
     if args.benchmark or args.benchmark_sources:
@@ -948,17 +1215,14 @@ def main():
                     if records[-1]["execution_cost_credits"] > 2 or sum(r["execution_cost_credits"] for r in records) > 30:
                         raise RuntimeError("Benchmark safety allowance reached; costs saved for review.")
         return 0
-    if not state.get("paused") or args.resume:
+    if not global_hold(state) or args.resume:
         # Startup receipt was checked before any producer mutation. Network is a
         # separate non-Dune domain; import only its journal update in this run.
-        run("v3_sync_network.py")
-        refreshed = validate_journal(STATE.read_bytes())
-        state.clear()
-        state.update(refreshed)
-    reconciliation_errors = tracker(state).reconcile()
+        sync_independent_network(state)
+    reconciliation_errors = tracker(state).reconcile(metadata_only=True)
     for key, error in reconciliation_errors.items():
         print(f"::warning::Execution reconciliation {key}: {error}", flush=True)
-    if state.get("paused") and not args.resume:
+    if global_hold(state) and not args.resume:
         # A green last-good snapshot must not conceal a global production pause.
         old_health = load(HEALTH, {})
         if old_health.get("status") != "PAUSED":
@@ -974,7 +1238,11 @@ def main():
             return refresh_independent_data(state)
         message = "Refresh remains paused after a previous failure; no queries submitted."
         raise SystemExit("Refresh paused after previous failure; review state and manually resume.")
-    state.update({"paused": False, "started_at_utc": stamp()})
+    if args.resume:
+        state["paused"] = False
+    state.setdefault("paused", False)
+    state["started_at_utc"] = stamp()
+    state.setdefault("queries", {})
     # Configuration changes must not erase prior accepted provenance/known IDs.
     paths, source_records = {}, {}
     try:
@@ -1110,21 +1378,13 @@ def main():
                 if not source_in_backoff(state, spec["key"])
             ]
 
-            # A recovered BBB result must be reduced even if the transfer clock
-            # isn't due yet. The unchanged canonical CSV remains deduplicated.
-            if any(s["key"] == "bbb_dex" for s in due_sources):
-                transfer = next((s for s in active_sources if s["key"] == "xnet_transfers"), None)
-                if transfer and transfer not in due_sources:
-                    due_sources.insert(0, transfer)
             paths = {}
             successful_sources = []
             source_modes = {}
             source_lookbacks = {}
 
             for spec in due_sources:
-                # BBB-only results cannot be committed without the canonical
-                # transfer clock; the reducer requires a transfer input.
-                if spec["key"] == "bbb_dex" and "xnet_transfers" not in paths:
+                if billing is None and not state.get("pending_executions", {}).get(spec["key"], {}).get("execution_id"):
                     continue
                 previous = (
                     state.get("queries", {})
@@ -1198,6 +1458,8 @@ def main():
                         state=state,
                         timeout_seconds=spec.get("execution_timeout_seconds"),
                     )
+                except StateError:
+                    raise
                 except ExecutionCancelled as error:
                     # The terminal cancellation is resolved, so apply a cooldown.
                     record_source_issue(state, spec["key"], error)
@@ -1206,6 +1468,9 @@ def main():
                     record_source_issue(state, spec["key"], error, unresolved=True)
                     continue
                 except (SubmissionRejected, ExecutionCostExceeded, ExecutionFailed, BudgetBlocked) as error:
+                    record_source_issue(state, spec["key"], error)
+                    continue
+                except (RuntimeError, OSError, ValueError) as error:
                     record_source_issue(state, spec["key"], error)
                     continue
 
@@ -1304,12 +1569,17 @@ def main():
                 try:
                     remaining = export_source(record, spec, remaining,
                                               max_bytes=export_max_bytes, state=state)
+                except StateError:
+                    raise
                 except BudgetBlocked as error:
                     record_source_issue(state, spec["key"], error, unresolved=True)
                     continue
                 except CacheError as error:
                     quarantine_source(state, spec["key"], str(error))
                     checkpoint(state)
+                    continue
+                except (RuntimeError, OSError, ValueError) as error:
+                    record_source_issue(state, spec["key"], error, unresolved=True)
                     continue
                 source_modes[spec["key"]] = actual_mode
                 source_lookbacks[spec["key"]] = int(lookback)
@@ -1431,7 +1701,9 @@ def main():
             state["billing"] = usage_guard(state)
         except BudgetBlocked:
             pass  # New spending denied; accepted known work remains publishable.
-        state.update({"completed_at_utc": stamp(), "last_error": None})
+        state["completed_at_utc"] = stamp()
+        if not state.get("paused"):
+            state["last_error"] = None
         # Health is reconciled after successful source commits, not before them.
         if HEALTH.exists():
             health = load(HEALTH, {})

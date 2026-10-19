@@ -53,6 +53,18 @@ BBB_FIELDS = [
     "decoded_xnet_leg_count",
 ]
 
+CANONICAL_TRANSFERS_PATH = Path("data/canonical/xnet_transfers.csv")
+
+CANONICAL_BBB_PATH = Path("data/canonical/bbb_trades.csv")
+
+TRANSFER_SORT_FIELDS = ("block_time", "block_slot", "tx_id")
+
+BBB_SORT_FIELDS = ("block_time", "tx_id")
+
+# Derived domains that may be left untouched by --preserve-derived. Each maps to
+# the reducer that would otherwise rebuild it (and to the files it would rewrite).
+PRESERVABLE_DOMAINS = ("holders", "supply", "burns")
+
 
 def dec(v) -> Decimal:
     if v in (None, ""):
@@ -863,13 +875,170 @@ def derive_bbb_trades(rows: list[dict]) -> None:
     )
 
 
+def parse_preserve_derived(value) -> frozenset[str]:
+    """Parse ``--preserve-derived`` into a validated set of domain names.
+
+    Pure. Unknown domains fail closed with a message listing the choices, so a
+    typo can never silently preserve (or silently rebuild) the wrong domain.
+    """
+    if value is None:
+        return frozenset()
+
+    domains = [
+        part.strip()
+        for part in str(value).split(",")
+        if part.strip()
+    ]
+
+    unknown = sorted(set(domains) - set(PRESERVABLE_DOMAINS))
+
+    if unknown:
+        raise RuntimeError(
+            "Unknown --preserve-derived domain(s): "
+            + ", ".join(unknown)
+            + "; choose from "
+            + ", ".join(PRESERVABLE_DOMAINS)
+        )
+
+    return frozenset(domains)
+
+
+def resolve_reduction_request(
+    *,
+    transfer_result,
+    bbb_result,
+    rebuild_canonical,
+) -> dict:
+    """Pure CLI-request validation, run before any read or write.
+
+    A BBB-only request is legitimate: it must never require a fresh transfer
+    result. Rebuild-canonical and a fresh transfer result are two ways to
+    establish the transfer ledger, so supplying both is refused.
+    """
+    if transfer_result is not None and rebuild_canonical:
+        raise RuntimeError(
+            "--transfer-result and --rebuild-canonical are mutually "
+            "exclusive; choose one transfer source"
+        )
+
+    if (
+        transfer_result is None
+        and bbb_result is None
+        and not rebuild_canonical
+    ):
+        raise RuntimeError(
+            "At least one of --transfer-result, --bbb-result or "
+            "--rebuild-canonical is required"
+        )
+
+    return {
+        "transfer": transfer_result is not None,
+        "bbb": bbb_result is not None,
+        "rebuild": bool(rebuild_canonical),
+    }
+
+
+def read_canonical_transfers(
+    path: Path | None = None,
+) -> list[dict]:
+    """Load an already-validated canonical CSV WITHOUT recomputing identities.
+
+    The scoped repair module mints instruction-based ``event_id`` values that
+    the legacy amount-based ``transfer_event_id`` cannot reproduce. Rebuilding
+    derived domains must therefore never pass these rows through
+    ``normalise_transfer``/``merge_csv``: the stored stable ids are copied
+    verbatim. Absent values stay empty (nil), never silently zero.
+    """
+    path = CANONICAL_TRANSFERS_PATH if path is None else path
+
+    if not path.exists():
+        raise RuntimeError(
+            f"Canonical transfer CSV not found: {path}"
+        )
+
+    with path.open(newline="") as f:
+        reader = csv.DictReader(f)
+        header = reader.fieldnames or []
+
+        if (
+            len(header) != len(TRANSFER_FIELDS)
+            or set(header) != set(TRANSFER_FIELDS)
+        ):
+            raise RuntimeError(
+                "Canonical transfer CSV must use the "
+                f"{len(TRANSFER_FIELDS)}-field legacy schema"
+            )
+
+        rows: list[dict] = []
+        seen: set[str] = set()
+
+        for record in reader:
+            event_id = (record.get("event_id") or "").strip()
+
+            if not event_id:
+                raise RuntimeError(
+                    "Canonical transfer row is missing a stable "
+                    "event_id"
+                )
+
+            if event_id in seen:
+                raise RuntimeError(
+                    f"Duplicate canonical event_id: {event_id}"
+                )
+
+            seen.add(event_id)
+
+            rows.append({
+                field: record.get(field) or ""
+                for field in TRANSFER_FIELDS
+            })
+
+    if not rows:
+        raise RuntimeError(
+            "Canonical transfer CSV has no rows"
+        )
+
+    return rows
+
+
+def derive_domains(
+    transfers: list[dict],
+    *,
+    preserve: frozenset[str] = frozenset(),
+    allow_stale_holders: bool = False,
+) -> None:
+    """Rebuild the derived domains for ``transfers``, skipping preserved ones.
+
+    A preserved domain is not derived at all, so its published files keep
+    their existing bytes and no negative-balance clamp is applied to it.
+    """
+    if "holders" not in preserve:
+        derive_holders_guarded(
+            transfers,
+            allow_stale_holders=allow_stale_holders,
+        )
+
+    if "supply" not in preserve:
+        derive_supply(transfers)
+
+    if "burns" not in preserve:
+        derive_bbb_burns(transfers)
+
+
 def main():
-    ap = argparse.ArgumentParser()
+    ap = argparse.ArgumentParser(
+        description=(
+            "Advance the canonical XNET transfer/BBB ledgers and their "
+            "derived domains."
+        )
+    )
 
     ap.add_argument(
         "--transfer-result",
         type=Path,
-        required=True,
+        help="Completed Dune transfer result JSON (optional; a "
+             "BBB-only or canonical rebuild does not need fresh "
+             "transfers)",
     )
 
     ap.add_argument(
@@ -877,69 +1046,113 @@ def main():
         type=Path,
     )
 
-    ap.add_argument("--allow-stale-holders", action="store_true",
-                    help="Preserve verified holders on material negative balance; continue independent chain metrics")
+    ap.add_argument(
+        "--rebuild-canonical",
+        action="store_true",
+        help="Rebuild the derived domains from the already-validated "
+             "canonical transfer CSV, preserving its stored stable "
+             "event IDs untouched (never normalised or rehashed)",
+    )
+
+    ap.add_argument(
+        "--preserve-derived",
+        default="",
+        metavar="DOMAINS",
+        help="Comma list of derived domains to leave untouched: "
+             + ",".join(PRESERVABLE_DOMAINS),
+    )
+
+    ap.add_argument(
+        "--allow-stale-holders",
+        action="store_true",
+        help="Preserve verified holders on material negative balance; "
+             "continue independent chain metrics",
+    )
 
     args = ap.parse_args()
 
-    transfer_rows = [
-        normalise_transfer(r)
-        for r in read_dune_rows(args.transfer_result)
-    ]
+    # Validate the request before touching any input or output.
+    try:
+        request = resolve_reduction_request(
+            transfer_result=args.transfer_result,
+            bbb_result=args.bbb_result,
+            rebuild_canonical=args.rebuild_canonical,
+        )
+        preserve = parse_preserve_derived(args.preserve_derived)
+    except RuntimeError as error:
+        ap.error(str(error))
 
-    bbb_rows = [
-        normalise_bbb(r)
-        for r in (read_dune_rows(args.bbb_result) if args.bbb_result else [])
-    ]
+    # Load and validate EVERY input before the first write.
+    transfer_rows = None
+    if request["transfer"]:
+        transfer_rows = [
+            normalise_transfer(r)
+            for r in read_dune_rows(args.transfer_result)
+        ]
 
-    transfers = merge_csv(
-        Path("data/canonical/xnet_transfers.csv"),
-        transfer_rows,
-        "event_id",
-        TRANSFER_FIELDS,
-        ("block_time", "block_slot", "tx_id"),
-    )
+    bbb_rows = None
+    if request["bbb"]:
+        bbb_rows = [
+            normalise_bbb(r)
+            for r in read_dune_rows(args.bbb_result)
+        ]
 
-    bbb = merge_csv(
-        Path("data/canonical/bbb_trades.csv"),
-        bbb_rows,
-        "tx_id",
-        BBB_FIELDS,
-        ("block_time", "tx_id"),
-    ) if args.bbb_result else []
+    canonical_rows = None
+    if request["rebuild"]:
+        canonical_rows = read_canonical_transfers()
 
-    derive_holders_guarded(transfers, allow_stale_holders=args.allow_stale_holders)
-    derive_supply(transfers)
-    derive_bbb_burns(transfers)
-    if args.bbb_result:
+    # --- transfer ledger + its derived domains -------------------------------
+    transfers = None
+    if transfer_rows is not None:
+        transfers = merge_csv(
+            CANONICAL_TRANSFERS_PATH,
+            transfer_rows,
+            "event_id",
+            TRANSFER_FIELDS,
+            TRANSFER_SORT_FIELDS,
+        )
+    elif canonical_rows is not None:
+        # Already-validated rows, identities untouched, canonical not rewritten.
+        transfers = canonical_rows
+
+    if transfers is not None:
+        derive_domains(
+            transfers,
+            preserve=preserve,
+            allow_stale_holders=args.allow_stale_holders,
+        )
+
+    # --- BBB ledger + its derived domain (independent of transfers) ----------
+    bbb = None
+    if bbb_rows is not None:
+        bbb = merge_csv(
+            CANONICAL_BBB_PATH,
+            bbb_rows,
+            "tx_id",
+            BBB_FIELDS,
+            BBB_SORT_FIELDS,
+        )
         derive_bbb_trades(bbb)
 
     print("=== XNET V3 CHAIN REDUCTION COMPLETE ===")
-    print("Canonical transfer rows:", len(transfers))
-    if args.bbb_result:
+
+    if transfers is not None:
+        print("Canonical transfer rows:", len(transfers))
+
+    if bbb is not None:
         print("Canonical BBB trade rows:", len(bbb))
 
-    print()
-    print("Holder state:")
-    print(
-        Path(
-            "data/current/xnet_holder_state.json"
-        ).read_text()
-    )
+    if transfers is not None:
+        print()
 
-    print("Supply state:")
-    print(
-        Path(
-            "data/current/xnet_supply_state.json"
-        ).read_text()
-    )
-
-    print("BBB burn state:")
-    print(
-        Path(
-            "data/current/xnet_bbb_burn_state.json"
-        ).read_text()
-    )
+        for label, path in (
+            ("Holder state:", Path("data/current/xnet_holder_state.json")),
+            ("Supply state:", Path("data/current/xnet_supply_state.json")),
+            ("BBB burn state:", Path("data/current/xnet_bbb_burn_state.json")),
+        ):
+            if path.exists():
+                print(label)
+                print(path.read_text())
 
 
 

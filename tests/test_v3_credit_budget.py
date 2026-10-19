@@ -75,6 +75,7 @@ def history_cost_samples(query_id, params, costs, *, ended_hours_ago, perf=None,
             row["shape_version"] = shape
         if bytes_ is not None:
             row["result_bytes"] = bytes_
+            row["export_wire_bytes"] = bytes_
         if credits is not None:
             row["estimated_export_credits"] = credits
         rows.append(row)
@@ -344,7 +345,7 @@ class ScheduledForecastTests(unittest.TestCase):
             base_utc=FORECAST_NOW,
         )
         for cost, byte_value in zip(varying, (250_000, 150_000, 100_000)):
-            cost["result_bytes"] = byte_value
+            cost["export_wire_bytes"] = byte_value
         grouped = group_samples(varying, default_performance="medium")
         forecast = scheduled_forecast(
             [{"key": "manifest:daily", "query_id": 8899999, "cadence_minutes": 1440,
@@ -373,7 +374,7 @@ class ScheduledForecastTests(unittest.TestCase):
             8899999, None, [2.0, 2.0, 2.0], ended_hours_ago=3, bytes_=None,
             base_utc=FORECAST_NOW,
         )
-        samples[0]["result_bytes"] = 250_000
+        samples[0]["export_wire_bytes"] = 250_000
         report = budget_admission(
             usage(credits_used=900.0),
             FORECAST_NOW,
@@ -559,7 +560,7 @@ class OutstandingLiabilityTests(unittest.TestCase):
         )
         self.assertAlmostEqual(result["total"], 25.0)
 
-    def test_included_in_confirmed_usage_skips_without_double_counting(self):
+    def test_legacy_inclusion_boolean_does_not_prove_settlement(self):
         result = outstanding_liabilities(
             [
                 {"kind": "execution", "liability_id": "already-counted",
@@ -569,11 +570,9 @@ class OutstandingLiabilityTests(unittest.TestCase):
             ]
         )
         self.assertAlmostEqual(result["total"], 1.09)
-        self.assertEqual(
-            result["skipped"],
-            [{"liability_id": "already-counted", "reason": "already_in_confirmed_usage"}],
-        )
-        self.assertTrue(any("no double counting" in r for r in result["reasons"]))
+        self.assertEqual(result["skipped"], [])
+        self.assertEqual(result["unknown"][0]["liability_id"], "already-counted")
+        self.assertTrue(any("inclusion flag ignored" in r for r in result["reasons"]))
 
     def test_duplicate_with_identical_cost_is_skipped(self):
         result = outstanding_liabilities(

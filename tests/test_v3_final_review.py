@@ -81,6 +81,274 @@ class FinalReviewTests(unittest.TestCase):
         """Real configuration with the network/market and Dune lanes narrowed for the fixture."""
         return {**refresh.CONFIG, "reconciliation": None, "presentation": [], "sources": [], **overrides}
 
+    def completed_pending(self, spec, execution_id, cost=0.2):
+        return {"execution_id": execution_id, "key": spec["key"], "query_id": spec["query_id"],
+                "query_parameters": {"lookback_hours": spec.get("lookback_hours", 2)},
+                "submitted_at_utc": refresh.stamp(), "timeout_seconds": 240, "billing": {},
+                "terminal_status": {"state": "QUERY_STATE_COMPLETED", "execution_cost_credits": cost,
+                    "execution_ended_at": refresh.stamp(), "result_metadata": {"total_row_count": 0, "column_names": ["a"]}}}
+
+    def test_blocked_finance_recovers_bbb_and_known_presentation_without_forced_transfer(self):
+        transfer, bbb, chart = source_spec(), source_spec("bbb_dex"), presentation_spec()
+        journal = self.write_journal({"schema_version": 1, "queries": {}, "pending_executions": {
+            "bbb_dex": self.completed_pending(bbb, "paid-bbb", cost=2),
+            "current": self.completed_pending(chart, "paid-chart")}})
+        with patch("sys.argv", ["refresh"]), \
+             patch.object(refresh, "CONFIG", self.config(sources=[transfer, bbb], presentation=[chart])), \
+             patch.object(refresh, "load_authoritative_state", return_value=copy.deepcopy(journal)), \
+             patch.object(refresh, "run"), patch.object(refresh, "api") as api, \
+             patch.object(refresh, "usage_guard", side_effect=refresh.BudgetBlocked("legacy unknown exposure")), \
+             patch.object(refresh, "export_source", return_value=100) as export, \
+             patch.object(refresh, "validate_hot_transfers") as validate, \
+             patch.object(refresh, "reduce_atomically") as reduce:
+            self.assertEqual(refresh.main(), 0)
+        api.assert_not_called()  # terminal metadata already retained; no POST/read
+        validate.assert_not_called()
+        self.assertEqual(export.call_count, 1)
+        reduce.assert_called_once_with(None, self.repo / bbb["output"])
+        committed = self.journal()
+        self.assertNotIn("xnet_transfers", committed["queries"])
+        self.assertNotIn("chain_completed_at_utc", committed)
+        self.assertEqual(committed["queries"]["bbb_dex"]["execution_id"], "paid-bbb")
+        self.assertEqual(committed["queries"]["bbb_dex"]["cost_outlier"]["recovery_policy"], "accept_completed_outlier")
+        self.assertIn("bbb_dex", committed["cost_breakers"])
+        self.assertIn("paid-chart", committed["consumed_executions"])
+
+    def test_transfer_validation_refusal_still_accepts_bbb_and_presentation(self):
+        transfer, bbb, chart = source_spec(), source_spec("bbb_dex"), presentation_spec()
+        journal = self.write_journal({"schema_version": 1, "queries": {}, "pending_executions": {
+            spec["key"]: self.completed_pending(spec, identity) for spec, identity in
+            ((transfer, "paid-transfer"), (bbb, "paid-bbb"), (chart, "paid-chart"))}})
+        with patch("sys.argv", ["refresh"]), \
+             patch.object(refresh, "CONFIG", self.config(sources=[transfer, bbb], presentation=[chart])), \
+             patch.object(refresh, "load_authoritative_state", return_value=copy.deepcopy(journal)), \
+             patch.object(refresh, "run"), patch.object(refresh, "api") as api, \
+             patch.object(refresh, "usage_guard", return_value={}), \
+             patch.object(refresh, "export_source", return_value=100), \
+             patch.object(refresh, "validate_hot_transfers", side_effect=refresh.ManualReviewRequired("Canonical transfer ledger missing")), \
+             patch.object(refresh, "reduce_atomically") as reduce:
+            self.assertEqual(refresh.main(), 0)
+        api.assert_not_called()
+        reduce.assert_called_once_with(None, self.repo / bbb["output"])
+        committed = self.journal()
+        self.assertIn("xnet_transfers", committed["pending_executions"])
+        self.assertNotIn("paid-transfer", committed["consumed_executions"])
+        self.assertIn("paid-bbb", committed["consumed_executions"])
+        self.assertIn("paid-chart", committed["consumed_executions"])
+        self.assertFalse(committed["paused"])
+
+    def test_global_hold_reconciliation_is_status_only_even_after_timeout(self):
+        spec = source_spec()
+        pending = self.completed_pending(spec, "old-running")
+        pending.pop("terminal_status")
+        pending["submitted_at_utc"] = "2026-01-01T00:00:00Z"
+        journal = self.write_journal({"schema_version": 1, "queries": {}, "paused": True,
+                                     "last_error": "unclassified", "pending_executions": {spec["key"]: pending}})
+        with patch("sys.argv", ["refresh"]), patch.dict("os.environ", {"EVENT": ""}), \
+             patch.object(refresh, "load_authoritative_state", return_value=journal), \
+             patch.object(refresh, "api", return_value={"state": "QUERY_STATE_EXECUTING"}) as api, \
+             patch.object(refresh, "run") as run:
+            with self.assertRaisesRegex(SystemExit, "paused"):
+                refresh.main()
+        self.assertTrue(api.call_args_list)
+        self.assertTrue(all(call.args == ("execution/old-running/status",) for call in api.call_args_list))
+        run.assert_not_called()
+        self.assertNotIn("cancellation_requested_at_utc", journal["pending_executions"][spec["key"]])
+
+    def holder_evidence(self):
+        at = "2026-10-07T01:00:00Z"
+        quality = {"status": "DEGRADED", "reason": "holder_balance_integrity", "error": refresh.LEGACY_HOLDER_ERROR,
+                   "methodology_changed": False, "holder_data_as_of_utc": at, "checked_at_utc": at}
+        (self.repo / "data/current/xnet_holder_state.json").write_text(json.dumps({"latest_transfer_event_utc": at}))
+        (self.repo / "data/current/xnet_holder_integrity.json").write_text(json.dumps(quality))
+        return quality
+
+    def test_exact_legacy_holder_migration_preserves_pause_and_requires_evidence(self):
+        original = {"paused": True, "last_error": refresh.LEGACY_HOLDER_ERROR}
+        self.assertFalse(refresh.migrate_holder_hold(copy.deepcopy(original)))
+        self.holder_evidence()
+        state = copy.deepcopy(original)
+        self.assertTrue(refresh.migrate_holder_hold(state))
+        self.assertTrue(state["paused"])
+        self.assertEqual(state["last_error"], original["last_error"])
+        self.assertFalse(refresh.global_hold(state))
+        state["last_error"] += " another failure"
+        self.assertTrue(refresh.global_hold(state))
+        self.assertFalse(refresh.migrate_holder_hold(state))
+        state = copy.deepcopy(original)
+        quality_path = self.repo / "data/current/xnet_holder_integrity.json"
+        quality_path.write_text(json.dumps({"status": "DEGRADED", "error": refresh.LEGACY_HOLDER_ERROR}))
+        self.assertFalse(refresh.migrate_holder_hold(state))
+        self.assertTrue(refresh.global_hold(state))
+
+    def test_accepted_holder_diagnosis_can_evolve_then_recover_without_resurrecting_legacy_pause(self):
+        self.holder_evidence()
+        state = {"schema_version": 1, "queries": {}, "paused": True,
+                 "last_error": refresh.LEGACY_HOLDER_ERROR, "failed_at_utc": "2026-10-07T01:00:00Z"}
+        self.assertTrue(refresh.migrate_holder_hold(state))
+        origin = copy.deepcopy(state["holder_pause_migration"]["origin"])
+        spec = source_spec()
+        clock = refresh.now().replace(microsecond=0)
+        checked = clock.isoformat()
+        old_asof = "2026-10-07T01:00:00Z"
+        new_asof = (clock - timedelta(minutes=10)).isoformat()
+        for index, error in enumerate((
+                "Negative holder balance after reduction: BBB = -58683",
+                "Negative holder balance after reduction: ATmk = -3988", None)):
+            record = {"execution_id": f"accepted-holder-{index}", "query_id": spec["query_id"],
+                      "query_parameters": {}, "execution_cost_credits": 0.2,
+                      "completed_at_utc": (clock - timedelta(seconds=5)).isoformat()}
+            asof = old_asof if error else new_asof
+            quality = {"status": "DEGRADED" if error else "HEALTHY", "methodology_changed": False,
+                       "checked_at_utc": checked, "holder_data_as_of_utc": asof}
+            if error:
+                quality.update(reason="holder_balance_integrity", error=error)
+            def reduce(*args):
+                (self.repo / "data/current/xnet_holder_integrity.json").write_text(json.dumps(quality))
+                (self.repo / "data/current/xnet_holder_state.json").write_text(json.dumps({"latest_transfer_event_utc": asof}))
+                (self.repo / "data/current/xnet_supply_state.json").write_text(json.dumps({"latest_transfer_event_utc": asof}))
+            with patch.object(refresh, "run"), patch.object(refresh, "validate_hot_transfers"), \
+                 patch.object(refresh, "reduce_atomically", side_effect=reduce):
+                refresh.publish_data_generation(state, {"xnet_transfers": self.repo / "hot.json"},
+                                                 {"xnet_transfers": (spec, record)})
+            self.assertFalse(refresh.global_hold(state), error)
+            self.assertTrue(state["paused"], "legacy audit must not be erased")
+            self.assertEqual(state["last_error"], refresh.LEGACY_HOLDER_ERROR)
+            self.assertEqual(state["holder_pause_migration"]["origin"], origin)
+            if error:
+                self.assertEqual(state["domain_holds"]["holders"]["error"], error)
+            else:
+                self.assertNotIn("holders", state["domain_holds"])
+                self.assertNotIn("holder_integrity", state["source_errors"])
+            restored = self.journal()
+            self.assertFalse(refresh.global_hold(restored), "classification must survive restart")
+        state["last_error"] = "unrelated publication failure"
+        self.assertTrue(refresh.global_hold(state))
+
+    def test_forged_hold_or_unaccepted_quality_change_cannot_reclassify_a_pause(self):
+        self.holder_evidence()
+        state = {"paused": True, "last_error": refresh.LEGACY_HOLDER_ERROR,
+                 "domain_holds": {"holders": {"migration_code": refresh.HOLDER_MIGRATION,
+                     "error": refresh.LEGACY_HOLDER_ERROR, "holder_data_as_of_utc": "2026-10-07T01:00:00Z"}}}
+        self.assertTrue(refresh.global_hold(state), "a label without verified origin is not migration authority")
+        self.assertTrue(refresh.migrate_holder_hold(state))
+        quality = self.holder_evidence()
+        quality["error"] = "Negative holder balance after reduction: DIFFERENT = -1"
+        (self.repo / "data/current/xnet_holder_integrity.json").write_text(json.dumps(quality))
+        self.assertTrue(refresh.global_hold(state), "a file edit without accepted-source proof is not a transition")
+        state["holder_pause_migration"]["current_quality"] = copy.deepcopy(quality)
+        self.assertTrue(refresh.global_hold(state), "copying the changed diagnosis into a marker is not acceptance proof")
+
+    def test_healthy_quality_with_mismatched_holder_state_cannot_clear_domain_hold(self):
+        self.holder_evidence()
+        state = {"queries": {}, "paused": True, "last_error": refresh.LEGACY_HOLDER_ERROR}
+        self.assertTrue(refresh.migrate_holder_hold(state))
+        quality = {"status": "HEALTHY", "methodology_changed": False,
+                   "checked_at_utc": refresh.stamp(), "holder_data_as_of_utc": refresh.stamp()}
+        (self.repo / "data/current/xnet_holder_integrity.json").write_text(json.dumps(quality))
+        state["consumed_executions"] = {"candidate": {"key": "xnet_transfers", "query_id": 1,
+                                                     "effect": "non_destructive_hot_union"}}
+        with self.assertRaises(refresh.ManualReviewRequired):
+            refresh.sync_holder_integrity_error(state, accepted_source={"execution_id": "candidate", "query_id": 1,
+                                                                        "completed_at_utc": refresh.stamp()})
+        self.assertIn("holders", state["domain_holds"])
+        self.assertTrue(refresh.global_hold(state))
+
+    def test_cached_only_retains_migrated_pause_audit_and_never_opens_paid_paths(self):
+        self.holder_evidence()
+        state = self.write_journal({"schema_version": 1, "queries": {}, "paused": True,
+                                    "last_error": refresh.LEGACY_HOLDER_ERROR})
+        self.assertTrue(refresh.migrate_holder_hold(state))
+        with patch("sys.argv", ["refresh", "--cached-only"]), \
+             patch.object(refresh, "load_authoritative_state", return_value=state), \
+             patch.object(refresh, "run"), patch.object(refresh, "api") as api, \
+             patch.object(refresh, "usage_guard") as guard, patch.object(refresh, "execute") as execute:
+            self.assertEqual(refresh.main(), 0)
+        api.assert_not_called()
+        guard.assert_not_called()
+        execute.assert_not_called()
+        self.assertTrue(self.journal()["paused"])
+        self.assertEqual(self.journal()["last_error"], refresh.LEGACY_HOLDER_ERROR)
+
+    def test_health_uses_each_actual_source_asof_not_generated_time_or_dune_hold(self):
+        current = refresh.now().replace(microsecond=0)
+        at = current.isoformat().replace("+00:00", "Z")
+        day = current.date().isoformat()
+        stale = (current - timedelta(days=5)).isoformat()
+        fixtures = {"xnet_supply_state.json": {"latest_transfer_event_utc": stale},
+            "xnet_holder_state.json": {"latest_transfer_event_utc": stale},
+            "xnet_bbb_trade_state.json": {"latest_trade_utc": at},
+            "xnet_network_state.json": {"devices": {"observed_at_utc": at}, "offload": {"data_as_of": day}},
+            "xnet_revenue_state.json": {"generated_at_utc": at, "live_fee_accrual": {"as_of": day}},
+            "xnet_market_state.json": {"fetched_at_utc": at}}
+        for name, payload in fixtures.items():
+            (self.repo / "data/current" / name).write_text(json.dumps(payload))
+        state = {"paused": True, "last_error": "unclassified", "budget_decision": {"status": "blocked"},
+                 "source_errors": {"holder_integrity": {"error": "unresolved"}}}
+        refresh.write_operational_health(state)
+        report = json.loads((self.repo / "data/current/v3_operational_health.json").read_text())
+        for key in ("devices", "offload", "revenue", "market", "bbb_dex"):
+            self.assertEqual(report["domains"][key]["status"], "fresh", key)
+        self.assertEqual(report["domains"]["holders"]["status"], "degraded")
+        self.assertEqual(report["domains"]["xnet_transfers"]["source_asof_utc"], stale.replace("+00:00", "Z"))
+        self.assertTrue(report["admission"]["global_hold"])
+        self.assertTrue(report["admission"]["budget_blocked"])
+
+    def test_export_singleton_uses_shared_estimator_policy_not_three_sample_rule(self):
+        policy = {"min_comparable_samples": 1, "sample_max_age_hours": 24, "variance_uplift_sigma": 2}
+        evidence = {"export_cost_values": [0.4], "export_evidence_count": 1, "export_bytes_max": 500}
+        with patch.object(refresh, "CONFIG", self.config(budget_policy=policy)), \
+             patch.object(refresh, "collect_sample_history", return_value=([], {})), \
+             patch.object(refresh, "sample_estimate", return_value={"evidence": evidence}) as estimate:
+            risk, _ = refresh.export_risk({}, {"query_id": 1, "query_parameters": {}}, {"shape_version": "v1"}, 400)
+        self.assertEqual(risk, 0.4)
+        self.assertEqual(estimate.call_args.kwargs["min_comparable_samples"], 1)
+        self.assertEqual(estimate.call_args.kwargs["variance_uplift_sigma"], 2)
+        self.assertEqual(estimate.call_args.kwargs["shape_version"], "v1")
+
+    def test_budget_admission_alone_does_not_authorize_new_compute(self):
+        state = self.write_journal({"schema_version": 1, "queries": {}})
+        decision = {"status": "admitted", "blockers": [], "report": {"totals": {}},
+                    "proposed_evaluation": {"cost_estimate_credits": 0.2}}
+        with patch.object(refresh, "evaluate_budget", return_value=decision), \
+             patch.object(refresh, "api", return_value={}) as api:
+            with self.assertRaises(refresh.BudgetBlocked):
+                refresh.execute(presentation_spec(), state=state)
+        self.assertEqual(api.call_args.args[0], "usage")  # only free metadata read
+        self.assertEqual(api.call_count, 1)
+        self.assertFalse(state.get("pending_executions"))
+
+    def test_ordinary_verified_approval_and_quote_are_checkpointed_before_post(self):
+        state = self.write_journal({"schema_version": 1, "queries": {}})
+        clock = refresh.now()
+        spec = presentation_spec(financial_attempt_id="reviewed-ordinary")
+        approval = {"operation_id": "reviewed-ordinary", "kind": "execution", "query_id": spec["query_id"],
+                    "query_parameters": {}, "execution_id": None, "performance": refresh.CONFIG["performance"],
+                    "shape_version": None, "quote_credits": 0.2, "approval_ref": "fixture: explicit ordinary operation",
+                    "estimate_evidence": "fixture: reviewed comparable execution costs",
+                    "approved_at_utc": (clock - timedelta(minutes=1)).isoformat(),
+                    "valid_until_utc": (clock + timedelta(minutes=1)).isoformat()}
+        spec["operation_approval"] = copy.deepcopy(approval)
+        quote = {"cost_estimate_credits": 0.2, "status": "admitted", "evidence": {"observed": [0.15, 0.2]}}
+        decision = {"status": "admitted", "blockers": [], "proposed_evaluation": quote,
+                    "report": {"totals": {"limit_credits": 1800, "dependencies_total": 10},
+                        "current_usage": {"credits_used": 100, "period_start_utc": "2026-10-01T00:00:00Z",
+                                          "period_end_utc": "2026-11-01T00:00:00Z"}, "forecast": {}}}
+        def api(path, *args):
+            if path == "usage":
+                return {}
+            if path.endswith("/execute"):
+                pending = self.journal()["pending_executions"][spec["key"]]
+                self.assertIsNone(pending["execution_id"])
+                self.assertEqual(pending["operation_approval"], approval)
+                self.assertEqual(pending["operation_quote"], quote)
+                return {"execution_id": "new-approved"}
+            return {"state": "QUERY_STATE_COMPLETED", "execution_cost_credits": 0.2}
+        with patch.object(refresh, "evaluate_budget", return_value=decision), patch.object(refresh, "api", side_effect=api):
+            refresh.execute(spec, state=state)
+        spec["operation_approval"]["estimate_evidence"] = "mutated later"
+        self.assertEqual(state["pending_executions"][spec["key"]]["operation_approval"], approval)
+
     # ---------------------------------------------------------------- cached-only
 
     def test_cached_only_publishes_independent_data_and_never_opens_a_dune_route(self):

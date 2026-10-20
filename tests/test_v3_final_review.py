@@ -225,6 +225,18 @@ class FinalReviewTests(unittest.TestCase):
         state["last_error"] = "unrelated publication failure"
         self.assertTrue(refresh.global_hold(state))
 
+    def test_original_production_operator_pause_is_bound_to_the_same_quality_evidence(self):
+        self.holder_evidence()
+        message = ("Controlled five-credit recovery halted: BBB wallet holder-integrity regression "
+                   "(-51907.828371 XNET); manual evidence-based reconciliation required.")
+        state = {"paused": True, "last_error": message, "failed_at_utc": "2026-10-16T21:01:15Z"}
+        self.assertTrue(refresh.migrate_holder_hold(state))
+        self.assertFalse(refresh.global_hold(state))
+        self.assertEqual(state["last_error"], message)
+        self.assertEqual(state["holder_pause_migration"]["origin"]["pause_error"], message)
+        state["last_error"] = message + " plus an unrelated fault"
+        self.assertTrue(refresh.global_hold(state))
+
     def test_forged_hold_or_unaccepted_quality_change_cannot_reclassify_a_pause(self):
         self.holder_evidence()
         state = {"paused": True, "last_error": refresh.LEGACY_HOLDER_ERROR,
@@ -238,6 +250,22 @@ class FinalReviewTests(unittest.TestCase):
         self.assertTrue(refresh.global_hold(state), "a file edit without accepted-source proof is not a transition")
         state["holder_pause_migration"]["current_quality"] = copy.deepcopy(quality)
         self.assertTrue(refresh.global_hold(state), "copying the changed diagnosis into a marker is not acceptance proof")
+
+    def test_production_dune_utc_timestamps_remain_real_source_evidence(self):
+        quality = self.holder_evidence()
+        actual = "2026-10-13 22:41:58.000 UTC"
+        quality.update(holder_data_as_of_utc=actual, checked_at_utc="2026-10-16T20:59:18Z")
+        (self.repo / "data/current/xnet_holder_state.json").write_text(json.dumps({"latest_transfer_event_utc": actual}))
+        (self.repo / "data/current/xnet_holder_integrity.json").write_text(json.dumps(quality))
+        state = {"paused": True, "last_error": refresh.LEGACY_HOLDER_ERROR}
+        self.assertTrue(refresh.migrate_holder_hold(state))
+        self.assertFalse(refresh.global_hold(state))
+        refresh.write_operational_health({"queries": {}})
+        health = json.loads((self.repo / "data/current/v3_operational_health.json").read_text())
+        self.assertEqual(health["domains"]["holders"]["source_asof_utc"], "2026-10-13T22:41:58Z")
+        self.assertNotEqual(health["domains"]["holders"]["status"], "invalid")
+        with self.assertRaises(refresh.BudgetInputError):
+            refresh.source_instant("2026-10-13", "date-only observation")
 
     def test_healthy_quality_with_mismatched_holder_state_cannot_clear_domain_hold(self):
         self.holder_evidence()

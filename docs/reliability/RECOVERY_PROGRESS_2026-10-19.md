@@ -3,8 +3,9 @@
 ## Production versus work in progress
 
 The publication/receipt hardening from PRs #40 and #41 is deployed. The second
-round of financial and domain-isolation changes is undergoing integrated review;
-do not infer deployment or current Dune data from local passing tests.
+round of financial and domain-isolation changes is deployed through PR #42
+(`8de4763c278f16b11e9fc2aad62797ec2ac0e661`). Its cached-only production refresh
+`39329773992` succeeded without new Dune computation or result exports.
 
 ## Approved paid operation
 
@@ -52,10 +53,12 @@ The user subsequently approved exactly two additional one-day operations for
   supplied by MCP, so the financial amounts remain unknown, not zero.
 
 Adding the complete 14/15 October evidence and five independently decoded missing
-16 October rows yields a **3,470-row candidate (+327)**. The strict full production
-reducer, **without stale-holder fallback**, succeeds. This candidate is under
-independent review and has not yet been published. Its historical validation does
-not establish current chain coverage or current Dune presentation freshness.
+16 October rows yields **3,470 rows (+327)**. The strict full production reducer,
+**without stale-holder fallback**, succeeds. Independent conservation and row
+review passed. The append-only generation was atomically published on 20 October:
+`fa9150f014d85024df9934f5b54c5a0f4e39dee4`. See
+`ADDITIVE_REPAIR_ACCEPTANCE_2026-10-20.md`. This historical repair does not establish
+current chain coverage or current Dune presentation freshness.
 
 ## Review and rollout boundaries
 
@@ -76,9 +79,9 @@ not establish current chain coverage or current Dune presentation freshness.
 
 ## Still required for mission completion
 
-Finish integrated review/CI and deploy domain/financial recovery; obtain complete
-remaining source evidence with operation-specific approval where needed; validate
-and atomically accept repairs; then perform separately approved source catch-up
-and presentation refresh. Verify actual production source-as-of timestamps rather
+Obtain complete remaining source coverage when the Dune provider fault is
+resolved, with operation-specific approval for retries/catch-up/presentation
+refresh. Install a separately authorized sustainable operating plan; the cost
+analysis is not spending authority. Verify actual source-as-of timestamps rather
 than using workflow success as freshness evidence. The public Dune dashboard is
 **not yet verified fresh**.

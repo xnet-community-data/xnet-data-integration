@@ -160,6 +160,13 @@ def checkpoint(state):
     return publish(state_only=True)
 
 
+def source_instant(value, label):
+    """Normalize the existing Dune UTC rendering, never substitute process time."""
+    if isinstance(value, str) and value.endswith(" UTC"):
+        value = value[:-4].replace(" ", "T", 1) + "Z"
+    return parse_instant(value, label)
+
+
 def write_operational_health(state):
     """Internal-only provenance and stable incident identities; no public fields added."""
     specs = [*CONFIG.get("sources", []), *CONFIG.get("presentation", [])]
@@ -174,6 +181,11 @@ def write_operational_health(state):
             at = at.get(part) if isinstance(at, dict) else None
         if daily and isinstance(at, str) and len(at) == 10:
             at += "T00:00:00Z"  # Date precision is explicit, never process time.
+        if at is not None:
+            try:
+                at = source_instant(at, key + " source asof").isoformat().replace("+00:00", "Z")
+            except BudgetInputError:
+                pass  # Keep invalid source evidence visible; never invent a timestamp.
         sources[key] = {**sources.get(key, {}), "source_asof": at}
         config["domains"][key] = {"source_key": key, "max_age_seconds": max_age}
     evidence("xnet_transfers", "data/current/xnet_supply_state.json", "latest_transfer_event_utc")
@@ -429,14 +441,17 @@ def holder_integrity_degraded(state):
 
 LEGACY_HOLDER_ERROR = ("Negative holder balance after reduction: "
     "5QsyByFVJcg7oN76Ma26KEDFQdHt1tsiVExK94zURzfd = -51907.828371000000000000")
+LEGACY_HOLDER_PAUSES = frozenset({LEGACY_HOLDER_ERROR,
+    "Controlled five-credit recovery halted: BBB wallet holder-integrity regression "
+    "(-51907.828371 XNET); manual evidence-based reconciliation required."})
 HOLDER_MIGRATION = "legacy_bbb_negative_holder_v1"
 
 
 def _holder_quality_proven(quality, holder):
     """File evidence, not an arbitrary domain-hold label or generated timestamp."""
     try:
-        at = parse_instant(quality.get("holder_data_as_of_utc"), "holder asof")
-        checked = parse_instant(quality.get("checked_at_utc"), "holder checked")
+        at = source_instant(quality.get("holder_data_as_of_utc"), "holder asof")
+        checked = source_instant(quality.get("checked_at_utc"), "holder checked")
         valid_status = ((quality.get("status") == "DEGRADED"
                          and quality.get("reason") == "holder_balance_integrity"
                          and str(quality.get("error", "")).startswith("Negative holder balance after reduction:"))
@@ -453,7 +468,9 @@ def _holder_migration_origin(state):
     origin = migration.get("origin", {})
     quality = origin.get("quality", {})
     return (migration.get("migration_code") == HOLDER_MIGRATION
-            and state.get("last_error") == quality.get("error") == LEGACY_HOLDER_ERROR
+            and state.get("last_error") == origin.get("pause_error", quality.get("error"))
+            and state.get("last_error") in LEGACY_HOLDER_PAUSES
+            and quality.get("error") == LEGACY_HOLDER_ERROR
             and origin.get("failed_at_utc") == state.get("failed_at_utc")
             and quality.get("status") == "DEGRADED"
             and _holder_quality_proven(quality, {"latest_transfer_event_utc": origin.get("holder_asof")}))
@@ -465,7 +482,7 @@ def migrate_holder_hold(state):
     Preserve the original pause/error as audit. This is not resume, holder repair,
     execution authorization, or permission to widen the financial guard.
     """
-    if not state.get("paused") or state.get("last_error") != LEGACY_HOLDER_ERROR:
+    if not state.get("paused") or state.get("last_error") not in LEGACY_HOLDER_PAUSES:
         return False
     if "holder_pause_migration" in state:
         return False  # Immutable origin; never re-migrate a changed diagnosis.
@@ -476,7 +493,7 @@ def migrate_holder_hold(state):
     state["holder_pause_migration"] = {
         "migration_code": HOLDER_MIGRATION,
         "origin": {"quality": deepcopy(quality), "holder_asof": holder["latest_transfer_event_utc"],
-                   "failed_at_utc": state.get("failed_at_utc")},
+                   "failed_at_utc": state.get("failed_at_utc"), "pause_error": state["last_error"]},
         "current_quality": deepcopy(quality), "holder_sha256": hashlib.sha256(encoded(holder)).hexdigest()}
     state.setdefault("domain_holds", {})["holders"] = {
         "migration_code": HOLDER_MIGRATION, "error": LEGACY_HOLDER_ERROR,
@@ -703,10 +720,10 @@ def sync_holder_integrity_error(state, accepted_source=None):
         if (consumed.get("key") != "xnet_transfers" or consumed.get("effect") != "non_destructive_hot_union"
                 or consumed.get("query_id") != accepted_source.get("query_id")
                 or not _holder_quality_proven(quality, holder)
-                or parse_instant(quality["checked_at_utc"], "holder checked")
-                < parse_instant(accepted_source.get("completed_at_utc"), "accepted source completed")
-                or parse_instant(quality["holder_data_as_of_utc"], "holder asof")
-                < parse_instant(migration["origin"]["holder_asof"], "original holder asof")):
+                or source_instant(quality["checked_at_utc"], "holder checked")
+                < source_instant(accepted_source.get("completed_at_utc"), "accepted source completed")
+                or source_instant(quality["holder_data_as_of_utc"], "holder asof")
+                < source_instant(migration["origin"]["holder_asof"], "original holder asof")):
             raise ManualReviewRequired("Holder transition lacks matching fresh source/quality evidence")
         if quality["status"] == "HEALTHY":
             supply = load(ROOT / "data/current/xnet_supply_state.json", {})

@@ -3868,20 +3868,6 @@
   "execution_history": [
     {
       "cancellation_requested_at_utc": null,
-      "execution_cost_credits": 0.371235295,
-      "execution_ended_at": "2026-10-11T04:05:44.817386846Z",
-      "execution_id": "01M4MJ6HXX2E5A73CZRQ6RDV1P",
-      "execution_started_at": "2026-10-11T04:05:40.984776954Z",
-      "key": "xnet_transfers",
-      "query_id": 8894037,
-      "query_parameters": {
-        "lookback_hours": 2
-      },
-      "state": "QUERY_STATE_COMPLETED",
-      "submitted_at_utc": "2026-10-11T04:05:38Z"
-    },
-    {
-      "cancellation_requested_at_utc": null,
       "execution_cost_credits": 0.11977201,
       "execution_ended_at": "2026-10-11T04:06:00.465152019Z",
       "execution_id": "01M4MJ74YV9YSBSQM0BABEKEK2",
@@ -18705,6 +18691,23 @@
       "shape_version": null,
       "state": "QUERY_STATE_COMPLETED",
       "submitted_at_utc": "2026-10-20T15:20:39.938754Z"
+    },
+    {
+      "cancellation_requested_at_utc": null,
+      "execution_cost_credits": 13.993088236,
+      "execution_ended_at": "2026-10-20T15:54:56.593917656Z",
+      "execution_id": "01M5D0AP0EHFFKR1CGQ4X6NF3G",
+      "execution_started_at": "2026-10-20T15:54:23.117633662Z",
+      "financial_attempt_id": "6160bcb9374e4142a06289a9d78118dd",
+      "key": "reconciliation_manifest",
+      "performance": "medium",
+      "query_id": 8893945,
+      "query_parameters": {
+        "lookback_days": 30
+      },
+      "shape_version": null,
+      "state": "QUERY_STATE_COMPLETED",
+      "submitted_at_utc": "2026-10-20T15:54:18.070664Z"
     }
   ],
   "external_sources": {
@@ -31518,9 +31521,9 @@
         "unresolved": false
       },
       "exec:01M5D0AP0EHFFKR1CGQ4X6NF3G": {
-        "cost_credits": null,
+        "cost_credits": 13.993088236,
         "execution_id": "01M5D0AP0EHFFKR1CGQ4X6NF3G",
-        "incurred_at_utc": null,
+        "incurred_at_utc": "2026-10-20T15:54:56.593917656Z",
         "kind": "execution",
         "liability_id": "exec:01M5D0AP0EHFFKR1CGQ4X6NF3G",
         "query_id": 8893945,
@@ -31529,7 +31532,7 @@
         },
         "submission_id": "submission:6160bcb9374e4142a06289a9d78118dd",
         "submitted_at_utc": "2026-10-20T15:54:18.070664Z",
-        "unresolved": true
+        "unresolved": false
       },
       "export_d7d8ddc2f6e64043a3c8095c59c36a7d": {
         "basis": "observed_charge_not_inclusion",
@@ -34341,6 +34344,50 @@
         "query_id": 8893945
       },
       "submitted_at_utc": "2026-10-20T15:54:18.070664Z",
+      "terminal_status": {
+        "execution_cost_credits": 13.993088236,
+        "execution_ended_at": "2026-10-20T15:54:56.593917656Z",
+        "execution_id": "01M5D0AP0EHFFKR1CGQ4X6NF3G",
+        "execution_started_at": "2026-10-20T15:54:23.117633662Z",
+        "expires_at": "2027-01-18T15:54:56.593928Z",
+        "is_execution_finished": true,
+        "query_id": 8893945,
+        "result_metadata": {
+          "column_names": [
+            "day",
+            "event_count",
+            "transfer_count",
+            "burn_count",
+            "mint_count",
+            "tx_count",
+            "min_block_slot",
+            "max_block_slot",
+            "amount_raw_total",
+            "block_slot_total"
+          ],
+          "column_types": [
+            "date",
+            "bigint",
+            "bigint",
+            "bigint",
+            "bigint",
+            "bigint",
+            "bigint",
+            "bigint",
+            "decimal(38, 0)",
+            "decimal(38, 0)"
+          ],
+          "datapoint_count": 300,
+          "execution_time_millis": 33476,
+          "pending_time_millis": 1022,
+          "result_set_bytes": 2760,
+          "row_count": 30,
+          "total_result_set_bytes": 2760,
+          "total_row_count": 30
+        },
+        "state": "QUERY_STATE_COMPLETED",
+        "submitted_at": "2026-10-20T15:54:22.095047Z"
+      },
       "timeout_seconds": 360
     }
   },

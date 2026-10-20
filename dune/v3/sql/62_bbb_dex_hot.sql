@@ -65,7 +65,8 @@ WITH legs AS (
 
     FROM dex_solana.trades
 
-    WHERE block_date >= CURRENT_DATE - INTERVAL '2' DAY
+    -- Partition pruning must cover the requested window, including catch-up.
+    WHERE block_date >= CAST(CURRENT_TIMESTAMP - INTERVAL '{{lookback_hours}}' HOUR AS DATE)
       AND block_time >= CURRENT_TIMESTAMP - INTERVAL '{{lookback_hours}}' HOUR
 
       AND trader_id =

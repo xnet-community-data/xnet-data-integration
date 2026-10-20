@@ -1,5 +1,11 @@
 # XNET Dune cost sustainability — 19 October 2026
 
+**Historical forecast, not spending authority.** Subsequent one-off recovery is
+recorded in [`APPROVED_CATCHUP_2026-10-20.md`](APPROVED_CATCHUP_2026-10-20.md):
+3.961 reported compute credits; official usage 1,803.249. The forecast below is
+anchored to its original analysis instant, not recomputed from the new balance.
+No cadence change or standing paid-operation approval has been installed.
+
 Pure read-only analysis. Sources: local Git objects only (no Dune calls, no
 exports, no new computation, no config change, no remote mutation). The only
 artifact of this session is this file.

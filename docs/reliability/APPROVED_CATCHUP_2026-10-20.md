@@ -1,5 +1,11 @@
 # Approved catch-up and presentation verification — 20 October 2026
 
+**Subsequent authorization:** the finite batch below is a historical audit. The
+user later explicitly approved recurring autonomous operation, documented in
+[`AUTONOMOUS_OPERATIONS.md`](AUTONOMOUS_OPERATIONS.md). The earlier batch's zero
+remaining authority and unresolved charges are preserved, not retroactively
+converted into that new standing approval.
+
 ## Outcome and boundaries
 
 The explicitly approved, one-off **65-credit-risk batch is complete**. All 13

@@ -1,0 +1,181 @@
+"""Runtime integration for scope-bound, append-only UTC-day recovery.
+
+No SQL mutation, instruction guessing, replacement, seed reset or amount repair.
+The injected runtime owns provider calls, standing quotes and exact-predecessor
+publication. A failed/ambiguous publication is never compensated by a stale write.
+"""
+from copy import deepcopy
+import csv
+from datetime import timedelta
+import hashlib
+import io
+import json
+import shutil
+import subprocess
+import tempfile
+from pathlib import Path
+
+from v3_additive_day import validate_additive_day, AdditiveDayRejected
+from v3_credit_budget import parse_instant
+from v3_live_state_store import StateError
+from v3_reduce_chain import TRANSFER_FIELDS, parse_ts
+
+
+def repair_days(state, config, now):
+    pending = state.get("pending_executions", {})
+    days = {key.removeprefix("day_repair:") for key in pending if key.startswith("day_repair:")}
+    days.update(state.get("reconciliation", {}).get("pending_mismatch_days", []))
+    previous = state.get("queries", {}).get("xnet_transfers", {})
+    covered = previous.get("continuous_coverage_end_utc") or previous.get("completed_at_utc")
+    if covered:
+        start = parse_instant(covered, "transfer coverage")
+        if (now - start).total_seconds() > 48 * 3600:
+            start_day = max(start.date(), now.date() - timedelta(days=60))
+            while start_day < now.date():
+                days.add(start_day.isoformat())
+                start_day += timedelta(days=1)
+    if "holder_integrity" in state.get("source_errors", {}):
+        # A once-per-day evidence scan of recent closed days can discover late
+        # indexed additions. Already verified unchanged days wait until tomorrow.
+        days.update((now.date() - timedelta(days=i)).isoformat() for i in range(1,8))
+    issues = state.get("additive_day_recovery", {})
+    result = []
+    for day in sorted(days):
+        target = parse_instant(day + "T00:00:00Z", "repair day")
+        if target.date() >= now.date() or (now.date() - target.date()).days > 60:
+            continue
+        issue = issues.get(day, {})
+        retry = issue.get("next_retry_at_utc")
+        if retry and now < parse_instant(retry, "day retry"):
+            continue
+        result.append(day)
+    return result
+
+
+def _publish_day(runtime, state, spec, record, result, absolute_day):
+    root = runtime.ROOT
+    pending = state["pending_executions"][spec["key"]]
+    approval = pending.get("operation_approval", {})
+    if (pending.get("execution_id") != record["execution_id"]
+            or pending.get("query_id") != record["query_id"]
+            or approval.get("absolute_day") != absolute_day
+            or approval.get("sql_sha256") != runtime.CONFIG["autonomous_operation"]["queries"][str(record["query_id"])]["sql_sha256"]
+            or approval.get("query_parameters") != record.get("query_parameters")):
+        raise AdditiveDayRejected("Original execution lacks its immutable UTC-day/SQL approval")
+    # CURRENT_DATE belongs to the actual engine start, not the current process
+    # date. This also proves the scope of an empty-day result after a restart.
+    started = parse_instant(record.get("execution_started_at"), "provider execution start")
+    original_offset = record["query_parameters"]["oldest_days_ago"]
+    if (started.date() - timedelta(days=original_offset)).isoformat() != absolute_day:
+        raise AdditiveDayRejected("Relative UTC-day scope changed at the provider execution start")
+    meta = record.get("result_metadata", {})
+    rows = result.get("result", {}).get("rows")
+    if (result.get("state") != "QUERY_STATE_COMPLETED" or not isinstance(rows, list)
+            or len(rows) != meta.get("total_row_count") or result.get("next_uri") or result.get("next_offset")):
+        raise AdditiveDayRejected("Day result is not a complete provider response")
+    ledger = root / "data/canonical/xnet_transfers.csv"
+    before = ledger.read_bytes()
+    canonical = list(csv.DictReader(io.StringIO(before.decode())))
+    seed_path = root / "data/xnet_owner_balances_seed_metadata.json"
+    seed = runtime.load(seed_path, {})
+    cutoff = seed.get("latest_balance_event_time")
+    cutoff_day = parse_ts(cutoff).date().isoformat() if cutoff else None
+    validated = validate_additive_day(canonical, rows, absolute_day,
+        execution_id=record["execution_id"], sql_sha256=approval["sql_sha256"], seed_cutoff=cutoff_day)
+    additions = validated["additions"]
+    source_receipt = validated["receipt"]
+    before_state = deepcopy(state)
+    publishing = False
+    with tempfile.TemporaryDirectory() as directory:
+        backup = Path(directory) / "data"
+        shutil.copytree(root / "data", backup)
+        try:
+            output = io.StringIO(newline="")
+            csv.DictWriter(output, fieldnames=TRANSFER_FIELDS).writerows(additions)
+            ledger.write_bytes(before + output.getvalue().encode())
+            expected_hash = hashlib.sha256(ledger.read_bytes()).hexdigest()
+            runtime.run("v3_reduce_chain.py", "--rebuild-canonical", "--allow-stale-holders")
+            if not ledger.read_bytes().startswith(before) or hashlib.sha256(ledger.read_bytes()).hexdigest() != expected_hash:
+                raise AdditiveDayRejected("Reducer rewrote the accepted canonical prefix")
+            quality = runtime.load(root / "data/current/xnet_holder_integrity.json", {})
+            receipt = {**source_receipt, "canonical_before_sha256":hashlib.sha256(before).hexdigest(),
+                "canonical_after_sha256":expected_hash, "provider_artifact_sha256":hashlib.sha256(runtime.encoded(result)).hexdigest(),
+                "seed_metadata_sha256":hashlib.sha256(seed_path.read_bytes()).hexdigest() if seed_path.exists() else None,
+                "original_record_bytes_preserved":True, "holder_status":quality.get("status"),
+                "accepted_at_utc":runtime.stamp(), "collection_completed_at_utc":record.get("completed_at_utc"),
+                "provider_execution_started_at_utc":record["execution_started_at"],
+                "full_current_day_claimed":False}
+            identity = hashlib.sha256(json.dumps(receipt,sort_keys=True,separators=(",", ":")).encode()).hexdigest()
+            state.setdefault("autonomous_day_receipts", {})[identity] = receipt
+            runtime.stage_consumption(state,spec,record,"verified_additive_utc_day")
+            recon = state.setdefault("reconciliation", {})
+            recon["pending_mismatch_days"] = [day for day in recon.get("pending_mismatch_days",[]) if day != absolute_day]
+            if not recon["pending_mismatch_days"] and "historical_repair" not in state.get("pending_executions", {}):
+                recon.pop("repair_manual_review_required",None)
+            state.setdefault("additive_day_recovery", {})[absolute_day] = {
+                "status":"accepted", "receipt_sha256":identity, "execution_id":record["execution_id"],
+                "added_rows":len(additions), "next_retry_at_utc":(runtime.now()+timedelta(days=1)).isoformat().replace("+00:00","Z")}
+            previous = state["queries"].get("xnet_transfers", {})
+            old_coverage = previous.get("continuous_coverage_end_utc") or previous.get("completed_at_utc")
+            upper = parse_instant(absolute_day+"T00:00:00Z","day") + timedelta(days=1)
+            # Only advance a contiguous frontier, never jump over an unproven day.
+            if old_coverage:
+                old = parse_instant(old_coverage,"old coverage")
+                if old.date().isoformat() == absolute_day and upper > old:
+                    state["queries"]["xnet_transfers"] = {**record,
+                        "continuous_coverage_end_utc":upper.isoformat().replace("+00:00","Z"),
+                        "additive_day_receipt_sha256":identity}
+            runtime.sync_holder_integrity_error(state)
+            runtime.run("v3_build_chain_snapshot.py")
+            runtime.run("v3_build_live_bundle.py")
+            runtime.run("v3_record_bbb_usdc_history.py")
+            runtime.run("v3_build_presentation_history.py")
+            runtime.write_operational_health(state)
+            runtime.save(runtime.STATE,state)
+            if additions:
+                state["forced_presentations"] = sorted(set(state.get("forced_presentations",[]))
+                    | {"current","burns","tokenomics","holders"})
+                runtime.save(runtime.STATE,state)
+            publishing = True
+            runtime.publish()
+            return bool(additions)
+        except Exception:
+            if not publishing:
+                shutil.rmtree(root / "data")
+                shutil.copytree(backup,root / "data")
+                state.clear()
+                state.update(before_state)
+            raise
+
+
+def recover_additive_days(runtime, state, billing):
+    """At most the explicitly authorized count per run; all retries are newly quoted."""
+    if billing is None:
+        return False
+    changed = False
+    days = repair_days(state,runtime.CONFIG,runtime.now())
+    limit = runtime.CONFIG["autonomous_operation"]["max_day_repairs_per_run"]
+    for day in days[:limit]:
+        key = "day_repair:" + day
+        pending = state.get("pending_executions",{}).get(key)
+        offset = (runtime.now().date() - parse_instant(day+"T00:00:00Z","day").date()).days
+        params = pending["query_parameters"] if pending else {"oldest_days_ago":offset,"newest_days_ago":offset}
+        spec = {"key":key,"query_id":runtime.CONFIG["reconciliation"]["repair_query_id"],
+            "performance":runtime.CONFIG["performance"],"max_run_credits":runtime.CONFIG["reconciliation"]["repair_max_run_credits"],
+            "output":"state/v3_autonomous_day_latest.json","absolute_day":day}
+        try:
+            record = runtime.execute(spec,params,state=state)
+            runtime.export_source(record,spec,runtime.CONFIG["reconciliation"]["repair_max_export_points"],
+                max_bytes=runtime.CONFIG["reconciliation"]["repair_max_export_bytes"],state=state)
+            result = runtime.load(runtime.ROOT / spec["output"],{})
+            changed = _publish_day(runtime,state,spec,record,result,day) or changed
+        except StateError:
+            raise
+        except (RuntimeError, ValueError, OSError, subprocess.CalledProcessError) as error:
+            issue = state.setdefault("additive_day_recovery",{}).get(day,{})
+            failures = issue.get("consecutive_failures",0)+1
+            state["additive_day_recovery"][day] = {"status":"deferred", "error":str(error),
+                "consecutive_failures":failures,"last_attempt_at_utc":runtime.stamp(),
+                "next_retry_at_utc":(runtime.now()+timedelta(hours=min(24,2**min(failures,4)))).isoformat().replace("+00:00","Z")}
+            runtime.checkpoint(state)
+    return changed

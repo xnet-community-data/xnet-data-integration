@@ -208,7 +208,7 @@ class RefreshTests(unittest.TestCase):
         risk.assert_called_once_with(state, record, spec, 1500000)
         binding = cache.lookup.call_args.args[2]  # the immutable execution binding, not a SQL-version guess
         self.assertEqual(binding["query_id"], 8894037)
-        self.assertEqual(binding["parameters"], {"lookback_hours": 2})
+        self.assertEqual(binding["parameters"], {"lookback_hours": source["lookback_hours"]})
         self.assertEqual(binding["columns"], ["a_b", "day"])
         self.assertEqual(len(binding["sql_sha256"]), 64)
         cache.prepare_export.assert_called_once()
@@ -351,7 +351,8 @@ class RefreshTests(unittest.TestCase):
         self.assertEqual(record["execution_cost_credits"], observed_cost)
         self.assertGreater(refresh.CONFIG["monthly_spend_guard_credits"], 0)
         self.assertLessEqual(refresh.CONFIG["monthly_spend_guard_credits"], 3800)
-        self.assertEqual(refresh.CONFIG["minimum_credit_reserve"], 15)
+        self.assertEqual(refresh.CONFIG["minimum_credit_reserve"], 100)
+        self.assertEqual(refresh.CONFIG["autonomous_operation"]["minimum_unspent_quota_credits"], 1000)
 
 if __name__ == "__main__":
     unittest.main()

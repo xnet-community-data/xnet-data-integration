@@ -1,9 +1,10 @@
-"""Adapter integration tests: real tracker state shapes + real config.
+"""Legacy conservative adapter regressions plus deployed configuration wiring.
 
 Offline and deterministic. ``config/v3_refresh.json`` is read once (no
 network, repository file) and every test fails loudly if it changes in a
 way that would loosen a budget limit rather than silently producing
-"different" numbers.
+"different" numbers. Historical 1,800/15 arithmetic uses an explicit frozen
+fixture; the newly approved standing policy is asserted separately below.
 """
 
 import hashlib
@@ -26,6 +27,15 @@ from v3_financial_journal import export_attempt_id, synchronize_financial_journa
 
 CONFIG_PATH = ROOT / "config" / "v3_refresh.json"
 REAL_CONFIG = json.loads(CONFIG_PATH.read_text()) if CONFIG_PATH.exists() else None
+DEPLOYED_CONFIG = deepcopy(REAL_CONFIG)
+if REAL_CONFIG is not None:
+    REAL_CONFIG.update(monthly_spend_guard_credits=1800, minimum_credit_reserve=15)
+    REAL_CONFIG["sources"][0].update(lookback_hours=2, cadence_minutes=30)
+    for spec in REAL_CONFIG["presentation"]:
+        if spec["key"] in {"current", "pools"}:
+            spec["cadence_minutes"] = 15
+        elif spec["key"] in {"burns", "holders", "tokenomics"}:
+            spec["cadence_minutes"] = 30
 
 FRESH_NOW = "2026-11-03T23:59:00Z"  # 60 s before the exact renewal instant
 GUARD_NOW = "2026-10-16T22:00:00Z"  # mid-window; the guard is already reached
@@ -147,14 +157,14 @@ def entry_by_key(entries, key):
 @unittest.skipIf(REAL_CONFIG is None, "config/v3_refresh.json not found")
 class ScheduledEntryWiringTests(unittest.TestCase):
     def test_entries_mirror_the_real_rotation(self):
-        entries, diagnostics = rt.build_scheduled_entries(REAL_CONFIG)
+        entries, diagnostics = rt.build_scheduled_entries(DEPLOYED_CONFIG)
         self.assertEqual([entry["key"] for entry in entries], SCHEDULE_KEYS)
         self.assertEqual(diagnostics["skipped_entries"], [])
         transfers = entry_by_key(entries, "source:xnet_transfers")
         self.assertEqual(transfers["query_id"], 8894037)
-        self.assertEqual(transfers["query_parameters"], {"lookback_hours": 2})
+        self.assertEqual(transfers["query_parameters"], {"lookback_hours": 6})
         self.assertEqual(transfers["performance"], "medium")
-        self.assertEqual(transfers["cadence_minutes"], 30)
+        self.assertEqual(transfers["cadence_minutes"], 120)
         self.assertEqual(transfers["export_policy"], "observed_max")
         bbb = entry_by_key(entries, "source:bbb_dex")
         self.assertEqual(bbb["query_parameters"], {"lookback_hours": 26})
@@ -162,7 +172,7 @@ class ScheduledEntryWiringTests(unittest.TestCase):
         current = entry_by_key(entries, "presentation:current")
         self.assertEqual(current["query_parameters"], {})
         self.assertEqual(current["export_policy"], "none")
-        self.assertEqual(current["cadence_minutes"], 15)
+        self.assertEqual(current["cadence_minutes"], 60)
         daily = entry_by_key(entries, "manifest:daily")
         self.assertEqual(daily["query_id"], 8893945)
         self.assertEqual(daily["query_parameters"], {"lookback_days": 7})
@@ -183,8 +193,9 @@ class ScheduledEntryWiringTests(unittest.TestCase):
             rt.build_scheduled_entries(config)
 
     def test_budget_knobs_extract_from_the_real_config(self):
-        self.assertEqual(rt._require_settings(REAL_CONFIG),
-                         (1800, 15, 10, 2500, 150))
+        self.assertEqual(rt._require_settings(DEPLOYED_CONFIG),
+                          (3000, 100, 10, 2500, 150))
+        self.assertEqual(DEPLOYED_CONFIG["autonomous_operation"]["minimum_unspent_quota_credits"], 1000)
 
     def test_disabled_sources_are_skipped_with_diagnostics(self):
         config = deepcopy(REAL_CONFIG)

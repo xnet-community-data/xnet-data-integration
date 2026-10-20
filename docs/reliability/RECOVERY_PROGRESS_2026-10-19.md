@@ -1,5 +1,11 @@
 # Recovery integration — 19 October 2026
 
+**Later 20 October standing approval:** the user explicitly requested and confirmed
+continuous cost-aware operation rather than batch-only recovery. The subsequent
+implementation and operating controls are in
+[`AUTONOMOUS_OPERATIONS.md`](AUTONOMOUS_OPERATIONS.md); the held-spending statements
+below describe the earlier repair stages, not a revocation of the new authority.
+
 **20 October update:** the separately approved catch-up is published and all seven
 Dune presentation result sets have been refreshed and verified. See
 [`APPROVED_CATCHUP_2026-10-20.md`](APPROVED_CATCHUP_2026-10-20.md) for executions,

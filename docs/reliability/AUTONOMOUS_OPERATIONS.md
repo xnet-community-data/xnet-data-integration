@@ -86,6 +86,9 @@ never marks an individual charge settled.
   checks the provider's actual execution-start day, verifies every existing row,
   and accepts **additions only**. It preserves every predecessor CSV byte and
   publishes its receipt, derived state and consumption marker atomically.
+- Days at or before the owner-seed cutoff are excluded **before pricing/execution**.
+  Their aggregate anomalies remain advisory evidence for seed-aware review; they
+  cannot trigger a paid full-day replay or starve post-seed verification.
 - Holder last-good fallback, when needed during multi-day recovery, remains
   explicitly degraded; it never becomes a claim of repaired balances. No seed
   resets, amount rescaling, invented routed legs, negative-balance clamping or

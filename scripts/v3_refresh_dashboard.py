@@ -982,12 +982,15 @@ def reconcile_historical_manifest(state, billing):
         return False
 
     if autonomous_enabled(state):
-        from v3_autonomous_reconcile import repair_days, recover_additive_days
+        from v3_autonomous_reconcile import repair_days, recover_additive_days, owner_seed_day, route_seeded_mismatches
+        seed_day=owner_seed_day(ROOT,load)
+        recon=state.setdefault("reconciliation",{})
+        recon["pending_mismatch_days"]=route_seeded_mismatches(state,recon.get("pending_mismatch_days",[]),seed_day)
         # First atomically accept current staged source results; never fill the
         # small result cache with repair work ahead of those unconsumed effects.
         if any(key in state.get("pending_executions", {}) for key in ("xnet_transfers", "bbb_dex")):
             return False
-        if repair_days(state, CONFIG, now()):
+        if repair_days(state, CONFIG, now(), seed_cutoff=seed_day):
             names = ("ROOT", "CONFIG", "STATE", "now", "stamp", "encoded", "load", "save", "run",
                      "execute", "export_source", "stage_consumption", "publish", "checkpoint",
                      "sync_holder_integrity_error", "write_operational_health")
@@ -1114,6 +1117,14 @@ def reconcile_historical_manifest(state, billing):
         if mode == "weekly":
             recon.pop("weekly_deferred_at_utc", None)
             recon.pop("weekly_deferred_reason", None)
+
+        if autonomous_enabled(state):
+            # The seeded/partially seeded day cannot be replayed as a full day.
+            # Keep its aggregate mismatch visible without buying an inadmissible
+            # repair or starving all future post-seed historical verification.
+            from v3_autonomous_reconcile import owner_seed_day, route_seeded_mismatches
+            mismatches=route_seeded_mismatches(state,mismatches,owner_seed_day(ROOT,load))
+            recon["last_manifest_eligible_mismatch_days"]=list(mismatches)
 
         if not mismatches:
             recon.pop("pending_mismatch_days", None)

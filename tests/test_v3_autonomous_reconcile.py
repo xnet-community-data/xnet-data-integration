@@ -12,7 +12,7 @@ from unittest.mock import Mock
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT / "scripts"))
-from v3_autonomous_reconcile import repair_days, _publish_day, recover_additive_days
+from v3_autonomous_reconcile import repair_days, _publish_day, recover_additive_days, route_seeded_mismatches, owner_seed_day
 from v3_additive_day import AdditiveDayRejected
 from v3_live_state_store import StateError, encoded
 from v3_reduce_chain import normalise_transfer, TRANSFER_FIELDS
@@ -117,6 +117,25 @@ class AutonomousReconciliationTests(unittest.TestCase):
         self.state["additive_day_recovery"]={"2026-10-14":{"next_retry_at_utc":"2026-10-21T00:00:00Z"}}
         days=repair_days(self.state,self.runtime.CONFIG,NOW)
         self.assertNotIn("2026-10-14",days);self.assertIn("2026-10-15",days)
+
+    def test_seeded_days_are_filtered_before_execution_not_after_spending(self):
+        (self.root/"data/xnet_owner_balances_seed_metadata.json").write_text(json.dumps({"latest_balance_event_time":"2026-10-19 12:46:12.000 UTC"}))
+        self.assertEqual(owner_seed_day(self.root,self.runtime.load),"2026-10-19")
+        self.assertFalse(recover_additive_days(self.runtime,self.state,{}))
+        self.runtime.execute.assert_not_called();self.runtime.export_source.assert_not_called()
+        self.assertIn(self.key,self.state["pending_executions"])
+
+    def test_seed_mismatches_remain_advisory_without_starving_post_seed_repair(self):
+        days=["2026-10-02","2026-10-03","2026-10-14"]
+        eligible=route_seeded_mismatches(self.state,days,"2026-10-03")
+        self.assertEqual(eligible,["2026-10-14"])
+        self.assertEqual(self.state["reconciliation"]["seeded_mismatch_days"],["2026-10-02","2026-10-03"])
+        self.assertEqual(repair_days(self.state,self.runtime.CONFIG,NOW,seed_cutoff="2026-10-19"),[])
+
+    def test_missing_seed_receipt_refuses_recovery_before_any_provider_operation(self):
+        (self.root/"data/xnet_owner_balances_seed_metadata.json").unlink()
+        with self.assertRaises(StateError):recover_additive_days(self.runtime,self.state,{})
+        self.runtime.execute.assert_not_called();self.runtime.export_source.assert_not_called()
 
 
 if __name__=="__main__":unittest.main()

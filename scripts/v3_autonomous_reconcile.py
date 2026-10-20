@@ -21,7 +21,25 @@ from v3_live_state_store import StateError
 from v3_reduce_chain import TRANSFER_FIELDS, parse_ts
 
 
-def repair_days(state, config, now):
+def owner_seed_day(root, load):
+    metadata=load(root / "data/xnet_owner_balances_seed_metadata.json",{})
+    cutoff=metadata.get("latest_balance_event_time")
+    if not cutoff:
+        raise StateError("Owner seed cutoff is required before pricing day recovery")
+    return parse_ts(cutoff).date().isoformat()
+
+
+def route_seeded_mismatches(state, days, seed_day):
+    """Retain pre/seed-day anomalies as advisory evidence; never pay to replay them."""
+    seeded=[day for day in days if day <= seed_day]
+    if seeded:
+        recon=state.setdefault("reconciliation",{})
+        recon["seeded_mismatch_days"]=sorted(set(recon.get("seeded_mismatch_days",[])) | set(seeded))
+        recon["seeded_mismatch_action"]="Retained for reviewed seed-aware reconciliation; no automatic full-day replay"
+    return [day for day in days if day > seed_day]
+
+
+def repair_days(state, config, now, *, seed_cutoff=None):
     pending = state.get("pending_executions", {})
     days = {key.removeprefix("day_repair:") for key in pending if key.startswith("day_repair:")}
     days.update(state.get("reconciliation", {}).get("pending_mismatch_days", []))
@@ -41,6 +59,8 @@ def repair_days(state, config, now):
     issues = state.get("additive_day_recovery", {})
     result = []
     for day in sorted(days):
+        if seed_cutoff is not None and day <= seed_cutoff:
+            continue
         target = parse_instant(day + "T00:00:00Z", "repair day")
         if target.date() >= now.date() or (now.date() - target.date()).days > 60:
             continue
@@ -153,7 +173,8 @@ def recover_additive_days(runtime, state, billing):
     if billing is None:
         return False
     changed = False
-    days = repair_days(state,runtime.CONFIG,runtime.now())
+    cutoff=owner_seed_day(runtime.ROOT,runtime.load)
+    days = repair_days(state,runtime.CONFIG,runtime.now(),seed_cutoff=cutoff)
     limit = runtime.CONFIG["autonomous_operation"]["max_day_repairs_per_run"]
     for day in days[:limit]:
         key = "day_repair:" + day

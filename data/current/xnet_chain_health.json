@@ -1,76 +1,75 @@
 {
-  "schema_version": 2,
-  "last_refresh_completed_utc": "2026-10-16T20:59:18Z",
-  "status": "DEGRADED",
+  "automatic_retry": true,
   "cadence_minutes": 30,
-  "paused_due_to_cost": false,
-  "sources": {
-    "xnet_transfers": {
-      "query_id": 8894037,
-      "execution_id": "01M53853C0DC9HYXY75NTRRJ48",
-      "execution_cost_credits": 0.512617648,
-      "completed_at_utc": "2026-10-16T20:59:03.487604014Z",
-      "execution_started_at": "2026-10-16T20:58:44.097579104Z",
-      "execution_ended_at": "2026-10-16T20:59:03.487604014Z",
-      "query_parameters": {
-        "lookback_hours": 25
-      },
-      "result_metadata": {
-        "column_names": [
-          "block_date",
-          "block_time",
-          "block_slot",
-          "tx_id",
-          "action",
-          "from_owner",
-          "to_owner",
-          "from_token_account",
-          "to_token_account",
-          "amount_raw",
-          "amount_xnet",
-          "event_multiplicity"
-        ],
-        "column_types": [
-          "date",
-          "timestamp(3) with time zone",
-          "bigint",
-          "varchar",
-          "varchar",
-          "varchar",
-          "varchar",
-          "varchar",
-          "varchar",
-          "uint256",
-          "double",
-          "bigint"
-        ],
-        "row_count": 119,
-        "result_set_bytes": 40236,
-        "total_row_count": 119,
-        "total_result_set_bytes": 40236,
-        "datapoint_count": 1428,
-        "pending_time_millis": 640,
-        "execution_time_millis": 19390
-      },
-      "billing": {
-        "credits_used": 1797.459,
-        "guard_credits": 1817.459,
-        "target_credits": 1817.459,
-        "projected_period_credits": 4328.169479579466,
-        "period_start": "2026-10-04",
-        "period_end": "2026-11-04"
-      },
-      "export_points": 1428,
-      "export_wire_bytes": 65260,
-      "estimated_export_credits": 0.6526
+  "degraded_sources": {
+    "historical_reconciliation": {
+      "consecutive_failures": 1,
+      "error": "Query 8893945 cost 39.136617648 exceeded 15.0; source quarantined.",
+      "failed_at_utc": "2026-10-15T21:36:23Z",
+      "next_retry_at_utc": "2026-10-15T22:06:23.097702Z",
+      "unresolved_execution": false
     },
+    "historical_reconciliation_20261016": {
+      "automatic_retry": false,
+      "error": "Dune upstream stored-view metadata unavailable; full October 16 coverage remains unproven",
+      "failed_at_utc": "2026-10-20T09:10:23.486543Z",
+      "manual_reconciliation_required": true
+    }
+  },
+  "error": "Historical additions verified; chain catch-up and full October 16 coverage remain pending",
+  "last_refresh_completed_utc": "2026-10-16T20:59:18Z",
+  "pause_reason": "Controlled five-credit recovery halted: BBB wallet holder-integrity regression (-51907.828371 XNET); manual evidence-based reconciliation required.",
+  "paused_at_utc": "2026-10-16T21:01:15Z",
+  "paused_due_to_cost": false,
+  "reconciliation": {
+    "generation": 1,
+    "integrity_attempts": 0,
+    "last_completed_utc": "2026-10-14T23:02:18Z",
+    "last_daily_manifest_utc": "2026-10-14T23:02:01Z",
+    "last_lookback_hours": 168,
+    "last_manifest_cost_credits": 3.94132353,
+    "last_manifest_execution_id": "01M4YACBK32JM5KEAN1QSPHA8P",
+    "last_manifest_lookback_days": 7,
+    "last_manifest_mismatch_days": [
+      "2026-10-13"
+    ],
+    "last_manifest_mode": "daily",
+    "last_manifest_utc": "2026-10-14T23:02:01Z",
+    "last_mode": "selective_repair",
+    "last_repaired_days": [
+      {
+        "cost_credits": 0.283911765,
+        "day": "2026-10-13",
+        "execution_id": "01M4YADHX63B5TQ7VPYGGM9M1K"
+      }
+    ],
+    "last_weekly_manifest_utc": "2026-10-11T11:13:57Z",
+    "manifest_deferred_at_utc": "2026-10-16T20:59:18Z",
+    "manifest_deferred_reason": "Prior reconciliation exceeded its Dune credit cap; manual review and explicit clearance required.",
+    "presentation_invalidated_at_utc": "2026-10-14T23:02:18Z"
+  },
+  "schema_version": 2,
+  "sources": {
     "bbb_dex": {
-      "query_id": 8894132,
-      "execution_id": "01M5385ZWGDQBPDMTAQK8T4Z8N",
-      "execution_cost_credits": 0.112617648,
+      "billing": {
+        "credits_used": 1797.971,
+        "guard_credits": 1817.459,
+        "period_end": "2026-11-04",
+        "period_start": "2026-10-04",
+        "projected_period_credits": 4329.289174315671,
+        "target_credits": 1817.459
+      },
       "completed_at_utc": "2026-10-16T20:59:14.776731175Z",
-      "execution_started_at": "2026-10-16T20:59:12.964524145Z",
+      "continuous_coverage_end_utc": "2026-10-16T20:59:14Z",
+      "continuous_coverage_start_utc": "2026-09-28T07:54:45Z",
+      "estimated_export_credits": 0.06966,
+      "execution_cost_credits": 0.112617648,
       "execution_ended_at": "2026-10-16T20:59:14.776731175Z",
+      "execution_id": "01M5385ZWGDQBPDMTAQK8T4Z8N",
+      "execution_started_at": "2026-10-16T20:59:12.964524145Z",
+      "export_points": 144,
+      "export_wire_bytes": 6966,
+      "query_id": 8894132,
       "query_parameters": {
         "lookback_hours": 46
       },
@@ -111,73 +110,74 @@
           "varchar",
           "bigint"
         ],
-        "row_count": 9,
-        "result_set_bytes": 3076,
-        "total_row_count": 9,
-        "total_result_set_bytes": 3076,
         "datapoint_count": 144,
+        "execution_time_millis": 1812,
         "pending_time_millis": 307,
-        "execution_time_millis": 1812
-      },
-      "billing": {
-        "credits_used": 1797.971,
-        "guard_credits": 1817.459,
-        "target_credits": 1817.459,
-        "projected_period_credits": 4329.289174315671,
-        "period_start": "2026-10-04",
-        "period_end": "2026-11-04"
-      },
-      "continuous_coverage_start_utc": "2026-09-28T07:54:45Z",
-      "continuous_coverage_end_utc": "2026-10-16T20:59:14Z",
-      "export_points": 144,
-      "export_wire_bytes": 6966,
-      "estimated_export_credits": 0.06966
-    }
-  },
-  "degraded_sources": {
-    "holder_integrity": {
-      "error": "Negative holder balance after reduction: 5QsyByFVJcg7oN76Ma26KEDFQdHt1tsiVExK94zURzfd = -51907.828371000000000000",
-      "failed_at_utc": "2026-10-16T20:59:18Z",
-      "holder_data_as_of_utc": "2026-10-13 22:41:58.000 UTC",
-      "automatic_recheck": true
-    },
-    "historical_reconciliation": {
-      "error": "Query 8893945 cost 39.136617648 exceeded 15.0; source quarantined.",
-      "failed_at_utc": "2026-10-15T21:36:23Z",
-      "consecutive_failures": 1,
-      "next_retry_at_utc": "2026-10-15T22:06:23.097702Z",
-      "unresolved_execution": false
-    }
-  },
-  "reconciliation": {
-    "last_mode": "selective_repair",
-    "last_completed_utc": "2026-10-14T23:02:18Z",
-    "last_lookback_hours": 168,
-    "generation": 1,
-    "integrity_attempts": 0,
-    "last_manifest_mode": "daily",
-    "last_manifest_utc": "2026-10-14T23:02:01Z",
-    "last_manifest_lookback_days": 7,
-    "last_manifest_execution_id": "01M4YACBK32JM5KEAN1QSPHA8P",
-    "last_manifest_cost_credits": 3.94132353,
-    "last_manifest_mismatch_days": [
-      "2026-10-13"
-    ],
-    "last_weekly_manifest_utc": "2026-10-11T11:13:57Z",
-    "last_repaired_days": [
-      {
-        "day": "2026-10-13",
-        "execution_id": "01M4YADHX63B5TQ7VPYGGM9M1K",
-        "cost_credits": 0.283911765
+        "result_set_bytes": 3076,
+        "row_count": 9,
+        "total_result_set_bytes": 3076,
+        "total_row_count": 9
       }
-    ],
-    "presentation_invalidated_at_utc": "2026-10-14T23:02:18Z",
-    "last_daily_manifest_utc": "2026-10-14T23:02:01Z",
-    "manifest_deferred_at_utc": "2026-10-16T20:59:18Z",
-    "manifest_deferred_reason": "Prior reconciliation exceeded its Dune credit cap; manual review and explicit clearance required."
+    },
+    "xnet_transfers": {
+      "billing": {
+        "credits_used": 1797.459,
+        "guard_credits": 1817.459,
+        "period_end": "2026-11-04",
+        "period_start": "2026-10-04",
+        "projected_period_credits": 4328.169479579466,
+        "target_credits": 1817.459
+      },
+      "completed_at_utc": "2026-10-16T20:59:03.487604014Z",
+      "estimated_export_credits": 0.6526,
+      "execution_cost_credits": 0.512617648,
+      "execution_ended_at": "2026-10-16T20:59:03.487604014Z",
+      "execution_id": "01M53853C0DC9HYXY75NTRRJ48",
+      "execution_started_at": "2026-10-16T20:58:44.097579104Z",
+      "export_points": 1428,
+      "export_wire_bytes": 65260,
+      "query_id": 8894037,
+      "query_parameters": {
+        "lookback_hours": 25
+      },
+      "result_metadata": {
+        "column_names": [
+          "block_date",
+          "block_time",
+          "block_slot",
+          "tx_id",
+          "action",
+          "from_owner",
+          "to_owner",
+          "from_token_account",
+          "to_token_account",
+          "amount_raw",
+          "amount_xnet",
+          "event_multiplicity"
+        ],
+        "column_types": [
+          "date",
+          "timestamp(3) with time zone",
+          "bigint",
+          "varchar",
+          "varchar",
+          "varchar",
+          "varchar",
+          "varchar",
+          "varchar",
+          "uint256",
+          "double",
+          "bigint"
+        ],
+        "datapoint_count": 1428,
+        "execution_time_millis": 19390,
+        "pending_time_millis": 640,
+        "result_set_bytes": 40236,
+        "row_count": 119,
+        "total_result_set_bytes": 40236,
+        "total_row_count": 119
+      }
+    }
   },
-  "automatic_retry": false,
-  "paused_at_utc": "2026-10-16T21:01:15Z",
-  "pause_reason": "Controlled five-credit recovery halted: BBB wallet holder-integrity regression (-51907.828371 XNET); manual evidence-based reconciliation required.",
-  "error": "Historical additions verified; chain catch-up and full October 16 coverage remain pending"
+  "status": "DEGRADED"
 }

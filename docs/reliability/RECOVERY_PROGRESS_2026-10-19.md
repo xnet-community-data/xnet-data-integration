@@ -1,5 +1,13 @@
 # Recovery integration — 19 October 2026
 
+**20 October update:** the separately approved catch-up is published and all seven
+Dune presentation result sets have been refreshed and verified. See
+[`APPROVED_CATCHUP_2026-10-20.md`](APPROVED_CATCHUP_2026-10-20.md) for executions,
+receipts, costs and remaining holds. Latest returned transfer event: **20 October,
+05:43:06 UTC**, not continuous real-time coverage. The earlier failed 16 October
+run was retried only under that new approval. Standing paid scheduling remains
+unauthorized/held; the historical account below describes the earlier repair.
+
 ## Production versus work in progress
 
 The publication/receipt hardening from PRs #40 and #41 is deployed. The second

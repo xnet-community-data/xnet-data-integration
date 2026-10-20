@@ -1,5 +1,10 @@
 # Verified additive repair — 20 October 2026
 
+This records the **first** additive publication. The subsequently approved
+770-event catch-up and seven presentation refreshes are recorded separately in
+[`APPROVED_CATCHUP_2026-10-20.md`](APPROVED_CATCHUP_2026-10-20.md); the stale-chain
+limits below describe this earlier generation, not the later accepted result.
+
 Published live-state revision: `fa9150f014d85024df9934f5b54c5a0f4e39dee4`.
 Exact predecessor: `218e758ff3a68894d2551ba4cab56a5a96e890dd`.
 Generation: `43966dd9-6416-4605-b809-c4ce6e3925cb`.

@@ -91,6 +91,33 @@ class TrackerBoundaryTests(unittest.TestCase):
         self.assertIn("store publish failed", str(ctx.exception))
         self.api.assert_not_called()
 
+    def test_slow_checkpoint_cannot_shift_a_relative_day_execution(self):
+        self.clock=datetime(2026,10,7,23,57,tzinfo=timezone.utc)
+        def checkpoint():
+            self.snapshots.append(copy.deepcopy(self.state))
+            self.clock=datetime(2026,10,7,23,59,tzinfo=timezone.utc)
+        tracker=self.make_tracker(self.state,checkpoint=checkpoint)
+        spec={**SPEC,"execution_not_after_utc":"2026-10-07T23:58:00Z"}
+        with self.assertRaisesRegex(SubmissionRejected,"deadline"):
+            tracker.execute(spec,{"oldest_days_ago":1,"newest_days_ago":1},True,90)
+        self.api.assert_not_called()
+        self.assertEqual(self.state["pending_executions"],{})
+        obligation=next(iter(self.state["financial_journal"]["obligations"].values()))
+        self.assertEqual(obligation["cost_credits"],0)
+        self.assertEqual(obligation["basis"],"proven_nonacceptance")
+
+    def test_failed_nonacceptance_checkpoint_is_still_a_durability_barrier(self):
+        self.clock=datetime(2026,10,7,23,59,tzinfo=timezone.utc)
+        count=0
+        def checkpoint():
+            nonlocal count
+            count+=1
+            if count==2:raise RuntimeError("uncertain rejection publication")
+        tracker=self.make_tracker(self.state,checkpoint=checkpoint)
+        with self.assertRaises(CheckpointFailed):
+            tracker.execute({**SPEC,"execution_not_after_utc":"2026-10-07T23:58:00Z"},{},True,90)
+        self.api.assert_not_called()
+
     def test_invalid_execution_id_is_not_persisted_and_blocks_replacement(self):
         self.api.side_effect = [{"execution_id": "a/b/../etc"}]
         with self.assertRaises(ExecutionPending) as ctx:

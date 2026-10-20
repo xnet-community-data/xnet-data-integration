@@ -500,13 +500,18 @@ class VerifiedSafeTests(unittest.TestCase):
         reject_submission(state, {"key": "k", "financial_attempt_id": "A1"})
         self.assertEqual(obligations(state)["exec:other"]["cost_credits"], 6.0)
 
-    def test_H7_the_tracker_rejects_only_inside_the_confirmed_nonacceptance_branch(self):
+    def test_H7_rejection_requires_confirmed_nonacceptance_or_proven_no_transport(self):
         lines = (ROOT / "scripts" / "v3_execution_tracker.py").read_text().splitlines()
         calls = [i for i, line in enumerate(lines) if "reject_submission(self.state" in line]
-        self.assertEqual(len(calls), 1,
-                         msg=f"expected exactly one rejection call site, found {calls}")
+        self.assertEqual(len(calls), 2,
+                          msg=f"expected provider rejection and local pre-transport deadline only, found {calls}")
+        # The extra safe path proves execute was never invoked: a publication
+        # crossed the immutable UTC-day deadline BEFORE the execute call.
+        deadline = max(i for i,line in enumerate(lines[:calls[0]]) if 'spec.get("execution_not_after_utc")' in line)
+        transport = next(i for i,line in enumerate(lines) if 'self.api(f"query/' in line and '/execute"' in line)
+        self.assertLess(deadline,calls[0]);self.assertLess(calls[0],transport)
         handlers = [i for i, line in enumerate(lines) if line.strip().startswith("except ")]
-        enclosing = max((i for i in handlers if i < calls[0]), default=None)
+        enclosing = max((i for i in handlers if i < calls[1]), default=None)
         self.assertIsNotNone(enclosing, msg="the rejection call is outside any handler")
         self.assertIn("SubmissionRejected", lines[enclosing],
                       msg=("the durable intent must only be zeroed on a confirmed "

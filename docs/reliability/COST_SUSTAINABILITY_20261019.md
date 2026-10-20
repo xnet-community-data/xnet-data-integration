@@ -4,7 +4,9 @@
 recorded in [`APPROVED_CATCHUP_2026-10-20.md`](APPROVED_CATCHUP_2026-10-20.md):
 3.961 reported compute credits; official usage 1,803.249. The forecast below is
 anchored to its original analysis instant, not recomputed from the new balance.
-No cadence change or standing paid-operation approval has been installed.
+That was the state after the one-off batch. The user subsequently confirmed
+ongoing standing autonomy on 20 October; current controls and deployment evidence
+are documented in [`AUTONOMOUS_OPERATIONS.md`](AUTONOMOUS_OPERATIONS.md).
 
 Pure read-only analysis. Sources: local Git objects only (no Dune calls, no
 exports, no new computation, no config change, no remote mutation). The only

@@ -14,6 +14,8 @@ import subprocess
 import sys
 import time
 import tempfile
+import uuid
+from types import SimpleNamespace
 import urllib.error
 import urllib.request
 from decimal import Decimal
@@ -33,6 +35,12 @@ from v3_budget_runtime import collect_sample_history, _budget_policy
 from v3_financial_journal import (
     synchronize_financial_journal, record_export_attempt, record_export_outcome, amount,
 )
+from v3_standing_budget import (
+    policy as standing_policy, scope as standing_scope, open_period as open_standing_period,
+    evaluate as evaluate_standing_budget, reserve as reserve_standing_operation,
+    _authority_hash as standing_authority_hash,
+)
+from v3_dune_metadata import DuneMetadataClient, DuneMetadataError
 
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG = json.loads((ROOT / "config/v3_refresh.json").read_text())
@@ -94,6 +102,162 @@ class BudgetBlocked(RuntimeError):
     """New spending is not admitted; metadata reconciliation may continue."""
 
 
+def autonomous_enabled(state):
+    """Config alone never creates authority; activation is an explicit journal commit."""
+    authority = CONFIG.get("autonomous_operation", {})
+    installed = state.get("standing_authorization", {})
+    if authority.get("enabled") is not True or not installed:
+        return False
+    if (installed.get("approval_ref") != authority.get("approval_ref")
+            or installed.get("policy_sha256") != standing_authority_hash(authority)):
+        raise BudgetBlocked("Installed standing authority does not match the reviewed policy")
+    standing_policy(CONFIG, now())
+    return True
+
+
+def autonomous_estimate(state, spec, params, *, kind="execution", result_bytes=None):
+    from v3_autonomous_estimates import estimate_operation
+    decision = estimate_operation(state, spec, params, now(), kind=kind, result_bytes=result_bytes,
+        policy={"default_engine":CONFIG["performance"], "transport_format_bound_fallback":True})
+    if decision.get("status") != "estimated":
+        raise BudgetBlocked("No credible standing operation estimate: " + json.dumps(decision, sort_keys=True))
+    # Keep durable approvals compact without changing the estimate or deleting
+    # liabilities. Full input vectors remain bound by digest and summary stats;
+    # representative witness IDs are retained rather than copied thousands of
+    # times into an ever-growing per-operation financial book.
+    original = decision["evidence"]
+    def compact(value):
+        if isinstance(value,dict):
+            return {key:compact(item) for key,item in value.items()}
+        if isinstance(value,list):
+            if len(value)>8:
+                return {"count":len(value),"witnesses":value[:4]+value[-4:],
+                        "all_values_sha256":hashlib.sha256(encoded(value)).hexdigest()}
+            return [compact(item) for item in value]
+        return value
+    decision = {**decision,"evidence":{**compact(original),
+        "full_evidence_sha256":hashlib.sha256(encoded(original)).hexdigest()}}
+    return decision
+
+
+def standing_forecast(state, period_end):
+    """Outlier-inclusive expected cost, with a separate standing variance reserve.
+
+    An unpriced domain is deferred independently, not used to freeze other domains.
+    Each actual operation must still have its own conservative credible quote.
+    """
+    duration = max(0, (parse_instant(period_end, "renewal") - now()).total_seconds())
+    entries, total, unpriced = [], 0.0, []
+    specs = [(s, {"lookback_hours": int(s["lookback_hours"])}, True)
+             for s in CONFIG.get("sources", []) if s.get("enabled", True)]
+    specs += [(s, {}, False) for s in CONFIG.get("presentation", []) if s.get("enabled", True)]
+    recon = CONFIG.get("reconciliation", {})
+    if recon:
+        specs.append(({"key":"reconciliation_manifest", "query_id":recon["manifest_query_id"],
+                       "cadence_minutes":recon["weekly_cadence_minutes"], "performance":CONFIG["performance"]},
+                      {"lookback_days":recon["weekly_lookback_days"]}, True))
+    for spec, params, exports in specs:
+        try:
+            quote = autonomous_estimate(state, spec, params)
+        except BudgetBlocked as error:
+            unpriced.append({"key":spec["key"], "reason":str(error)})
+            continue
+        unit = amount(quote["expected_credits"], "forecast expected compute")
+        export_unit = 0.0
+        if exports:
+            values = [amount(h["estimated_export_credits"], "observed export")
+                      for h in state.get("execution_history", [])
+                      if h.get("query_id") == spec["query_id"] and h.get("estimated_export_credits") is not None]
+            if values:
+                export_unit = statistics.mean(values)
+        count = math.ceil(duration / (float(spec["cadence_minutes"]) * 60))
+        cost = count * (unit + export_unit)
+        total += cost
+        entries.append({"key":spec["key"], "runs":count, "expected_compute_credits":unit,
+                        "expected_export_credits":export_unit, "total_credits":cost,
+                        "estimate_evidence":quote.get("evidence")})
+    return {"expected_credits":total, "entries":entries, "independently_unpriced_domains":unpriced}
+
+
+def standing_usage_guard(state, proposed_spec=None, proposed_params=None):
+    usage = DuneMetadataClient().get_usage(now=now())
+    _, book, _ = open_standing_period(state, CONFIG, usage, now())
+    forecast = standing_forecast(state, book["period_end_utc"])
+    quote = proposed_spec.get("standing_estimate") if proposed_spec is not None else None
+    decision = evaluate_standing_budget(state, CONFIG, usage, now(), forecast_credits=forecast["expected_credits"],
+                                       quote=quote["cost_estimate_credits"] if quote else None)
+    state["standing_credit_budget"]["last_decision"] = decision
+    state["budget_decision"] = {"status":decision["status"], "blockers":decision["blockers"],
+        "report":{"current_usage":usage, "totals":{"limit_credits":decision["limit_credits"],
+            "usage_plus_reserve":decision["effective_usage_credits"] + decision["minimum_reserve_credits"],
+            "dependencies_total":0.0}, "forecast":forecast}, "standing_risk_accounting":decision}
+    if decision["status"] != "admitted":
+        raise BudgetBlocked("Standing credit admission blocked: " + "; ".join(decision["blockers"]))
+    evidence = {}
+    if proposed_spec is not None:
+        if not quote:
+            raise BudgetBlocked("Standing execution requires its operation-specific estimate")
+        approval = reserve_standing_operation(state, CONFIG, usage, now(), proposed_spec, proposed_params,
+            "execution", quote["cost_estimate_credits"], operation_id=proposed_spec["financial_attempt_id"],
+            evidence=quote["evidence"], forecast_credits=forecast["expected_credits"])
+        if (approval.get("sql_sha256") != proposed_spec["verified_sql_sha256"]
+                or approval.get("query_version") != proposed_spec["verified_query_version"]
+                or approval.get("absolute_day") != proposed_spec.get("absolute_day")):
+            raise BudgetBlocked("Standing reservation lacks its immutable query/day evidence")
+        proposed_spec["operation_approval"] = approval
+        require_operation_approval(proposed_spec, "execution", quote["cost_estimate_credits"], proposed_params)
+        evidence = {"operation_approval":deepcopy(approval), "operation_quote":deepcopy(quote)}
+        decision = state["standing_credit_budget"]["last_decision"]
+        state["budget_decision"]["standing_risk_accounting"] = decision
+        state["budget_decision"]["report"]["totals"]["usage_plus_reserve"] = (
+            decision["effective_usage_credits"] + decision["minimum_reserve_credits"])
+    return {"credits_used":usage["credits_used"], "guard_credits":decision["limit_credits"],
+        "target_credits":CONFIG["monthly_target_credits"],
+        "projected_period_credits":usage["credits_used"] + forecast["expected_credits"],
+        "period_start":usage["period_start_utc"], "period_end":usage["period_end_utc"],
+        "forecast":forecast, "standing_usage":usage, **evidence}
+
+
+def prepare_standing_spec(state, spec, params):
+    standing_scope(CONFIG, spec, params, "execution", now())
+    contract = CONFIG["autonomous_operation"]["queries"][str(spec["query_id"])]
+    saved = api(f"query/{spec['query_id']}")  # metadata only; never an execution or export
+    sql = saved.get("query_sql")
+    if (saved.get("query_id") != spec["query_id"] or not isinstance(sql, str)
+            or hashlib.sha256(sql.encode()).hexdigest() != contract["sql_sha256"]
+            or saved.get("is_archived") is True):
+        raise BudgetBlocked("Saved query differs from its standing SQL contract")
+    spec = {**spec, "financial_attempt_id":uuid.uuid4().hex,
+            "verified_sql_sha256":contract["sql_sha256"], "verified_query_version":saved.get("version")}
+    if "absolute_day" in spec:
+        offset = (now().date() - datetime.fromisoformat(spec["absolute_day"]).date()).days
+        if params != {"oldest_days_ago":offset,"newest_days_ago":offset}:
+            raise BudgetBlocked("UTC date changed while pricing the day repair; replan its offsets")
+        midnight = (now()+timedelta(days=1)).replace(hour=0,minute=0,second=0,microsecond=0)
+        spec["execution_not_after_utc"]=(midnight-timedelta(minutes=2)).isoformat().replace("+00:00","Z")
+        if now() >= midnight-timedelta(minutes=2):
+            raise BudgetBlocked("Day repair waits across the UTC boundary rather than risking a shifted window")
+    quote = autonomous_estimate(state, spec, params)
+    spec["standing_estimate"] = quote
+    spec["cost_admission_quote"] = {"operation_id":spec["financial_attempt_id"], "query_id":spec["query_id"],
+        "query_parameters":params or {}, "performance":spec.get("performance",CONFIG["performance"]),
+        "shape_version":spec.get("shape_version"), "cost_estimate_credits":quote["cost_estimate_credits"],
+        "estimate_evidence":json.dumps(quote["evidence"], sort_keys=True),
+        "approval_ref":CONFIG["autonomous_operation"]["approval_ref"], "quoted_at_utc":stamp(),
+        "valid_until_utc":(now() + timedelta(minutes=15)).isoformat().replace("+00:00","Z"),
+        "outlier_execution_ids":[b["execution_id"] for b in state.get("cost_breakers",{}).values()
+                                 if b.get("query_id") == spec["query_id"]]}
+    print(f"Standing execution quote {spec['financial_attempt_id']}: {quote['cost_estimate_credits']:.6f} "
+          f"estimated credits, query {spec['query_id']}, parameters {params or {}}; not a provider cap", flush=True)
+    return spec
+
+
+def cadence_multiplier(state, key):
+    if not autonomous_enabled(state) or key in {"bbb_dex", "network", "commercial"}:
+        return 1
+    return int(state.get("standing_credit_budget", {}).get("last_decision", {}).get("cadence_multiplier", 1))
+
+
 def require_operation_approval(spec, kind, quote, params=None, execution_id=None):
     """Fail closed without an externally reviewed, exact-operation approval.
 
@@ -128,6 +292,15 @@ def usage_guard(state=None, proposed_spec=None, proposed_params=None):
         state = load_authoritative_state()
     if global_hold(state):
         raise BudgetBlocked("Global hold prohibits new paid operations")
+    if autonomous_enabled(state):
+        try:
+            return standing_usage_guard(state, proposed_spec, proposed_params)
+        except (BudgetInputError, DuneMetadataError, OSError) as error:
+            # Billing outages deny new spending, not the entire service forever.
+            # Metadata/free feeds and known-ID recovery recheck on the next cron.
+            state["budget_decision"] = {"status":"blocked", "blockers":[str(error)],
+                "automatic_recheck":True,"reason":"standing_billing_or_evidence_unavailable"}
+            raise BudgetBlocked(str(error)) from error
     usage = api("usage", {"start_date": (now().date() - timedelta(days=40)).isoformat(),
                           "end_date": (now().date() + timedelta(days=1)).isoformat()})
     decision = evaluate_budget(state, CONFIG, usage, now(),
@@ -228,7 +401,9 @@ def execute(spec, params=None, enforce_cap=True, timeout_seconds=None, state=Non
     # Recovery policy applies ONLY to an already known pending ID. A future POST
     # keeps post-run refusal and the source breaker's independent quote barrier.
     pending = state.get("pending_executions", {}).get(spec.get("key", str(spec["query_id"])), {})
-    spec = {**spec, "accept_completed_outlier": bool(pending.get("execution_id"))}
+    if autonomous_enabled(state) and not pending:
+        spec = prepare_standing_spec(state, spec, params)
+    spec = {**spec, "accept_completed_outlier": bool(pending.get("execution_id")) or autonomous_enabled(state)}
     return tracker(state, spec, params).execute(spec, params, enforce_cap, timeout_seconds)
 
 
@@ -244,6 +419,10 @@ def result_cache(checkpoint_callback=None):
 
 def export_risk(state, record, spec, result_bytes):
     """Comparable wire-size envelope, not a configured download/spend ceiling."""
+    if autonomous_enabled(state):
+        estimate = autonomous_estimate(state, {**spec, "query_id":record["query_id"]},
+            record.get("query_parameters", {}), kind="export", result_bytes=result_bytes)
+        return estimate["cost_estimate_credits"], [json.dumps(estimate["evidence"], sort_keys=True)]
     samples, _ = collect_sample_history(state, default_performance=CONFIG["performance"],
                                        performance_by_key={})
     policy = _budget_policy(CONFIG)
@@ -315,7 +494,13 @@ def export_source(record, spec, remaining, max_bytes=None, state=None):
             return checkpoint(candidate)
         cache = result_cache(export_checkpoint)
         # Cached reuse is spend-free and remains possible while admission is closed.
-        cached = cache.lookup(state, record, binding)
+        retry_needed = False
+        try:
+            cached = cache.lookup(state, record, binding)
+        except ManualExportReview:
+            if not autonomous_enabled(state):
+                raise
+            retry_needed, cached = True, None
         if cached is not None:
             result = {"execution_id": record["execution_id"], "state": "QUERY_STATE_COMPLETED",
                       "result": {"rows": cached["result_rows"], "metadata": meta}}
@@ -328,20 +513,49 @@ def export_source(record, spec, remaining, max_bytes=None, state=None):
                 if name in prior:
                     record[name] = prior[name]
             return remaining - points
-        usage_guard(state)
+        billing = usage_guard(state)
         risk, evidence = export_risk(state, record, spec, result_bytes)
         totals = state["budget_decision"]["report"]["totals"]
         spare = totals["limit_credits"] - totals["usage_plus_reserve"] - totals["dependencies_total"]
         if risk > spare:
             raise BudgetBlocked("Export risk exceeds headroom after all remaining scheduled obligations")
-        approval = require_operation_approval({**spec, "query_id": record["query_id"]}, "export", risk,
-                                              record.get("query_parameters"), record["execution_id"])
+        if autonomous_enabled(state):
+            previous_standing_book = deepcopy(state.get("standing_credit_budget"))
+            try:
+                approval = reserve_standing_operation(state, CONFIG, billing["standing_usage"], now(),
+                    {**spec, "query_id":record["query_id"]}, record.get("query_parameters"), "export", risk,
+                    operation_id="export_" + uuid.uuid4().hex,
+                    evidence={"transport_quote":evidence, "result_bytes":result_bytes},
+                    execution_id=record["execution_id"])
+            except BudgetInputError as error:
+                raise BudgetBlocked(str(error)) from error
+            approved_spec = {**spec, "query_id":record["query_id"], "operation_approval":approval}
+            require_operation_approval(approved_spec, "export", risk, record.get("query_parameters"), record["execution_id"])
+            if retry_needed:
+                from v3_result_cache import ExportRetryDeferred, ExportRetryExhausted
+                try:
+                    cache.retry_export(state, record, binding, approval=approval,
+                        timestamp=now().isoformat().replace("+00:00", "Z"),
+                        minimum_delay_seconds=CONFIG["autonomous_operation"]["export_retry_delay_seconds"],
+                        max_attempts=CONFIG["autonomous_operation"]["max_export_attempts"])
+                except (ExportRetryDeferred, ExportRetryExhausted):
+                    # No transport/checkpoint was attempted by a failed preflight.
+                    # Do not accumulate reservations for operations never started.
+                    state["standing_credit_budget"] = previous_standing_book
+                    raise
+            print(f"Standing export approval {approval['operation_id']}: {risk:.6f} estimated credits, "
+                  f"query {record['query_id']}, execution {record['execution_id']}; not a provider cap", flush=True)
+        else:
+            approval = require_operation_approval({**spec, "query_id": record["query_id"]}, "export", risk,
+                                                  record.get("query_parameters"), record["execution_id"])
         # Prune only after a prior full acceptance. Never evict pending source work.
         cache.prune_consumed(state)
         requested_at = now().isoformat().replace("+00:00", "Z")
         staged_attempt.update(attempt_id=approval["operation_id"], timestamp=requested_at,
                               risk=risk, evidence="; ".join(evidence))
-        reused = cache.prepare_export(state, record, binding, risk_credits=risk, evidence=evidence, timestamp=requested_at)
+        prepare_options = {"isolate_unrelated":True} if autonomous_enabled(state) else {}
+        reused = cache.prepare_export(state, record, binding, risk_credits=risk, evidence=evidence,
+                                      timestamp=requested_at, **prepare_options)
         if reused is not None or not staged_attempt.get("recorded"):
             raise StateError("No durable exact export attempt; refusing HTTP retrieval")
         result, wire_bytes = api(f'execution/{record["execution_id"]}/results?limit=10000&allow_partial_results=false', include_wire_size=True)
@@ -707,7 +921,8 @@ def reconciliation_weekly_allowed(billing):
     projected = float(billing.get("projected_period_credits", 0))
     return (
         headroom >= float(policy["minimum_target_headroom_credits"])
-        and projected <= float(policy["weekly_soft_projected_monthly_credits"])
+        and projected <= float(CONFIG["monthly_target_credits"] if billing.get("standing_usage")
+                               else policy["weekly_soft_projected_monthly_credits"])
     )
 
 
@@ -766,6 +981,18 @@ def reconcile_historical_manifest(state, billing):
     if not policy:
         return False
 
+    if autonomous_enabled(state):
+        from v3_autonomous_reconcile import repair_days, recover_additive_days
+        # First atomically accept current staged source results; never fill the
+        # small result cache with repair work ahead of those unconsumed effects.
+        if any(key in state.get("pending_executions", {}) for key in ("xnet_transfers", "bbb_dex")):
+            return False
+        if repair_days(state, CONFIG, now()):
+            names = ("ROOT", "CONFIG", "STATE", "now", "stamp", "encoded", "load", "save", "run",
+                     "execute", "export_source", "stage_consumption", "publish", "checkpoint",
+                     "sync_holder_integrity_error", "write_operational_health")
+            return recover_additive_days(SimpleNamespace(**{key:globals()[key] for key in names}), state, billing)
+
     recon = state.setdefault("reconciliation", {})
     # Existing repairs use CURRENT_DATE-relative offsets, with no saved SQL/version
     # and immutable window proof bound to their original execution. Do NOT download,
@@ -776,7 +1003,7 @@ def reconcile_historical_manifest(state, billing):
         return False
     if recon.get("repair_manual_review_required"):
         return False  # An aggregate manifest is not permission to repair by union.
-    if historical_cost_quarantined(state):
+    if historical_cost_quarantined(state) and not autonomous_enabled(state):
         # Result caps are observed after Dune execution, not pre-charge caps.
         # Preserve last-good history until an operator reviews cost and clears
         # the quarantine explicitly; do not retry the 30-day manifest on cron.
@@ -791,7 +1018,9 @@ def reconcile_historical_manifest(state, billing):
     # still awaiting durable consumption/acknowledgement. This keeps exactly-once
     # recovery simple and avoids spending credits during an unsettled hot path.
     pending = set(state.get("pending_executions", {}))
-    blocking_pending = pending - {"reconciliation_manifest", "historical_repair"}
+    blocking_pending = {key for key in pending - {"reconciliation_manifest", "historical_repair"}
+                        if state["pending_executions"][key].get("terminal_status", {}).get("state")
+                        not in {"QUERY_STATE_FAILED", "QUERY_STATE_CANCELLED", "QUERY_STATE_CANCELED", "QUERY_STATE_EXPIRED"}}
     if blocking_pending:
         recon["manifest_deferred_at_utc"] = stamp()
         recon["manifest_deferred_reason"] = (
@@ -821,7 +1050,7 @@ def reconcile_historical_manifest(state, billing):
     elif weekly_due and reconciliation_weekly_allowed(billing):
         mode = "weekly"
         lookback_days = int(policy["weekly_lookback_days"])
-    elif daily_due:
+    elif daily_due and not (autonomous_enabled(state) and policy.get("daily_manifest_on_gap_only", False)):
         mode = "daily"
         lookback_days = int(policy["daily_lookback_days"])
     elif weekly_due:
@@ -891,10 +1120,23 @@ def reconcile_historical_manifest(state, billing):
             # Counts/weighted totals cannot prove owner, amount, deletion, or event
             # identity. Never turn aggregate equality into an integrity clearance.
             recon.pop("integrity_manifest_clean_at_utc", None)
+            if autonomous_enabled(state):
+                old_issue = state.setdefault("source_errors", {}).pop("historical_reconciliation", None)
+                if old_issue:
+                    state.setdefault("autonomous_resolved_source_issues", []).append({
+                        "source_key":"historical_reconciliation", "previous_issue":old_issue,
+                        "resolved_at_utc":stamp(), "verified_execution_id":record["execution_id"],
+                        "basis":"Fresh standing quote and successfully consumed manifest; no settlement inferred"})
             stage_consumption(state, manifest_spec, record, "manifest_decision")
             checkpoint(state)  # decision AND its consumption marker in one commit
             return False
         recon["pending_mismatch_days"] = mismatches
+        if autonomous_enabled(state):
+            # Aggregate mismatches authorize only complete, day-bound additive
+            # verification on a later run, never destructive replacement.
+            stage_consumption(state, manifest_spec, record, "manifest_decision")
+            checkpoint(state)
+            return False
         recon["repair_manual_review_required"] = True
         quarantine_source(state, "historical_reconciliation", REPAIR_QUARANTINE)
         stage_consumption(state, manifest_spec, record, "manifest_decision")
@@ -1316,15 +1558,14 @@ def main():
                     state.get("queries", {})
                     .get(spec["key"], {})
                 )
-                previous_completed = previous.get(
-                    "completed_at_utc"
-                )
+                previous_completed = previous.get("continuous_coverage_end_utc") or previous.get("completed_at_utc")
                 cadence = int(
                     spec.get(
                         "cadence_minutes",
                         CONFIG["chain_cadence_minutes"],
                     )
                 )
+                cadence *= cadence_multiplier(state, spec["key"])
 
                 configured_lookback = int(
                     spec.get(
@@ -1355,12 +1596,19 @@ def main():
                 preferred_hour = spec.get(
                     "preferred_hour_utc"
                 )
+                calendar_due = bool(
+                    autonomous_enabled(state) and preferred_hour is not None
+                    and previous_completed is not None
+                    and parse_instant(previous_completed,"previous daily collection").date() < now().date()
+                    and now().hour >= int(preferred_hour)
+                )
 
                 # Recover a missed preferred hour after a 3-hour grace
                 # period instead of deferring BBB collection another day.
                 # The existing max_catchup_hours guard still applies.
                 in_preferred_hour = (
                     preferred_hour is None
+                    or calendar_due
                     or now().hour == int(preferred_hour)
                     or (
                         previous_completed is not None
@@ -1378,10 +1626,7 @@ def main():
                     or spec["key"] in state.get("pending_executions", {})
                     or (
                         in_preferred_hour
-                        and due(
-                            previous_completed,
-                            cadence,
-                        )
+                        and (calendar_due or due(previous_completed,cadence))
                     )
                 ):
                     due_sources.append(
@@ -1407,9 +1652,7 @@ def main():
                     state.get("queries", {})
                     .get(spec["key"], {})
                 )
-                previous_completed = previous.get(
-                    "completed_at_utc"
-                )
+                previous_completed = previous.get("continuous_coverage_end_utc") or previous.get("completed_at_utc")
 
                 planned_mode, planned_lookback = source_reconciliation_plan(
                     state, spec, repair
@@ -1441,7 +1684,7 @@ def main():
                             )
                         ),
                         math.ceil(
-                            elapsed_hours + 1
+                            elapsed_hours + int(spec.get("overlap_hours", 1))
                         ),
                     )
 
@@ -1593,6 +1836,11 @@ def main():
                     continue
                 except CacheError as error:
                     quarantine_source(state, spec["key"], str(error))
+                    if autonomous_enabled(state):
+                        from v3_result_cache import ExportRetryDeferred
+                        if isinstance(error, ExportRetryDeferred):
+                            state["source_errors"].pop(spec["key"], None)
+                            record_source_issue(state, spec["key"], error)
                     checkpoint(state)
                     continue
                 except (RuntimeError, OSError, ValueError) as error:
@@ -1627,7 +1875,7 @@ def main():
             if spec in due_presentation:
                 continue
             last = state["queries"].get(spec["key"], {}).get("completed_at_utc")
-            if due(last, spec["cadence_minutes"]) or spec["key"] in state.get("pending_executions", {}):
+            if due(last, spec["cadence_minutes"] * cadence_multiplier(state, spec["key"])) or spec["key"] in state.get("pending_executions", {}):
                 due_presentation.append(spec)
 
         # Confirmed terminal failures wait for bounded backoff. Pending work is

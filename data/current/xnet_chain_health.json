@@ -1,7 +1,16 @@
 {
   "automatic_retry": true,
   "cadence_minutes": 120,
-  "degraded_sources": {},
+  "degraded_sources": {
+    "xnet_transfers": {
+      "automatic_recheck": false,
+      "error": "Ambiguous duplicate hot transfer locator",
+      "failed_at_utc": "2026-10-21T21:07:12Z",
+      "manual_reconciliation_required": true,
+      "next_retry_at_utc": null,
+      "unresolved_execution": true
+    }
+  },
   "error": "Collection recovered; source event timestamps remain explicit and standing Dune spending remains held",
   "last_refresh_completed_utc": "2026-10-21T18:42:15Z",
   "pause_reason": "Controlled five-credit recovery halted: BBB wallet holder-integrity regression (-51907.828371 XNET); manual evidence-based reconciliation required.",
@@ -2731,5 +2740,5 @@
       }
     }
   },
-  "status": "HEALTHY"
+  "status": "DEGRADED"
 }

@@ -259,13 +259,13 @@ class AdditiveDayTests(unittest.TestCase):
     def test_new_multi_variant_locator_requires_instruction_proof(self):
         first = provider(amount_raw="100000000")
         second = provider(amount_raw="200000000")
-        with self.assertRaisesRegex(AdditiveDayRejected, "multiple rows/amounts"):
+        with self.assertRaisesRegex(AdditiveDayRejected, "instruction proof"):
             call([], [first, second])
 
     def test_new_row_reusing_an_existing_locator_requires_instruction_proof(self):
         existing = old()
         new_variant = provider(amount_raw="200000000")
-        with self.assertRaisesRegex(AdditiveDayRejected, "existing ambiguous locator"):
+        with self.assertRaisesRegex(AdditiveDayRejected, "instruction proof"):
             call([existing], [provider(), new_variant])
 
     def test_new_single_locator_is_additive(self):

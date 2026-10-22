@@ -78,6 +78,25 @@ class AcceptanceTestCase(unittest.TestCase):
 
 
 class PublishDataGenerationTests(AcceptanceTestCase):
+    def test_free_proof_deferral_keeps_paid_identity_and_verified_progress(self):
+        from v3_transfer_instruction_recovery import InstructionProofDeferred
+        state=self.pending_state()
+        def validate(path,current):
+            current["transfer_instruction_proofs"]={"tx":{"capture_sha256":"witness"}}
+            raise InstructionProofDeferred("Free RPC request bound reached")
+        reduce=Mock()
+        self.stack(validate_hot_transfers=validate,reduce_atomically=reduce,publish=Mock())
+        self.refresh.publish_data_generation(state,{"xnet_transfers":self.root/"transfers.json"},
+                                              {"xnet_transfers":(SPEC,RECORD)})
+        reduce.assert_not_called()
+        self.assertIn("xnet_transfers",state["pending_executions"])
+        self.assertNotIn("recover",state.get("consumed_executions",{}))
+        self.assertIn("tx",state["transfer_instruction_proofs"])
+        issue=state["source_errors"]["xnet_transfers"]
+        self.assertTrue(issue["automatic_recheck"])
+        self.assertEqual(issue["retry_kind"],"transfer_instruction_proof")
+        self.assertFalse(issue.get("manual_reconciliation_required",False))
+
     def test_bbb_only_acceptance_needs_no_transfer_input_or_transfer_clock(self):
         state = {"queries": {"xnet_transfers": {"execution_id": "last-good"}}}
         bbb = {"key": "bbb_dex", "query_id": 2, "output": "bbb.json"}

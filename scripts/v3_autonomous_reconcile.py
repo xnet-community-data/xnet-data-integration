@@ -19,6 +19,13 @@ from v3_additive_day import validate_additive_day, AdditiveDayRejected
 from v3_credit_budget import parse_instant
 from v3_live_state_store import StateError
 from v3_reduce_chain import TRANSFER_FIELDS, parse_ts
+from v3_transfer_instruction_recovery import prepare_proofs
+
+
+def hot_catchup_limit(config):
+    # An old outlier makes wide hot windows a poor recovery strategy. Exact
+    # one-day scopes use their own observed cost family and existing authority.
+    return min(12, int(config.get("max_catchup_hours", 168)))
 
 
 def owner_seed_day(root, load):
@@ -47,22 +54,24 @@ def repair_days(state, config, now, *, seed_cutoff=None):
     covered = previous.get("continuous_coverage_end_utc") or previous.get("completed_at_utc")
     if covered:
         start = parse_instant(covered, "transfer coverage")
-        if (now - start).total_seconds() > 48 * 3600:
+        if (now - start).total_seconds() > hot_catchup_limit(config) * 3600:
             start_day = max(start.date(), now.date() - timedelta(days=60))
             while start_day < now.date():
                 days.add(start_day.isoformat())
                 start_day += timedelta(days=1)
+            days.add(now.date().isoformat())
+    primary_days = set(days)
     if "holder_integrity" in state.get("source_errors", {}):
         # A once-per-day evidence scan of recent closed days can discover late
         # indexed additions. Already verified unchanged days wait until tomorrow.
         days.update((now.date() - timedelta(days=i)).isoformat() for i in range(1,8))
     issues = state.get("additive_day_recovery", {})
     result = []
-    for day in sorted(days):
+    for day in sorted(days,key=lambda value:(value not in primary_days,value)):
         if seed_cutoff is not None and day <= seed_cutoff:
             continue
         target = parse_instant(day + "T00:00:00Z", "repair day")
-        if target.date() >= now.date() or (now.date() - target.date()).days > 60:
+        if target.date() > now.date() or (now.date() - target.date()).days > 60:
             continue
         issue = issues.get(day, {})
         retry = issue.get("next_retry_at_utc")
@@ -85,6 +94,7 @@ def _publish_day(runtime, state, spec, record, result, absolute_day):
     # CURRENT_DATE belongs to the actual engine start, not the current process
     # date. This also proves the scope of an empty-day result after a restart.
     started = parse_instant(record.get("execution_started_at"), "provider execution start")
+    upper = min(parse_instant(absolute_day+"T00:00:00Z","day") + timedelta(days=1), started)
     original_offset = record["query_parameters"]["oldest_days_ago"]
     if (started.date() - timedelta(days=original_offset)).isoformat() != absolute_day:
         raise AdditiveDayRejected("Relative UTC-day scope changed at the provider execution start")
@@ -93,6 +103,8 @@ def _publish_day(runtime, state, spec, record, result, absolute_day):
     if (result.get("state") != "QUERY_STATE_COMPLETED" or not isinstance(rows, list)
             or len(rows) != meta.get("total_row_count") or result.get("next_uri") or result.get("next_offset")):
         raise AdditiveDayRejected("Day result is not a complete provider response")
+    if any(parse_ts(row["block_time"]) > started for row in rows):
+        raise AdditiveDayRejected("Provider row is later than its captured execution snapshot")
     ledger = root / "data/canonical/xnet_transfers.csv"
     before = ledger.read_bytes()
     canonical = list(csv.DictReader(io.StringIO(before.decode())))
@@ -100,8 +112,10 @@ def _publish_day(runtime, state, spec, record, result, absolute_day):
     seed = runtime.load(seed_path, {})
     cutoff = seed.get("latest_balance_event_time")
     cutoff_day = parse_ts(cutoff).date().isoformat() if cutoff else None
+    proofs = prepare_proofs(state, canonical, rows)
     validated = validate_additive_day(canonical, rows, absolute_day,
-        execution_id=record["execution_id"], sql_sha256=approval["sql_sha256"], seed_cutoff=cutoff_day)
+        execution_id=record["execution_id"], sql_sha256=approval["sql_sha256"], seed_cutoff=cutoff_day,
+        transaction_proofs=proofs)
     additions = validated["additions"]
     source_receipt = validated["receipt"]
     before_state = deepcopy(state)
@@ -124,7 +138,10 @@ def _publish_day(runtime, state, spec, record, result, absolute_day):
                 "original_record_bytes_preserved":True, "holder_status":quality.get("status"),
                 "accepted_at_utc":runtime.stamp(), "collection_completed_at_utc":record.get("completed_at_utc"),
                 "provider_execution_started_at_utc":record["execution_started_at"],
-                "full_current_day_claimed":False}
+                "verified_coverage_end_utc":upper.isoformat().replace("+00:00","Z"),
+                "full_current_day_claimed":False,
+                "instruction_proof_sha256s":{tx:entry["capture_sha256"] for tx,entry in proofs.items()
+                    if any(row["tx_id"]==tx for row in rows)}}
             identity = hashlib.sha256(json.dumps(receipt,sort_keys=True,separators=(",", ":")).encode()).hexdigest()
             state.setdefault("autonomous_day_receipts", {})[identity] = receipt
             runtime.stage_consumption(state,spec,record,"verified_additive_utc_day")
@@ -134,10 +151,10 @@ def _publish_day(runtime, state, spec, record, result, absolute_day):
                 recon.pop("repair_manual_review_required",None)
             state.setdefault("additive_day_recovery", {})[absolute_day] = {
                 "status":"accepted", "receipt_sha256":identity, "execution_id":record["execution_id"],
-                "added_rows":len(additions), "next_retry_at_utc":(runtime.now()+timedelta(days=1)).isoformat().replace("+00:00","Z")}
+                "added_rows":len(additions), "next_retry_at_utc":(runtime.now()+timedelta(
+                    days=1) if started.date().isoformat()>absolute_day else runtime.now()+timedelta(hours=2)).isoformat().replace("+00:00","Z")}
             previous = state["queries"].get("xnet_transfers", {})
             old_coverage = previous.get("continuous_coverage_end_utc") or previous.get("completed_at_utc")
-            upper = parse_instant(absolute_day+"T00:00:00Z","day") + timedelta(days=1)
             # Only advance a contiguous frontier, never jump over an unproven day.
             if old_coverage:
                 old = parse_instant(old_coverage,"old coverage")
@@ -145,6 +162,10 @@ def _publish_day(runtime, state, spec, record, result, absolute_day):
                     state["queries"]["xnet_transfers"] = {**record,
                         "continuous_coverage_end_utc":upper.isoformat().replace("+00:00","Z"),
                         "additive_day_receipt_sha256":identity}
+                    state["chain_completed_at_utc"] = runtime.stamp()
+                    issue=state.setdefault("source_errors",{}).get("xnet_transfers",{})
+                    if issue.get("retry_kind")=="bounded_day_catchup":
+                        state["source_errors"].pop("xnet_transfers",None)
             runtime.sync_holder_integrity_error(state)
             runtime.run("v3_build_chain_snapshot.py")
             runtime.run("v3_build_live_bundle.py")

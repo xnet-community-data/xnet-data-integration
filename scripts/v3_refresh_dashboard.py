@@ -618,8 +618,21 @@ def record_source_issue(state, key, error, unresolved=False):
 
 
 def source_in_backoff(state, key):
-    if state.get("source_errors", {}).get(key, {}).get("manual_reconciliation_required"):
-        return True
+    issue = state.get("source_errors", {}).get(key, {})
+    if issue.get("manual_reconciliation_required"):
+        # A narrowly identified legacy false-positive may be revalidated using
+        # its already-paid exact result, never by clearing all manual holds.
+        pending = state.get("pending_executions", {}).get(key, {})
+        recoverable = (key == "xnet_transfers" and autonomous_enabled(state)
+            and issue.get("error") == "Ambiguous duplicate hot transfer locator"
+            and pending.get("execution_id")
+            and pending.get("terminal_status", {}).get("state") == "QUERY_STATE_COMPLETED")
+        if not recoverable:
+            return True
+    if issue.get("retry_kind") == "transfer_instruction_proof":
+        until = issue.get("next_retry_at_utc")
+        if until and now() < parse_instant(until, "instruction proof retry"):
+            return True
     pending = state.get("pending_executions", {})
     if key in pending:
         return False  # Always reconcile an existing execution ID.
@@ -1245,35 +1258,40 @@ def validate_hot_transfers(path, state):
     canonical_path = ROOT / "data/canonical/xnet_transfers.csv"
     if not canonical_path.exists():
         raise ManualReviewRequired("Canonical transfer ledger missing")
-    canonical = {}
+    canonical, canonical_rows = {}, []
     with canonical_path.open(newline="") as source:
         for row in csv.DictReader(source):
             row = normalized(row)
+            canonical_rows.append(row)
             canonical.setdefault(locator(row), set()).add(signature(row))
     recon = state.get("reconciliation", {})
     repaired_days = {item["day"] for item in recon.get("last_repaired_days", []) if item.get("day")}
     legacy_cutoff = recon.get("last_completed_utc") if recon.get("last_mode") == "selective_repair" else None
     seed = load(ROOT / "data/xnet_owner_balances_seed_metadata.json", {})
     seed_cutoff = seed.get("latest_balance_event_time")
-    normalized_rows, seen = [], {}
-    for row in rows:
-        row = normalized(row)
+    normalized_rows = [normalized(row) for row in rows]
+    from v3_transfer_instruction_recovery import prepare_proofs, groups, proven_group
+    from v3_rpc_transfer_proof import ProofRejected
+    # Reject duplicate event IDs rather than collapsing rows or inventing an
+    # instruction ordinal. Distinct amounts in one locator need exact RPC proof.
+    if len({row["event_id"] for row in normalized_rows}) != len(normalized_rows):
+        raise ManualReviewRequired("Duplicate transfer event ID in provider result")
+    try:
+        proofs = prepare_proofs(state, canonical_rows, normalized_rows)
+        old_groups = groups(canonical_rows)
+        for key, incoming in groups(normalized_rows).items():
+            proven_group(old_groups.get(key, []), incoming, proofs)
+    except ProofRejected as error:
+        raise ManualReviewRequired(str(error)) from error
+    for row in normalized_rows:
         key, value = locator(row), signature(row)
         old = canonical.get(key, set())
-        if old and value not in old:
-            raise ManualReviewRequired("Hot overlap changes amount/owner/multiplicity/time; exact scoped replacement required")
-        if key in seen:
-            # A duplicate group or multiple amount variants without instruction
-            # identity cannot be represented safely by this union reducer.
-            raise ManualReviewRequired("Ambiguous duplicate hot transfer locator")
-        seen[key] = value
         if value not in old:
             timestamp = parse_ts(row["block_time"])
             if (row["block_date"] in repaired_days or
                     (legacy_cutoff and timestamp <= parse_ts(legacy_cutoff)) or
                     (seed_cutoff and timestamp <= parse_ts(seed_cutoff))):
                 raise ManualReviewRequired("Hot row overlaps a repaired/seeded window; stale resurrection fenced")
-        normalized_rows.append(row)
     # Canonical IDs are formed from normalized raw integers, not JSON float text.
     save(path, {**result, "result": {**result["result"], "rows": normalized_rows}})
 
@@ -1343,18 +1361,27 @@ def publish_data_generation(state, paths, source_records):
                 except StateError:
                     raise
                 except (ManualReviewRequired, CacheError) as error:
+                    proofs = deepcopy(state.get("transfer_instruction_proofs", {}))
                     shutil.rmtree(ROOT / "data")
                     shutil.copytree(source_backup, ROOT / "data")
                     state.clear()
                     state.update(source_before)
+                    if proofs:
+                        state["transfer_instruction_proofs"] = proofs
                     quarantine_source(state, key, str(error))
                     continue
                 except (RuntimeError, subprocess.CalledProcessError, OSError, ValueError) as error:
+                    from v3_transfer_instruction_recovery import InstructionProofDeferred
+                    proofs = deepcopy(state.get("transfer_instruction_proofs", {}))
                     shutil.rmtree(ROOT / "data")
                     shutil.copytree(source_backup, ROOT / "data")
                     state.clear()
                     state.update(source_before)
+                    if proofs:
+                        state["transfer_instruction_proofs"] = proofs
                     record_source_issue(state, key, error)
+                    if isinstance(error, InstructionProofDeferred):
+                        state["source_errors"][key].update(retry_kind="transfer_instruction_proof", automatic_recheck=True)
                     continue
                 else:
                     if key == "xnet_transfers":
@@ -1721,6 +1748,15 @@ def main():
                             2,
                         )
                     )
+
+                if autonomous_enabled(state) and spec["key"] == "xnet_transfers" and not pending:
+                    from v3_autonomous_reconcile import hot_catchup_limit
+                    if lookback > hot_catchup_limit(CONFIG) + int(spec.get("overlap_hours",1)):
+                        record_source_issue(state, spec["key"],
+                            "Wide collection gap routed to bounded, separately quoted UTC-day recovery")
+                        state["source_errors"][spec["key"]].update(
+                            retry_kind="bounded_day_catchup", automatic_recheck=True)
+                        continue
 
                 try:
                     record = execute(

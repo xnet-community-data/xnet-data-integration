@@ -99,6 +99,34 @@ changes or corrections requiring instruction-level deletion/replacement still
 fail safely and surface in operational health. Autonomy does not mean guessing
 financial facts. Other verified feeds continue where their own authority permits.
 
+## Instruction-backed transfer recovery (22 October follow-up)
+
+Multiple amounts on one transaction/account pair are not necessarily duplicate
+events. The runner now resolves this pattern against finalized Solana
+`getTransaction` evidence using the existing ordinal-aware decoder. Every leg,
+owner, amount, multiplicity, slot and timestamp must match; decoded instruction
+flows must reconcile pre/post token balances. The original capture, checksum and
+ordinal receipt are retained in the financial-state journal for offline replay.
+No balance-delta inference, arbitrary deduplication, amount correction, row
+deletion or seed change is permitted.
+
+- Already accepted multi-leg groups need no repeat RPC request.
+- New ambiguous groups use at most four free transaction requests per run, with
+  a 15-second timeout and a 2 MB response bound each. Verified progress survives
+  a later deferral. RPC outages retry with backoff using the same paid Dune
+  result; they do not resubmit compute or buy another download.
+- The specific legacy duplicate-locator hold may be automatically revalidated
+  against its exact completed execution. Unrelated manual holds are not cleared.
+- Gaps over 12 hours route through bounded one-UTC-day queries instead of an
+  increasingly expensive hot window. At most two day scopes per run retain the
+  existing authority and sample-backed admission. Closed-day verification takes
+  priority over older advisory scans. A current-day result advances coverage only
+  to the original engine snapshot, **never** to a future midnight.
+- Any transient holder imbalance retains the last-good holder state explicitly
+  degraded while complete-day additive verification fills late-indexed inflows.
+  A green workflow is not proof of fresh transfer/holder data; inspect accepted
+  source coverage and integrity state as well as the workflow conclusion.
+
 ## Deployment and observation
 
 GitHub's existing 15-minute scheduler starts the runner; its per-source cadence

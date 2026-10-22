@@ -238,7 +238,7 @@ def _rows_hash(rows):
 
 
 def _validate(canonical_rows, provider_rows, absolute_day, execution_id, sql_sha256,
-              seed_cutoff):
+              seed_cutoff, transaction_proofs):
     _require(isinstance(canonical_rows, list), "canonical_rows must be a list")
     _require(isinstance(provider_rows, list), "provider_rows must be a list")
     _require(all(isinstance(row, dict) for row in canonical_rows),
@@ -286,21 +286,22 @@ def _validate(canonical_rows, provider_rows, absolute_day, execution_id, sql_sha
     _require(not ({row["event_id"] for row in additions} & canonical_ids),
              "new result event_id collides with an existing canonical event_id")
 
-    old_locators = defaultdict(set)
+    old_locators = defaultdict(list)
     for row in old:
-        old_locators[_locator(row)].add(row["amount_raw"])
+        old_locators[_locator(row)].append(row)
     new_groups = defaultdict(list)
     for row in additions:
         locator = _locator(row)
-        _require(locator not in old_locators,
-                 "new row reuses an existing ambiguous locator; instruction proof required")
         new_groups[locator].append(row)
 
-    for rows in new_groups.values():
-        _require(len(rows) == 1,
-                 "new locator has multiple rows/amounts; instruction proof required")
-        _require(len({row["amount_raw"] for row in rows}) == 1,
-                 "new locator has multiple amount variants; instruction proof required")
+    from v3_transfer_instruction_recovery import proven_group
+    from v3_rpc_transfer_proof import ProofRejected
+    for locator, rows in new_groups.items():
+        try:
+            proven_group(old_locators.get(locator, []),
+                         [row for row in provider if _locator(row) == locator], transaction_proofs)
+        except ProofRejected as error:
+            raise AdditiveDayRejected(str(error)) from error
 
     # Existing multi-variant locator groups are preserved by the multiset check
     # above.  Additions are sorted, but the whole canonical ledger is never
@@ -333,7 +334,7 @@ def _validate(canonical_rows, provider_rows, absolute_day, execution_id, sql_sha
 
 
 def validate_additive_day(canonical_rows, provider_rows, absolute_day, *,
-                          execution_id, sql_sha256, seed_cutoff=None):
+                          execution_id, sql_sha256, seed_cutoff=None, transaction_proofs=None):
     """Return normalized additions and an audit receipt, or raise.
 
     The caller must have already established that the provider response is a
@@ -344,7 +345,7 @@ def validate_additive_day(canonical_rows, provider_rows, absolute_day, *,
     try:
         return _validate(
             canonical_rows, provider_rows, absolute_day, execution_id,
-            sql_sha256, seed_cutoff,
+            sql_sha256, seed_cutoff, transaction_proofs,
         )
     except AdditiveDayRejected:
         raise

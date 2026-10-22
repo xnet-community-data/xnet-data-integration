@@ -98,9 +98,9 @@ class AutonomousReconciliationTests(unittest.TestCase):
         self.assertNotIn(self.key,self.state["pending_executions"])
         self.runtime.publish.assert_called_once()
 
-    def test_gap_days_are_closed_utc_days_and_bounded_at_runtime(self):
+    def test_gap_days_include_today_as_explicit_partial_scope_and_are_bounded(self):
         days=repair_days(self.state,self.runtime.CONFIG,NOW)
-        self.assertEqual(days[0],"2026-10-14");self.assertEqual(days[-1],"2026-10-19")
+        self.assertEqual(days[0],"2026-10-14");self.assertEqual(days[-1],"2026-10-20")
         self.runtime.execute.side_effect=RuntimeError("provider temporarily unavailable")
         self.assertFalse(recover_additive_days(self.runtime,self.state,{}))
         self.assertEqual(self.runtime.execute.call_count,2)
@@ -119,8 +119,8 @@ class AutonomousReconciliationTests(unittest.TestCase):
         self.assertNotIn("2026-10-14",days);self.assertIn("2026-10-15",days)
 
     def test_seeded_days_are_filtered_before_execution_not_after_spending(self):
-        (self.root/"data/xnet_owner_balances_seed_metadata.json").write_text(json.dumps({"latest_balance_event_time":"2026-10-19 12:46:12.000 UTC"}))
-        self.assertEqual(owner_seed_day(self.root,self.runtime.load),"2026-10-19")
+        (self.root/"data/xnet_owner_balances_seed_metadata.json").write_text(json.dumps({"latest_balance_event_time":"2026-10-20 01:46:12.000 UTC"}))
+        self.assertEqual(owner_seed_day(self.root,self.runtime.load),"2026-10-20")
         self.assertFalse(recover_additive_days(self.runtime,self.state,{}))
         self.runtime.execute.assert_not_called();self.runtime.export_source.assert_not_called()
         self.assertIn(self.key,self.state["pending_executions"])
@@ -130,7 +130,29 @@ class AutonomousReconciliationTests(unittest.TestCase):
         eligible=route_seeded_mismatches(self.state,days,"2026-10-03")
         self.assertEqual(eligible,["2026-10-14"])
         self.assertEqual(self.state["reconciliation"]["seeded_mismatch_days"],["2026-10-02","2026-10-03"])
-        self.assertEqual(repair_days(self.state,self.runtime.CONFIG,NOW,seed_cutoff="2026-10-19"),[])
+        self.assertEqual(repair_days(self.state,self.runtime.CONFIG,NOW,seed_cutoff="2026-10-20"),[])
+
+    def test_current_day_acceptance_advances_only_to_engine_snapshot_not_midnight(self):
+        day="2026-10-20";key="day_repair:"+day
+        pending=self.state["pending_executions"].pop(self.key)
+        pending["query_parameters"]={"oldest_days_ago":0,"newest_days_ago":0}
+        pending["operation_approval"].update(absolute_day=day,query_parameters=pending["query_parameters"])
+        self.state["pending_executions"][key]=pending
+        self.state["queries"]["xnet_transfers"]={"completed_at_utc":"2026-10-20T01:00:00Z"}
+        self.state["source_errors"]={"xnet_transfers":{"retry_kind":"bounded_day_catchup"}}
+        self.record["query_parameters"]=pending["query_parameters"]
+        self.record["result_metadata"]["total_row_count"]=0
+        self.result["result"]["rows"]=[]
+        _publish_day(self.runtime,self.state,{**self.spec,"key":key},self.record,self.result,day)
+        self.assertEqual(self.state["queries"]["xnet_transfers"]["continuous_coverage_end_utc"],"2026-10-20T11:58:00Z")
+        self.assertNotIn("xnet_transfers",self.state["source_errors"])
+        receipt=next(iter(self.state["autonomous_day_receipts"].values()))
+        self.assertFalse(receipt["full_current_day_claimed"])
+
+    def test_gap_recovery_never_advances_over_an_unverified_day(self):
+        self.state["queries"]["xnet_transfers"]["completed_at_utc"]="2026-10-13T01:00:00Z"
+        _publish_day(self.runtime,self.state,self.spec,self.record,self.result,"2026-10-14")
+        self.assertNotIn("continuous_coverage_end_utc",self.state["queries"]["xnet_transfers"])
 
     def test_missing_seed_receipt_refuses_recovery_before_any_provider_operation(self):
         (self.root/"data/xnet_owner_balances_seed_metadata.json").unlink()

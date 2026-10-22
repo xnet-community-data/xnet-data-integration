@@ -175,5 +175,22 @@ class AutonomousRuntimeTests(unittest.TestCase):
                 self.assertEqual(refresh.main(),0)
             self.assertEqual(execute.called,should_execute)
 
+    def test_wide_gap_chooses_day_recovery_before_any_expensive_hot_submission(self):
+        source=deepcopy(refresh.CONFIG["sources"][0])
+        config={**refresh.CONFIG,"sources":[source],"presentation":[]}
+        self.state.update(reconciliation={"generation":1},chain_completed_at_utc="2026-10-19T08:00:00Z")
+        self.state["queries"]["xnet_transfers"]={"completed_at_utc":"2026-10-19T08:00:00Z","query_parameters":{"lookback_hours":6}}
+        with tempfile.TemporaryDirectory() as directory,patch.object(refresh,"CONFIG",config), \
+             patch.object(refresh,"load_authoritative_state",return_value=self.state), \
+             patch.object(refresh,"HEALTH",Path(directory)/"missing.json"),patch.object(refresh,"save"), \
+             patch.object(refresh,"sync_independent_network"),patch.object(refresh,"usage_guard",return_value={}), \
+             patch.object(refresh,"publish_data_generation"),patch.object(refresh,"checkpoint"), \
+             patch.object(refresh,"execute") as execute,patch.object(refresh,"export_source") as export, \
+             patch.object(refresh,"reconcile_historical_manifest",return_value=False) as repair, \
+             patch("sys.argv",["refresh"]):
+            self.assertEqual(refresh.main(),0)
+        execute.assert_not_called();export.assert_not_called();repair.assert_called_once()
+        self.assertEqual(self.state["source_errors"]["xnet_transfers"]["retry_kind"],"bounded_day_catchup")
+
 
 if __name__ == "__main__":unittest.main()

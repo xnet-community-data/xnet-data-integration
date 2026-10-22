@@ -80,7 +80,7 @@ def prepare_proofs(state, canonical, provider, *, fetch=None, max_requests=4):
         tx_id = key[0]
         if tx_id not in lane:
             if requests >= max_requests:
-                raise InstructionProofDeferred("Per-run free instruction-proof request bound reached")
+                raise InstructionProofDeferred("Per-validation free instruction-proof request bound reached")
             requests += 1
             capture = (fetch or fetch_transaction)(tx_id)
             try:

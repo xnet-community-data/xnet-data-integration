@@ -105,9 +105,23 @@ def _derive_transaction(capture):
         kind, info = parsed.get("type"), parsed.get("info", {})
         source = info.get("source") or (info.get("account") if kind in {"burn", "burnChecked"} else None)
         destination = info.get("destination") or (info.get("account") if kind in {"mintTo", "mintToChecked"} else None)
-        relevant = source in xnet or destination in xnet or info.get("mint") == MINT
+        relevant = (source in xnet or destination in xnet or info.get("mint") == MINT
+                    or info.get("account") in xnet)
         if not relevant:
             continue
+        if kind in {"initializeAccount", "initializeAccount2", "initializeAccount3", "initializeImmutableOwner"}:
+            account = info.get("account")
+            require(account in xnet and account not in raw["pre"] and account in raw["post"],
+                    "Initialization requires a proven newly created XNET account")
+            if kind != "initializeImmutableOwner":
+                require(info.get("owner") == balances[account][1] and info.get("mint") == MINT,
+                        "New account initialization owner/mint mismatch")
+            continue  # Account setup is not an inferred transfer leg.
+        if kind == "closeAccount":
+            account = info.get("account")
+            require(account in xnet and raw["post"].get(account, 0) == 0,
+                    "Cannot close a nonzero XNET token account")
+            continue  # Decoded transfer/burn flow must still explain its balance.
         if kind in {"transfer", "transferChecked"}:
             action = "transfer"
             require(source in xnet and destination in xnet, "Unresolved XNET transfer counterparty")

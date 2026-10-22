@@ -111,7 +111,8 @@ No balance-delta inference, arbitrary deduplication, amount correction, row
 deletion or seed change is permitted.
 
 - Already accepted multi-leg groups need no repeat RPC request.
-- New ambiguous groups use at most four free transaction requests per run, with
+- New ambiguous groups use at most four free transaction requests per validation
+  (at most eight in a two-day recovery run), with
   a 15-second timeout and a 2 MB response bound each. Verified progress survives
   a later deferral. RPC outages retry with backoff using the same paid Dune
   result; they do not resubmit compute or buy another download.

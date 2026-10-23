@@ -194,7 +194,7 @@ class HttpAmbiguityTests(AcceptanceTestCase):
                 "https://api.dune.com/api/v1/query/1/execute", code, "error", None, None)
             with self.subTest(code=code), \
                  patch.dict(os.environ, {"DUNE_API_KEY": "test-key"}), \
-                 patch("urllib.request.urlopen", side_effect=error):
+                 patch.object(self.refresh,"dune_open", side_effect=error):
                 with self.assertRaises(RuntimeError) as context:
                     self.refresh.api("query/1/execute", {"performance": "medium"})
                 self.assertNotIsInstance(context.exception, self.refresh.SubmissionRejected)
@@ -300,7 +300,7 @@ class ExportAttemptIntegrationTests(AcceptanceTestCase):
         transport.__enter__ = Mock(return_value=response)
         transport.__exit__ = Mock(return_value=False)
         with patch.dict(os.environ, {"DUNE_API_KEY": "fixture-key"}), \
-             patch("urllib.request.urlopen", return_value=transport):
+             patch.object(self.refresh,"dune_open", return_value=transport):
             self.assertEqual(self.refresh.api("execution/known-result/results", include_wire_size=True), (None, 8))
 
     def test_malformed_body_charge_survives_quarantine_and_restart(self):

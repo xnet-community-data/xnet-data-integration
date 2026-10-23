@@ -10,6 +10,11 @@ on:
       - "scripts/v3_rpc_transfer_proof.py"
       - "scripts/v3_autonomous_reconcile.py"
       - "scripts/v3_additive_day.py"
+      - "scripts/v3_autonomy_watchdog.py"
+      - "scripts/v3_result_cache.py"
+      - "scripts/v3_standing_budget.py"
+      - "scripts/v3_autonomous_estimates.py"
+      - "scripts/v3_dune_metadata.py"
       - "scripts/v3_execution_tracker.py"
       - "scripts/v3_publish_live_state.sh"
       - "scripts/v3_hydrate_live_state.py"
@@ -80,6 +85,9 @@ jobs:
           else
             python scripts/v3_refresh_dashboard.py
           fi
+      - name: Verify actual autonomy health
+        if: always()
+        run: python scripts/v3_autonomy_watchdog.py
       - name: Preserve diagnostic state
         if: always()
         uses: actions/upload-artifact@v6
@@ -91,5 +99,6 @@ jobs:
             .git/xnet-live-state/pending.json
             data/current/v3_operational_health.json
             state/v3_credit_benchmark.json
+            state/v3_autonomy_audit.json
           retention-days: 14
           include-hidden-files: true

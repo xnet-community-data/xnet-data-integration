@@ -130,6 +130,15 @@ deletion or seed change is permitted.
 
 ## Deployment and observation
 
+The system-wide follow-up audit and fault boundaries are recorded in
+[`SYSTEM_ROBUSTNESS_AUDIT_2026-10-23.md`](SYSTEM_ROBUSTNESS_AUDIT_2026-10-23.md).
+Every refresh now runs a read-only service-health gate, with a separate hourly
+observer for a stopped writer. It checks accepted coverage, not merely a green
+job/generated timestamp or the age of a quiet-chain event. A red health check
+does **not** set an operator pause or require manual resume: recovery continues
+and the check becomes green again when service evidence is healthy. Standard
+GitHub notification delivery depends on account/repository settings.
+
 GitHub's existing 15-minute scheduler starts the runner; its per-source cadence
 decides which work is due. Push deployments remain **cached-only**, so a code
 merge cannot silently buy verification work. Production activation and a normal

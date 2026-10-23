@@ -23,7 +23,9 @@ operation id is new, and whose exact approved/expiry instants cover the retry ti
 synchronizes the financial journal BEFORE any marker change, archives the complete original marker
 plus the exact new approval under ``state["result_export_retries"][binding_key]`` (never trimmed),
 removes only that binding's marker, and checkpoints BEFORE the caller stages a new
-``prepare_export``/fetch. The original financial obligation survives unknown and unaltered; a
+``prepare_export``/fetch in legacy mode. Production uses ``stage_new_intent=True``:
+archive + new requested marker + caller's exact financial attempt cross ONE
+checkpoint, so a restart cannot strand an orphan retry approval. The original financial obligation survives unknown and unaltered; a
 replacement is never justified by elapsed time alone. At most ``max_attempts`` read attempts are
 allowed per exact execution per UTC day (the original plus retries that day), while the lifetime
 archive is unbounded. A daily cap raises ``ExportRetryExhausted`` with ``retry_after_utc`` set to
@@ -174,6 +176,21 @@ class ResultCache:
         if marker and marker["status"] != "consumed":
             raise ManualExportReview("Prior export is unresolved or cached bytes are missing; no repeat download")
         return None
+    def require_capacity(self, state):
+        """Spend-free admission before compute/read; never evict unconsumed work.
+
+        Consumed entries can be pruned by the caller before transport. A full
+        cache is temporary backpressure, not permission to buy and discard a
+        third result or permanently quarantine an unrelated source.
+        """
+        records = self._load_records()
+        self._state_lane(state)
+        consumed = state.get("consumed_executions", {})
+        if not isinstance(consumed, dict):
+            _fail("consumed_executions must be an object")
+        active = [entry for entry in records.values() if entry["execution_id"] not in consumed]
+        if len(active) >= MAX_CACHE_RECORDS:
+            raise ExportRetryDeferred("Result cache is occupied by unconsumed results; defer new compute/read")
     def _load_records(self):
         if not (self.root / CACHE_PATH_RELATIVE).exists():
             return {}
@@ -335,7 +352,8 @@ class ResultCache:
         return next(iter(digests), None)
 
     def retry_export(self, state, record, spec, *, approval, timestamp,
-                     minimum_delay_seconds=900, max_attempts=3):
+                     minimum_delay_seconds=900, max_attempts=3,
+                     stage_new_intent=False, evidence=None):
         """Authorize ONE bounded re-read of this exact binding; never re-execute.
 
         The caller has already reserved standing risk and trust-verified the
@@ -355,6 +373,8 @@ class ResultCache:
         ``approval["performance"]`` is optional; when present it must be a
         non-empty string. Returns None (a cached entry is left untouched)."""
         delay = _delay(minimum_delay_seconds, "minimum_delay_seconds")
+        if type(stage_new_intent) is not bool:
+            _fail("stage_new_intent must be a bool")
         attempts = _attempt_count(max_attempts, "max_attempts")
         now = _instant(timestamp, "retry timestamp")
         fields = _binding_fields(spec, record)
@@ -439,13 +459,26 @@ class ResultCache:
                 f"retry after {retry_after}, no manual review required",
                 retry_after_utc=retry_after)
 
+        if stage_new_intent:
+            self.require_capacity(state)
+            _risk_block(parsed["quote"], evidence, timestamp, "retry replacement intent")
+
         try:
             synchronize_financial_journal(state)
         except BudgetInputError as error:
             _fail(f"financial journal synchronization refused the retry: {error}")
         state.setdefault(RETRY_LANE, {}).setdefault(key, []).append(
             {"marker": deepcopy(marker), "approval": deepcopy(approval)})
-        del state["result_exports"]["requests"][key]
+        if stage_new_intent:
+            # One durability boundary contains the archive, fresh read intent
+            # AND caller's exact financial attempt. A crash cannot leave only
+            # an orphan approval between retry authorization and preparation.
+            state["result_exports"]["requests"][key] = {
+                **marker, "status":"requested", "requested_at_utc":timestamp,
+                "risk_credits":parsed["quote"], "evidence":list(evidence),
+                "result_sha256":None, "total_row_count":None}
+        else:
+            del state["result_exports"]["requests"][key]
         # The in-memory candidate (journal sync, archive, marker removal) is now
         # the only safe representation. If the checkpoint is accepted but raises,
         # rolling back would restore a stale marker and permit duplicate reads.
@@ -482,6 +515,7 @@ class ResultCache:
             raise ManualExportReview(f"prior requested/in_progress/unknown result export intent {sorted(outstanding)} blocks a new export; resolve deliberately (never retired by age)")
         if key in requests and requests[key]["status"] == "cached":
             raise ManualExportReview(f"marker {key} is cached but its cache entry is missing; manual review required, no second export")
+        self.require_capacity(state)
         if lane is None:
             lane = {"schema_version": CACHE_SCHEMA_VERSION, "requests": {}}
         requests = lane["requests"]

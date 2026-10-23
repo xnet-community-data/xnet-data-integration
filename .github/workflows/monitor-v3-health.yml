@@ -1,0 +1,43 @@
+name: Watch XNET autonomous service health
+
+on:
+  schedule:
+    - cron: "13 * * * *"
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "scripts/v3_autonomy_watchdog.py"
+      - ".github/workflows/monitor-v3-health.yml"
+
+permissions:
+  contents: read
+
+# This is a read-only, separately scheduled observer, not another state writer.
+# It never executes/exports Dune or clears a hold, and does not share the writer
+# queue: a disabled/stuck refresh workflow must not suppress its observation.
+jobs:
+  health:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Read the latest authoritative production state
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
+          python scripts/v3_hydrate_live_state.py
+      - name: Check accepted coverage, authority and integrity
+        run: python scripts/v3_autonomy_watchdog.py
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: xnet-autonomy-health
+          path: state/v3_autonomy_audit.json
+          retention-days: 14

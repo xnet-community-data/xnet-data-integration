@@ -154,6 +154,12 @@ class AutonomousReconciliationTests(unittest.TestCase):
         _publish_day(self.runtime,self.state,self.spec,self.record,self.result,"2026-10-14")
         self.assertNotIn("continuous_coverage_end_utc",self.state["queries"]["xnet_transfers"])
 
+    def test_gap_outside_authorized_horizon_does_not_buy_endless_recent_scans(self):
+        self.state["queries"]["xnet_transfers"]["completed_at_utc"]="2026-08-01T00:00:00Z"
+        self.state["pending_executions"]={}
+        self.state["source_errors"]={"holder_integrity":{"error":"missing historical flows"}}
+        self.assertEqual(repair_days(self.state,self.runtime.CONFIG,NOW),[])
+
     def test_missing_seed_receipt_refuses_recovery_before_any_provider_operation(self):
         (self.root/"data/xnet_owner_balances_seed_metadata.json").unlink()
         with self.assertRaises(StateError):recover_additive_days(self.runtime,self.state,{})

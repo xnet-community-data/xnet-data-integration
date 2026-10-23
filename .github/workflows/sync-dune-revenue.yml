@@ -58,6 +58,22 @@ jobs:
         run: |
           git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
           bash scripts/v3_publish_live_state.sh
+      - name: Install checksum-pinned Dune CLI
+        # Pin the exact release already verified by production, rather than
+        # executing a mutable upstream installer beside the Dune credential.
+        run: |
+          test "$(uname -m)" = "x86_64"
+          archive="$RUNNER_TEMP/dune-cli-0.1.18-linux-amd64.tar.gz"
+          curl --fail --silent --show-error --location --retry 2 --max-time 120 \
+            --proto '=https' --tlsv1.2 \
+            https://github.com/duneanalytics/cli/releases/download/v0.1.18/dune-cli_0.1.18_linux_amd64.tar.gz \
+            -o "$archive"
+          echo "1b60f0df45e8d1827ba8ec9c85217ab2357ac2c3fc5a5b0e9738e7827c926dd9  $archive" | sha256sum --check --strict
+          mkdir -p "$RUNNER_TEMP/dune-verified"
+          tar -xzf "$archive" -C "$RUNNER_TEMP/dune-verified" dune
+          chmod +x "$RUNNER_TEMP/dune-verified/dune"
+          "$RUNNER_TEMP/dune-verified/dune" --version
+          echo "$RUNNER_TEMP/dune-verified" >> "$GITHUB_PATH"
       - name: Sync dynamic Dune revenue labels
         env:
           DUNE_API_KEY: ${{ secrets.DUNE_API_KEY }}
@@ -66,6 +82,4 @@ jobs:
             echo "::warning::DUNE_API_KEY is not configured; Dune labels were not updated."
             exit 0
           fi
-          curl -sSfL https://github.com/duneanalytics/cli/raw/main/install.sh | bash
-          export PATH="$HOME/.local/bin:$PATH"
           python scripts/v3_sync_dynamic_counter_labels.py

@@ -52,9 +52,11 @@ def repair_days(state, config, now, *, seed_cutoff=None):
     days.update(state.get("reconciliation", {}).get("pending_mismatch_days", []))
     previous = state.get("queries", {}).get("xnet_transfers", {})
     covered = previous.get("continuous_coverage_end_utc") or previous.get("completed_at_utc")
+    outside_authorized_horizon = False
     if covered:
         start = parse_instant(covered, "transfer coverage")
-        if (now - start).total_seconds() > hot_catchup_limit(config) * 3600:
+        outside_authorized_horizon = (now.date()-start.date()).days > 60
+        if not outside_authorized_horizon and (now - start).total_seconds() > hot_catchup_limit(config) * 3600:
             start_day = max(start.date(), now.date() - timedelta(days=60))
             while start_day < now.date():
                 days.add(start_day.isoformat())
@@ -68,6 +70,8 @@ def repair_days(state, config, now, *, seed_cutoff=None):
     issues = state.get("additive_day_recovery", {})
     result = []
     for day in sorted(days,key=lambda value:(value not in primary_days,value)):
+        if outside_authorized_horizon and "day_repair:"+day not in pending:
+            continue  # Cannot buy repeated recent-day scans to bridge an unapproved hole.
         if seed_cutoff is not None and day <= seed_cutoff:
             continue
         target = parse_instant(day + "T00:00:00Z", "repair day")

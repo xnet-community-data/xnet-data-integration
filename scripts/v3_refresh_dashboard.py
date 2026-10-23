@@ -33,7 +33,7 @@ from v3_result_cache import ResultCache, ManualExportReview, CacheError
 from v3_credit_budget import group_samples, sample_estimate, parse_instant, BudgetInputError
 from v3_budget_runtime import collect_sample_history, _budget_policy
 from v3_financial_journal import (
-    synchronize_financial_journal, record_export_attempt, record_export_outcome, amount,
+    synchronize_financial_journal, record_export_attempt, record_export_outcome, amount, financial_obligations,
 )
 from v3_standing_budget import (
     policy as standing_policy, scope as standing_scope, open_period as open_standing_period,
@@ -68,6 +68,13 @@ def save(path, value):
 def load_authoritative_state():
     return LiveStateStore(ROOT).load_authoritative_journal()
 
+class _NoDuneRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None  # Never forward API credentials or a paid POST to another URL.
+
+def dune_open(request, *, timeout):
+    return urllib.request.build_opener(_NoDuneRedirect()).open(request,timeout=timeout)
+
 def api(path, payload=None, include_wire_size=False):
     key = os.environ.get("DUNE_API_KEY")
     if not key:
@@ -76,7 +83,7 @@ def api(path, payload=None, include_wire_size=False):
         data=json.dumps(payload).encode() if payload is not None else None,
         headers={"X-Dune-Api-Key": key, "Content-Type": "application/json"})
     try:
-        with urllib.request.urlopen(request, timeout=45) as response:
+        with dune_open(request, timeout=45) as response:
             body = response.read()
             try:
                 value = json.loads(body)
@@ -84,6 +91,10 @@ def api(path, payload=None, include_wire_size=False):
                 if not include_wire_size:
                     raise
                 value = None  # Completed transport is still metered; content is invalid.
+            if not isinstance(value,dict):
+                if not include_wire_size:
+                    raise RuntimeError("Dune metadata returned a non-object response; retry metadata without resubmitting compute")
+                value = None  # Preserve completed-read metering before refusing its body.
             return (value, len(body)) if include_wire_size else value
     except urllib.error.HTTPError as error:
         try:
@@ -402,6 +413,11 @@ def execute(spec, params=None, enforce_cap=True, timeout_seconds=None, state=Non
     # keeps post-run refusal and the source breaker's independent quote barrier.
     pending = state.get("pending_executions", {}).get(spec.get("key", str(spec["query_id"])), {})
     if autonomous_enabled(state) and not pending:
+        public_sources = {s["query_id"] for s in CONFIG.get("sources", [])}
+        if CONFIG.get("reconciliation"):
+            public_sources.update(CONFIG["reconciliation"][name] for name in ("manifest_query_id","repair_query_id"))
+        if spec["query_id"] in public_sources:
+            result_cache().require_capacity(state)
         spec = prepare_standing_spec(state, spec, params)
     spec = {**spec, "accept_completed_outlier": bool(pending.get("execution_id")) or autonomous_enabled(state)}
     return tracker(state, spec, params).execute(spec, params, enforce_cap, timeout_seconds)
@@ -513,6 +529,10 @@ def export_source(record, spec, remaining, max_bytes=None, state=None):
                 if name in prior:
                     record[name] = prior[name]
             return remaining - points
+        # Backpressure must be discovered before a paid read or financial
+        # reservation. Only genuinely consumed entries may be removed.
+        cache.require_capacity(state)
+        cache.prune_consumed(state)
         billing = usage_guard(state)
         risk, evidence = export_risk(state, record, spec, result_bytes)
         totals = state["budget_decision"]["report"]["totals"]
@@ -521,27 +541,36 @@ def export_source(record, spec, remaining, max_bytes=None, state=None):
             raise BudgetBlocked("Export risk exceeds headroom after all remaining scheduled obligations")
         if autonomous_enabled(state):
             previous_standing_book = deepcopy(state.get("standing_credit_budget"))
+            prior_reads = ([item["liability_id"] for item in financial_obligations(state)[0]
+                if item.get("kind")=="export" and item.get("execution_id")==record["execution_id"]]
+                if retry_needed else [])
             try:
                 approval = reserve_standing_operation(state, CONFIG, billing["standing_usage"], now(),
                     {**spec, "query_id":record["query_id"]}, record.get("query_parameters"), "export", risk,
                     operation_id="export_" + uuid.uuid4().hex,
-                    evidence={"transport_quote":evidence, "result_bytes":result_bytes},
+                    evidence={"transport_quote":evidence, "result_bytes":result_bytes,
+                              "prior_read_liability_ids":prior_reads},
                     execution_id=record["execution_id"])
             except BudgetInputError as error:
                 raise BudgetBlocked(str(error)) from error
             approved_spec = {**spec, "query_id":record["query_id"], "operation_approval":approval}
             require_operation_approval(approved_spec, "export", risk, record.get("query_parameters"), record["execution_id"])
             if retry_needed:
-                from v3_result_cache import ExportRetryDeferred, ExportRetryExhausted
                 try:
+                    retry_timestamp = now().isoformat().replace("+00:00", "Z")
+                    staged_attempt.update(attempt_id=approval["operation_id"], timestamp=retry_timestamp,
+                                          risk=risk, evidence="; ".join(evidence))
                     cache.retry_export(state, record, binding, approval=approval,
-                        timestamp=now().isoformat().replace("+00:00", "Z"),
+                        timestamp=retry_timestamp, stage_new_intent=True, evidence=evidence,
                         minimum_delay_seconds=CONFIG["autonomous_operation"]["export_retry_delay_seconds"],
                         max_attempts=CONFIG["autonomous_operation"]["max_export_attempts"])
-                except (ExportRetryDeferred, ExportRetryExhausted):
+                except CacheError:
                     # No transport/checkpoint was attempted by a failed preflight.
                     # Do not accumulate reservations for operations never started.
-                    state["standing_credit_budget"] = previous_standing_book
+                    if previous_standing_book is None:
+                        state.pop("standing_credit_budget",None)
+                    else:
+                        state["standing_credit_budget"] = previous_standing_book
                     raise
             print(f"Standing export approval {approval['operation_id']}: {risk:.6f} estimated credits, "
                   f"query {record['query_id']}, execution {record['execution_id']}; not a provider cap", flush=True)
@@ -549,15 +578,24 @@ def export_source(record, spec, remaining, max_bytes=None, state=None):
             approval = require_operation_approval({**spec, "query_id": record["query_id"]}, "export", risk,
                                                   record.get("query_parameters"), record["execution_id"])
         # Prune only after a prior full acceptance. Never evict pending source work.
-        cache.prune_consumed(state)
-        requested_at = now().isoformat().replace("+00:00", "Z")
-        staged_attempt.update(attempt_id=approval["operation_id"], timestamp=requested_at,
-                              risk=risk, evidence="; ".join(evidence))
-        prepare_options = {"isolate_unrelated":True} if autonomous_enabled(state) else {}
-        reused = cache.prepare_export(state, record, binding, risk_credits=risk, evidence=evidence,
-                                      timestamp=requested_at, **prepare_options)
+        requested_at = staged_attempt.get("timestamp") or now().isoformat().replace("+00:00", "Z")
+        reused = None
+        if not staged_attempt.get("recorded"):
+            staged_attempt.update(attempt_id=approval["operation_id"], timestamp=requested_at,
+                                  risk=risk, evidence="; ".join(evidence))
+            prepare_options = {"isolate_unrelated":True} if autonomous_enabled(state) else {}
+            reused = cache.prepare_export(state, record, binding, risk_credits=risk, evidence=evidence,
+                                          timestamp=requested_at, **prepare_options)
         if reused is not None or not staged_attempt.get("recorded"):
             raise StateError("No durable exact export attempt; refusing HTTP retrieval")
+        try:
+            require_operation_approval({**spec,"query_id":record["query_id"],"operation_approval":approval},
+                "export",risk,record.get("query_parameters"),record["execution_id"])
+        except BudgetBlocked as error:
+            # A slow publication cannot extend spending authority. Retain the
+            # intent conservatively; the next bounded retry needs fresh authority.
+            from v3_result_cache import ExportRetryDeferred
+            raise ExportRetryDeferred(f"Export approval expired before transport: {error}") from error
         result, wire_bytes = api(f'execution/{record["execution_id"]}/results?limit=10000&allow_partial_results=false', include_wire_size=True)
         if type(wire_bytes) is not int or wire_bytes < 0:
             raise RuntimeError("Missing actual export wire metering; retain unknown attempt")
@@ -579,6 +617,9 @@ def export_source(record, spec, remaining, max_bytes=None, state=None):
                 or not isinstance(fetched, list) or len(fetched) != rows
                 or result.get("next_uri") or result.get("next_offset")
                 or (result.get("execution_id") is not None and result["execution_id"] != record["execution_id"])):
+            if autonomous_enabled(state):
+                from v3_result_cache import ExportRetryDeferred
+                raise ExportRetryDeferred("Source result transport is incomplete; retain this execution and retry its read under fresh bounded authority")
             raise ManualExportReview("Source result is incomplete; canonical state not reduced.")
         cache.cache_result(state, record, binding, {"execution_id": record["execution_id"],
             "total_row_count": rows, "result_rows": fetched}, timestamp=stamp())
@@ -1928,6 +1969,18 @@ def main():
         # Confirmed terminal failures wait for bounded backoff. Pending work is
         # exempt so existing execution IDs are always reconciled first.
         due_presentation = [s for s in due_presentation if not presentation_in_backoff(state, s["key"])]
+        # A perpetually failing early chart must not starve later daily charts.
+        # Keep source-invalidated charts first, but rotate attempts within each
+        # priority class rather than sorting forever by configuration position.
+        attempts = state.setdefault("presentation_last_attempts", {})
+        def attempt_order(spec):
+            at = attempts.get(spec["key"])
+            try:
+                oldest = parse_instant(at, "presentation attempt").timestamp() if at else float("-inf")
+            except BudgetInputError:
+                oldest = float("-inf")
+            return (spec["key"] not in forced, oldest)
+        due_presentation.sort(key=attempt_order)
         if billing is None:
             due_presentation = [s for s in due_presentation
                                 if state.get("pending_executions", {}).get(s["key"], {}).get("execution_id")]
@@ -1957,6 +2010,7 @@ def main():
 
         presentation_errors = {}
         for spec in due_presentation[:max_presentation]:
+            state.setdefault("presentation_last_attempts", {})[spec["key"]] = stamp()
             acceptance_before = None
             try:
                 # Do not download presentation rows: charts use Dune's cached

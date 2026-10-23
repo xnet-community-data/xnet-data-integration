@@ -42,6 +42,31 @@ def state():
 
 
 class StandingBudgetTests(unittest.TestCase):
+    def test_activated_book_loss_cannot_silently_create_a_new_spending_anchor(self):
+        self.state["standing_authority_activation"]={"approved":{"predecessor_revision":"known"}}
+        before=deepcopy(self.state)
+        with self.assertRaisesRegex(BudgetInputError,"refusing a new risk anchor"):
+            open_period(self.state,self.config,USAGE,NOW)
+        self.assertEqual(self.state,before)
+
+    def test_new_read_may_reference_old_unknown_attempt_without_settling_or_aliasing_it(self):
+        self.state["financial_journal"]["obligations"]["old-export"]["execution_id"]="same-exec"
+        before=deepcopy(self.state["financial_journal"])
+        self.reserve(kind="export",operation_id="fresh-read",execution_id="same-exec",quote=2,
+            evidence={"sample_ids":["observed"],"prior_read_liability_ids":["old-export"]})
+        result=evaluate(self.state,self.config,USAGE,NOW)
+        self.assertEqual(result["status"],"admitted")
+        self.assertAlmostEqual(result["effective_usage_credits"],BASE+2)
+        self.assertEqual(self.state["financial_journal"],before)
+        self.assertIn("old-export",result["legacy_unknown_liability_ids"])
+        self.assertIn("fresh-read",result["pending_reserved_operation_ids"])
+
+    def test_retry_cannot_cite_an_unrelated_or_nonexistent_liability(self):
+        for ids in (["exec:old"],["missing"],["old-export","old-export"]):
+            with self.subTest(ids=ids),self.assertRaises(BudgetInputError):
+                self.reserve(kind="export",operation_id="fresh-read",execution_id="same-exec",quote=2,
+                    evidence={"sample_ids":["observed"],"prior_read_liability_ids":ids})
+
     def setUp(self):
         self.config, self.state = config(), state()
         self.spec = {"key":"transfers", "query_id":1, "performance":"medium"}

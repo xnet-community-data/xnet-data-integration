@@ -89,6 +89,11 @@ never marks an individual charge settled.
 - Days at or before the owner-seed cutoff are excluded **before pricing/execution**.
   Their aggregate anomalies remain advisory evidence for seed-aware review; they
   cannot trigger a paid full-day replay or starve post-seed verification.
+- A free finalized-chain sampling probe detects positive omissions older than the
+  normal hot overlap. Its witnesses trigger priced, bounded day rechecks with
+  6/12/24-hour nonprogress backoff. Sampling silence is not whole-mint coverage,
+  and a fresh query does not clear a known missing witness. Current-day holder
+  repair takes priority over older advisory scans; optional work stops once fixed.
 - Holder last-good fallback, when needed during multi-day recovery, remains
   explicitly degraded; it never becomes a claim of repaired balances. No seed
   resets, amount rescaling, invented routed legs, negative-balance clamping or

@@ -8,7 +8,7 @@ import sys
 import tempfile
 from types import SimpleNamespace
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock,patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT / "scripts"))
@@ -159,6 +159,42 @@ class AutonomousReconciliationTests(unittest.TestCase):
         self.state["pending_executions"]={}
         self.state["source_errors"]={"holder_integrity":{"error":"missing historical flows"}}
         self.assertEqual(repair_days(self.state,self.runtime.CONFIG,NOW),[])
+
+    def test_holder_recovery_checks_current_day_before_old_advisory_days(self):
+        self.state["pending_executions"]={}
+        self.state["queries"]["xnet_transfers"]={"completed_at_utc":"2026-10-20T11:00:00Z"}
+        self.state["source_errors"]={"holder_integrity":{"error":"late inflow missing"}}
+        days=repair_days(self.state,self.runtime.CONFIG,NOW)
+        self.assertEqual(days[:2],["2026-10-20","2026-10-19"])
+
+    def test_holder_recovery_stops_optional_scans_once_current_day_fixes_it(self):
+        self.state["pending_executions"]={}
+        self.state["queries"]["xnet_transfers"]={"completed_at_utc":"2026-10-20T11:00:00Z"}
+        self.state["source_errors"]={"holder_integrity":{"error":"late inflow missing"}}
+        self.runtime.execute.return_value=self.record
+        def accepted(*args):
+            self.state["source_errors"].pop("holder_integrity")
+            return True
+        with patch("v3_autonomous_reconcile._publish_day",side_effect=accepted):
+            self.assertTrue(recover_additive_days(self.runtime,self.state,{}))
+        self.assertEqual(self.runtime.execute.call_count,1)
+
+    def test_day_recheck_retains_known_missing_witness_and_six_hour_retry(self):
+        import sys
+        sys.path.insert(0,str(ROOT/"tests"))
+        from test_v3_rpc_transfer_proof import capture
+        from v3_rpc_transfer_proof import derive_transaction
+        from v3_transfer_instruction_recovery import digest
+        cap=capture();cap["result"]["blockTime"]=int(datetime(2026,10,14,12,tzinfo=timezone.utc).timestamp())
+        rows,receipt=derive_transaction(cap)
+        self.state["transfer_instruction_proofs"]={"tx":{"capture":cap,"capture_sha256":digest(cap),"receipt":receipt}}
+        self.state["indexer_lag_watch"]={"witnesses":{"tx":{"first_observed_at_utc":"2026-10-20T12:00:00Z"}}}
+        _publish_day(self.runtime,self.state,self.spec,self.record,self.result,"2026-10-14")
+        self.assertIn("2026-10-14",self.state["reconciliation"]["pending_mismatch_days"])
+        self.assertEqual(self.state["additive_day_recovery"]["2026-10-14"]["status"],"awaiting_indexer")
+        self.assertEqual(self.state["additive_day_recovery"]["2026-10-14"]["next_retry_at_utc"],"2026-10-20T18:00:00Z")
+        self.assertNotIn("continuous_coverage_end_utc",self.state["queries"]["xnet_transfers"])
+        self.assertTrue(next(iter(self.state["autonomous_day_receipts"].values()))["known_indexer_witnesses_unresolved"])
 
     def test_missing_seed_receipt_refuses_recovery_before_any_provider_operation(self):
         (self.root/"data/xnet_owner_balances_seed_metadata.json").unlink()

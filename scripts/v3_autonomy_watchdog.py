@@ -27,6 +27,8 @@ def evaluate(state, config, quality, now, *, external=None):
     problems, warnings, domains = [], [], {}
     if state.get("paused"):
         problems.append("Global runner hold: " + str(state.get("last_error") or "paused"))
+    for domain,hold in state.get("domain_holds",{}).items():
+        if hold:problems.append(f"Explicit domain hold remains for {domain}: {hold.get('error')}")
     policy = config.get("autonomous_operation", {})
     if policy.get("enabled"):
         auth = state.get("standing_authorization", {})
@@ -80,6 +82,8 @@ def evaluate(state, config, quality, now, *, external=None):
                         "age_seconds":age,"maximum_delay_seconds":maximum}
     if quality.get("status") != "HEALTHY":
         problems.append("Holder integrity is not healthy: " + str(quality.get("error") or quality.get("status")))
+    if state.get("source_errors",{}).get("indexer_lag"):
+        problems.append("Finalized transfer witnesses remain absent/conflicting in indexed data; bounded day rechecks are pending")
     # Independent APIs have their own source-success clock; do not confuse an
     # unchanged daily observation with a stopped poller.
     network = state.get("external_sources", {}).get("network", {})

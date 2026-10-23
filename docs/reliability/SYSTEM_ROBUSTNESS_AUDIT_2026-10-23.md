@@ -68,6 +68,26 @@ publication and credit monitoring also completed successfully on their schedules
    production, verifies its hardcoded SHA-256 before extraction/execution, and
    installs it in a step without the Dune secret. Counter logic/layout is unchanged;
    no query execution or export is introduced by this metadata-only updater.
+10. **Late indexing outside the hot overlap.** A finalized-chain cross-check
+    proved actual transfers absent from the indexed ledger even though collection
+    checks were succeeding. A bounded free probe now samples at most two
+    32-signature pages and two finalized transactions every six hours (one-hour
+    retry on probe failure). Remembering the prior head lets it inspect mature
+    activity even during high traffic. A mint mention alone is never a transfer:
+    complete decoded instructions and balance-flow proof are required.
+
+    Positive missing/conflicting witnesses enqueue the existing separately quoted
+    UTC-day repair family. Known omissions stay visible, cannot advance a verified
+    repair frontier, and are not marked resolved merely because another query
+    completed. Unsuccessful day rechecks back off from 6 to 12 to 24 hours; their
+    expected cost enters the period forecast. The probe never inserts RPC rows or
+    claims whole-mint completeness from a small sample.
+
+    Holder recovery also checks **today first**, then recent days, rather than
+    spending on a week of older days before the affected day. Optional scans stop
+    as soon as integrity is restored. Expensive wide integrity checks are bounded
+    by the existing daily cooldown and three-attempt incident limit; precise-day
+    recovery continues without buying a wide scan on every cron.
 
 ## Safety/availability boundaries checked
 
@@ -86,6 +106,7 @@ publication and credit monitoring also completed successfully on their schedules
 | One source or presentation fails | Preserve last good, bounded retry/backoff, fair opportunities for other domains |
 | Billing period renews | Exact fresh non-overlapping period; carry unknown risks, do not reset liabilities |
 | Scheduler/poller stalls | Independently scheduled read-only observer reports missing accepted coverage |
+| Finalized transfers escape hot overlap | Retain exact witnesses, price targeted day rechecks, back off nonprogress and surface indexer lag |
 
 The existing fault-injection suites cover publication crashes before/after
 acceptance, lost HTTP responses, tampered cache data, outliers, scoped SQL drift,

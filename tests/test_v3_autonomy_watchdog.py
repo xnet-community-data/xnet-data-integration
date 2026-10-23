@@ -44,6 +44,9 @@ class WatchdogTests(unittest.TestCase):
     def test_holder_deficit_or_missing_integrity_is_not_a_green_service(self):
         for q in ({"status":"DEGRADED","error":"negative balance"},{"status":"unknown"}):
             self.assertEqual(self.check(quality=q)["status"],"unhealthy")
+    def test_explicit_domain_hold_is_not_hidden_by_healthy_quality_file(self):
+        s,_,_=fixture();s["domain_holds"]={"holders":{"error":"unresolved original hold"}}
+        self.assertEqual(self.check(s)["status"],"unhealthy")
     def test_ambiguous_submission_fails_without_clearing_it(self):
         s,_,_=fixture();s["pending_executions"]={"current":{"execution_id":None}}
         old=deepcopy(s);self.assertEqual(self.check(s)["status"],"unhealthy");self.assertEqual(s,old)

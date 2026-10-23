@@ -41,9 +41,13 @@ evidence; each live renewal records its own slot, counts and totals.
 ## Renewal and recovery
 
 - The fixed-mint official Solana RPC source renews every **120 minutes**.
-- At most **two acquisition attempts** per renewal, each with a 30-second HTTP
-  timeout and 32 MB response bound. Each attempt uses one two-method batch and,
+- At most **eight alignment attempts** per renewal, each with a 30-second HTTP
+  timeout and 32 MB response bound, within a 64 MB acquisition budget and a
+  90-second admission deadline (an in-flight request remains timeout-bounded).
+  Each attempt uses one two-method batch and,
   only after equal slots, one block-time read. No paid Dune fallback exists.
+  Different finalized banks are never averaged or treated as equivalent. The
+  sampled context slots and byte/attempt counts remain in the accepted proof.
 - A failed acquisition preserves last-good balances, records the error and retries
   automatically after one hour. A snapshot older than six hours cannot be labeled
   healthy, regardless of a fresh build timestamp.

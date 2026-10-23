@@ -2,12 +2,12 @@ from copy import deepcopy
 from datetime import datetime,timedelta,timezone
 import base64,json,sys,unittest
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import Mock,patch
 
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/"scripts"))
 from v3_holder_snapshot import (MINT,PROGRAM,RPC,REQUESTS,SnapshotRejected,acquire,
-    b58encode,public_key,make_baseline,validate_baseline,derive)
+    b58encode,public_key,make_baseline,validate_baseline,derive,MAX_ATTEMPTS)
 
 NOW=datetime(2026,10,23,20,tzinfo=timezone.utc)
 OWNER_A=b58encode(b"a"*32);OWNER_B=b58encode(b"b"*32)
@@ -93,8 +93,26 @@ class HolderSnapshotTests(unittest.TestCase):
     def test_network_failures_do_not_trigger_unbounded_retry_or_a_paid_fallback(self):
         read=Mock(side_effect=OSError("429"))
         with self.assertRaisesRegex(SnapshotRejected,"bounded attempts"):acquire(now=NOW,read=read)
-        self.assertEqual(read.call_count,2)
+        self.assertEqual(read.call_count,MAX_ATTEMPTS)
         self.assertTrue(all(call.args[0]==REQUESTS for call in read.call_args_list))
+    def test_normal_bank_advancement_can_align_after_the_old_two_attempt_limit(self):
+        wrong=fixture();wrong["responses"][1]["result"]["context"]["slot"]=101
+        read=Mock(side_effect=[deepcopy(wrong["responses"]) for _ in range(3)]+
+                  [fixture()["responses"],fixture()["block_time_response"]])
+        result=acquire(now=NOW,read=read)
+        self.assertEqual(result["capture"]["acquisition"]["attempts"],4)
+        self.assertEqual(len(result["capture"]["acquisition"]["context_samples"]),4)
+        self.assertTrue(result["receipt"]["same_bank_verified"])
+    def test_alignment_retry_budget_stops_additional_large_reads(self):
+        read=Mock(return_value=fixture()["responses"])
+        with patch("v3_holder_snapshot.MAX_ACQUISITION_BYTES",1),self.assertRaises(SnapshotRejected):
+            acquire(now=NOW,read=read)
+        self.assertEqual(read.call_count,1)
+    def test_elapsed_acquisition_deadline_stops_before_another_transport(self):
+        read=Mock()
+        with patch("v3_holder_snapshot.time.monotonic",side_effect=[0,100]),self.assertRaises(SnapshotRejected):
+            acquire(now=NOW,read=read)
+        read.assert_not_called()
     def test_no_positive_balance_is_dropped_because_it_is_one_raw_unit(self):
         c=fixture();rows=c["responses"][0]["result"]["value"]
         data=bytearray(base64.b64decode(rows[3]["account"]["data"][0]));data[64:72]=(1).to_bytes(8,"little")

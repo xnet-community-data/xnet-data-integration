@@ -11,6 +11,7 @@ from copy import deepcopy
 from datetime import datetime, timezone
 import hashlib
 import json
+import time
 import urllib.request
 
 RPC = "https://api.mainnet-beta.solana.com"
@@ -19,7 +20,9 @@ PROGRAM = "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"
 PATH = "data/current/v3_holder_baseline.json"
 MAX_BYTES = 32_000_000
 MAX_ACCOUNTS = 50_000
-MAX_ATTEMPTS = 2
+MAX_ATTEMPTS = 8
+MAX_ACQUISITION_BYTES = 64_000_000
+ACQUISITION_VERSION = 2
 MAX_AGE_SECONDS = 6 * 3600
 AUTHORIZATION_REF = "user-end-to-end-holder-recovery-20261023"
 ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
@@ -179,23 +182,35 @@ def rpc_read(body):
 def acquire(now=None, read=None):
     read = read or rpc_read
     failure = None
-    for _ in range(MAX_ATTEMPTS):
+    deadline = time.monotonic()+90
+    batch_bytes, contexts = 0, []
+    for attempt in range(MAX_ATTEMPTS):
+        if time.monotonic() >= deadline or batch_bytes >= MAX_ACQUISITION_BYTES:
+            failure = SnapshotRejected("Free holder acquisition time/byte budget exhausted")
+            break
         try:
             responses = read(deepcopy(REQUESTS))
+            batch_bytes += len(encoded(responses))
+            require(batch_bytes <= MAX_ACQUISITION_BYTES, "Free holder acquisition byte budget exhausted")
             require(isinstance(responses,list) and len(responses) == 2, "Incomplete snapshot batch")
             result = next(row["result"] for row in responses if row.get("id") == "accounts")
             slot = result["context"]["slot"]
             require(type(slot) is int and slot > 0, "Invalid snapshot slot")
             # Reject mismatched contexts BEFORE paying even a free block-time read.
             mint = next(row["result"] for row in responses if row.get("id") == "mint")
-            require(mint["context"]["slot"] == slot, "Snapshot bank advanced within batch; bounded retry")
+            mint_slot = mint["context"]["slot"]
+            contexts.append({"accounts":slot,"mint":mint_slot})
+            require(mint_slot == slot,
+                    f"Snapshot bank advanced within batch (accounts {slot}, mint {mint_slot}); bounded retry")
             request = {"jsonrpc":"2.0", "id":"block_time", "method":"getBlockTime", "params":[slot]}
             response = read(request)
             captured = now() if callable(now) else now or datetime.now(timezone.utc)
             capture = {"schema_version":1, "endpoint":RPC, "requests":deepcopy(REQUESTS),
                 "responses":responses, "block_time_request":request, "block_time_response":response,
-                "acquired_at_utc":captured.isoformat().replace("+00:00", "Z")}
+                "acquired_at_utc":captured.isoformat().replace("+00:00", "Z"),
+                "acquisition":{"version":ACQUISITION_VERSION,"attempts":attempt+1,
+                    "batch_bytes_read":batch_bytes,"context_samples":contexts}}
             return make_baseline(capture)
         except (OSError, ValueError, KeyError, TypeError, AttributeError, IndexError, StopIteration) as error:
             failure = error
-    raise SnapshotRejected(f"Finalized holder snapshot temporarily unavailable after bounded attempts: {failure}")
+    raise SnapshotRejected(f"Finalized holder snapshot temporarily unavailable after bounded attempts: {failure}; contexts={contexts}")

@@ -16,14 +16,19 @@ rescaled, assigned to guessed owners or represented by fabricated transfer legs.
 
 ## Acceptance proof
 
-One read-only RPC batch requests:
+The read-only context sampler starts each attempt with a batch requesting:
 
 1. All Token-2022 accounts filtered by the exact XNET mint, with raw account data
    and `withContext=true` at finalized commitment.
 2. That mint's raw account at finalized commitment.
 
-Both responses **must have the exact same context slot**. Equal supplies at
-different slots are not accepted as an atomic snapshot. The decoder validates
+The accepted responses **must have the exact same finalized context slot**.
+If an HTTP batch spans banks, bounded additional mint samples are indexed by
+context and can pair with an inventory from another HTTP call at that **identical
+immutable finalized slot**. The selected source attempts and exact transport
+requests are retained. No projection across slots, averaging or quiet-period
+assumption is used. Equal supplies at different slots are still refused.
+The decoder validates
 request provenance, program ownership, mint identity, initialized/frozen account
 state, eight decimals, unique public keys and complete raw bytes.
 
@@ -42,10 +47,13 @@ evidence; each live renewal records its own slot, counts and totals.
 
 - The fixed-mint official Solana RPC source renews every **120 minutes**.
 - At most **eight alignment attempts** per renewal, each with a 30-second HTTP
-  timeout and 32 MB response bound, within a 64 MB acquisition budget and a
-  90-second admission deadline (an in-flight request remains timeout-bounded).
-  Each attempt uses one two-method batch and,
-  only after equal slots, one block-time read. No paid Dune fallback exists.
+  timeout and 32 MB response bound, under a 64 MB admission budget and a
+  90-second admission deadline. An in-flight response remains individually
+  byte/timeout-bounded; uncertain reads reserve their full allowance rather
+  than being reported as zero-byte successes.
+  Each attempt uses one two-method batch, at most one cheap mint follow-up if
+  needed, and only after exact context alignment one block-time read. No paid
+  Dune fallback exists.
   Different finalized banks are never averaged or treated as equivalent. The
   sampled context slots and byte/attempt counts remain in the accepted proof.
 - A failed acquisition preserves last-good balances, records the error and retries

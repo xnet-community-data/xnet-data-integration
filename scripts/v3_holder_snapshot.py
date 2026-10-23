@@ -166,7 +166,7 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
-def rpc_read(body):
+def rpc_read(body, *, include_wire_size=False):
     request = urllib.request.Request(RPC, data=encoded(body), headers={
         "Content-Type":"application/json", "User-Agent":"xnet-finalized-holder-snapshot/1.0"})
     with urllib.request.build_opener(NoRedirect()).open(request, timeout=30) as response:
@@ -174,42 +174,98 @@ def rpc_read(body):
     require(len(raw) <= MAX_BYTES, "Holder snapshot transport exceeds byte bound")
     from v3_live_state_store import decode_json, StateError
     try:
-        return decode_json(raw, "holder RPC response")
+        value = decode_json(raw, "holder RPC response")
+        return (value,len(raw)) if include_wire_size else value
     except StateError as error:
         raise SnapshotRejected(str(error)) from error
 
 
 def acquire(now=None, read=None):
-    read = read or rpc_read
-    failure = None
+    transport = read or rpc_read
+    admission_bytes, known_bytes, uncertain_reserve = 0, 0, 0
+    transport_requests = []
     deadline = time.monotonic()+90
+    def read_counted(body):
+        nonlocal admission_bytes, known_bytes, uncertain_reserve
+        require(time.monotonic() < deadline and admission_bytes < MAX_ACQUISITION_BYTES,
+                "Free holder acquisition time/byte budget exhausted")
+        transport_requests.append(deepcopy(body))
+        try:
+            if transport is rpc_read:
+                value,size = rpc_read(body,include_wire_size=True)
+            else:
+                value = transport(body)  # Offline bridge has no wire; production meters actual bytes.
+                size = len(encoded(value))
+        except (OSError, ValueError):
+            # An interrupted/invalid read may already have consumed its byte
+            # allowance. Reserve it, never mislabel the reserve as metered data.
+            admission_bytes += MAX_BYTES+1
+            uncertain_reserve += MAX_BYTES+1
+            raise
+        admission_bytes += size
+        known_bytes += size
+        require(admission_bytes <= MAX_ACQUISITION_BYTES, "Free holder acquisition byte budget exhausted")
+        return value,size
+    failure = None
     batch_bytes, contexts = 0, []
+    account_samples, mint_samples, rejected_slots = {}, {}, set()
+    def essential(response,kind):
+        value=response["result"]["value"]
+        if kind=="mint":
+            return (value["owner"],value["executable"],value["data"])
+        return sorted((row["pubkey"],row["account"]["owner"],row["account"]["executable"],
+                       tuple(row["account"]["data"])) for row in value)
+    def sample(response, kind, attempt, method):
+        require(isinstance(response,dict) and response.get("jsonrpc")=="2.0"
+                and response.get("id")==kind and not response.get("error"), "Invalid holder sample response")
+        slot = response["result"]["context"]["slot"]
+        require(type(slot) is int and 0 < slot < 2**64, "Invalid holder sample context")
+        samples = account_samples if kind=="accounts" else mint_samples
+        if slot in samples and essential(samples[slot][0],kind)!=essential(response,kind):
+            rejected_slots.add(slot);account_samples.pop(slot,None);mint_samples.pop(slot,None)
+            raise SnapshotRejected("Contradictory state at an immutable finalized context")
+        if slot not in rejected_slots:
+            samples[slot] = (response,attempt,method)
+        return slot
     for attempt in range(MAX_ATTEMPTS):
-        if time.monotonic() >= deadline or batch_bytes >= MAX_ACQUISITION_BYTES:
+        if time.monotonic() >= deadline or admission_bytes >= MAX_ACQUISITION_BYTES:
             failure = SnapshotRejected("Free holder acquisition time/byte budget exhausted")
             break
         try:
-            responses = read(deepcopy(REQUESTS))
-            batch_bytes += len(encoded(responses))
-            require(batch_bytes <= MAX_ACQUISITION_BYTES, "Free holder acquisition byte budget exhausted")
+            responses,wire_bytes = read_counted(deepcopy(REQUESTS))
+            batch_bytes += wire_bytes
             require(isinstance(responses,list) and len(responses) == 2, "Incomplete snapshot batch")
-            result = next(row["result"] for row in responses if row.get("id") == "accounts")
-            slot = result["context"]["slot"]
-            require(type(slot) is int and slot > 0, "Invalid snapshot slot")
-            # Reject mismatched contexts BEFORE paying even a free block-time read.
-            mint = next(row["result"] for row in responses if row.get("id") == "mint")
-            mint_slot = mint["context"]["slot"]
+            by_id = {row.get("id"):row for row in responses}
+            require(set(by_id)=={"accounts","mint"}, "Incomplete snapshot response identities")
+            slot = sample(by_id["accounts"],"accounts",attempt+1,"batch")
+            mint_slot = sample(by_id["mint"],"mint",attempt+1,"batch")
             contexts.append({"accounts":slot,"mint":mint_slot})
-            require(mint_slot == slot,
+            aligned = set(account_samples)&set(mint_samples)
+            if not aligned:
+                # Bank state at a finalized slot is immutable. A cheap mint
+                # sample can pair with an inventory from another HTTP batch at
+                # THE SAME slot; never approximate or bridge different slots.
+                extra,_ = read_counted(deepcopy(REQUESTS[1]))
+                contexts[-1]["followup_mint"] = sample(extra,"mint",attempt+1,"followup")
+                aligned = set(account_samples)&set(mint_samples)
+            require(aligned,
                     f"Snapshot bank advanced within batch (accounts {slot}, mint {mint_slot}); bounded retry")
+            slot = max(aligned)
+            selected_accounts, account_attempt, account_method = account_samples[slot]
+            selected_mint, mint_attempt, mint_method = mint_samples[slot]
             request = {"jsonrpc":"2.0", "id":"block_time", "method":"getBlockTime", "params":[slot]}
-            response = read(request)
+            response,time_bytes = read_counted(request)
             captured = now() if callable(now) else now or datetime.now(timezone.utc)
             capture = {"schema_version":1, "endpoint":RPC, "requests":deepcopy(REQUESTS),
-                "responses":responses, "block_time_request":request, "block_time_response":response,
+                "responses":[selected_accounts,selected_mint], "block_time_request":request, "block_time_response":response,
                 "acquired_at_utc":captured.isoformat().replace("+00:00", "Z"),
                 "acquisition":{"version":ACQUISITION_VERSION,"attempts":attempt+1,
-                    "batch_bytes_read":batch_bytes,"context_samples":contexts}}
+                    "batch_bytes_read":batch_bytes,"known_response_bytes":known_bytes,
+                    "transport_admission_bytes":admission_bytes,"uncertain_response_reserve_bytes":uncertain_reserve,
+                    "context_samples":contexts,"transport_requests":transport_requests,
+                    "rejected_finalized_slots":sorted(rejected_slots),
+                    "response_selection":{"accounts_attempt":account_attempt,"mint_attempt":mint_attempt,
+                        "accounts_method":account_method,"mint_method":mint_method}}}
             return make_baseline(capture)
         except (OSError, ValueError, KeyError, TypeError, AttributeError, IndexError, StopIteration) as error:
             failure = error

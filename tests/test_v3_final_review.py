@@ -692,6 +692,8 @@ class FinalReviewTests(unittest.TestCase):
         script = step["run"]
         self.assertLess(script.index('if [ "$CACHED_ONLY" = "true" ]'), script.index("--cached-only"))
         self.assertLess(script.index("--cached-only"), script.index("--resume"))
+        self.assertIn("inputs.activate_holder_snapshot",step["env"]["CACHED_ONLY"])
+        self.assertIn("--activate-holder-snapshot --cached-only",script)
 
 
 if __name__ == "__main__":

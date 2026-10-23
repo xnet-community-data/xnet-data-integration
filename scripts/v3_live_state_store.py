@@ -43,7 +43,8 @@ REQUIRED = (
 )
 OPTIONAL = ("data/canonical/market_pair_snapshots.csv", "data/current/xnet_market_pairs.json",
             "data/history/circulating_supply_seed.json", "data/current/xnet_holder_integrity.json",
-            "data/current/v3_operational_health.json", "data/current/v3_result_cache.json")
+            "data/current/v3_operational_health.json", "data/current/v3_result_cache.json",
+            "data/current/v3_holder_baseline.json")
 PRESENTATION = ("network_history", "commercial_history", "burn_history", "tokenomics_history",
                 "holder_distribution", "market_pools")
 PUBLICATION_PATHS = set(REQUIRED) | set(OPTIONAL) | {

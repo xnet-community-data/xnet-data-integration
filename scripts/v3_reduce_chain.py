@@ -418,6 +418,67 @@ def derive_holders(transfers: list[dict]) -> None:
     )
 
 
+def derive_holders_from_snapshot(transfers, journal):
+    """A complete live inventory, not a guessed historical seed adjustment.
+
+    Do not overlay incompletely indexed Dune events onto a complete finalized
+    snapshot. Holders have their own exact balance-as-of and renewable source.
+    """
+    from v3_holder_snapshot import (PATH, AUTHORIZATION_REF, MAX_AGE_SECONDS,
+        validate_baseline, SnapshotRejected)
+    try:
+        require_auth = journal.get("holder_reconciliation_authorization", {})
+        if require_auth.get("approval_ref") != AUTHORIZATION_REF:
+            raise SnapshotRejected("Missing durable holder-source authorization")
+        baseline = json.loads(Path(PATH).read_text())
+        owners, receipt = validate_baseline(baseline)
+        lane = journal["holder_reconciliation"]
+        if baseline["baseline_id"] != lane.get("active_baseline_id"):
+            raise SnapshotRejected("Holder source does not match the accepted baseline identity")
+        seed_path = Path("data/xnet_owner_balances_seed.csv")
+        if hashlib.sha256(seed_path.read_bytes()).hexdigest() != lane.get("original_seed_sha256"):
+            raise SnapshotRejected("Original holder seed changed during source migration")
+        metadata_path = Path("data/xnet_owner_balances_seed_metadata.json")
+        expected_metadata = lane.get("original_seed_metadata_sha256")
+        if expected_metadata and hashlib.sha256(metadata_path.read_bytes()).hexdigest() != expected_metadata:
+            raise SnapshotRejected("Original holder seed metadata changed during source migration")
+        asof = parse_ts(receipt["block_time_utc"])
+        age = (datetime.now(timezone.utc)-asof).total_seconds()
+        if not 0 <= age <= MAX_AGE_SECONDS:
+            raise SnapshotRejected("Finalized holder snapshot is stale/future; automatic source retry required")
+    except (SnapshotRejected, OSError, ValueError, KeyError, TypeError) as error:
+        raise RuntimeError("Holder snapshot integrity: " + str(error)) from error
+    rows = [{"owner":owner, "xnet_balance":decstr(Decimal(raw)/Decimal(10**8))}
+            for owner,raw in owners.items()]
+    rows.sort(key=lambda row:(-Decimal(row["xnet_balance"]),row["owner"]))
+    with seed_path.open(newline="") as handle:
+        original = {row["owner"] for row in csv.DictReader(handle) if dec(row["xnet_balance"])>0}
+    current = set(owners)
+    meta = json.loads(Path("data/xnet_owner_balances_seed_metadata.json").read_text())
+    latest = max((row["block_time"] for row in transfers),key=parse_ts,
+                 default=meta["latest_balance_event_time"])
+    values = [int(raw) for raw in owners.values()]
+    holder = {"schema_version":3,"balance_basis":"finalized_full_account_snapshot",
+        "balance_as_of_utc":receipt["block_time_utc"],"baseline_id":baseline["baseline_id"],
+        "baseline_slot":receipt["slot"],"token_account_count":receipt["token_account_count"],
+        "mint_supply_raw":receipt["mint_supply_raw"],"mint_conservation_residual_raw":"0",
+        "positive_holder_count":len(owners),"holders_ge_1_xnet":sum(v>=10**8 for v in values),
+        "holders_ge_100_xnet":sum(v>=100*10**8 for v in values),
+        "holders_ge_1000_xnet":sum(v>=1000*10**8 for v in values),
+        "outstanding_balance_sum_xnet":decstr(Decimal(receipt["mint_supply_raw"])/Decimal(10**8)),
+        "latest_transfer_event_utc":latest,"transfer_events_applied":0,
+        "seed_cutoff_utc":meta["latest_balance_event_time"],"seed_positive_holder_count":len(original),
+        "holders_created_since_seed":None,"holders_zeroed_since_seed":None,"net_holder_change_since_seed":None,
+        "original_seed_comparison":{"meaning":"reference comparison, not proven historical creations/deletions",
+            "owners_absent_from_reference":len(current-original),"reference_owners_not_current":len(original-current),
+            "positive_count_difference":len(current)-len(original)}}
+    out = Path("data/derived/xnet_owner_balances.csv")
+    with out.open("w",newline="") as handle:
+        writer = csv.DictWriter(handle,fieldnames=["owner","xnet_balance"])
+        writer.writeheader();writer.writerows(rows)
+    Path("data/current/xnet_holder_state.json").write_text(json.dumps(holder,indent=2)+"\n")
+
+
 def derive_holders_guarded(
     transfers: list[dict],
     allow_stale_holders: bool = False,
@@ -433,13 +494,17 @@ def derive_holders_guarded(
         journal_path = Path("data/current/v3_refresh_state.json")
         journal = json.loads(journal_path.read_text()) if journal_path.exists() else {}
         review = journal.get("holder_seed_review", {})
-        if review.get("status") == "requires_review":
+        if journal.get("holder_reconciliation", {}).get("active_baseline_id"):
+            derive_holders_from_snapshot(transfers,journal)
+        elif review.get("status") == "requires_review":
             raise RuntimeError("Holder seed review required: " + review["error"])
-        derive_holders(transfers)
+        else:
+            derive_holders(transfers)
     except RuntimeError as error:
         if (
             not allow_stale_holders
-            or not str(error).startswith(("Negative holder balance after reduction:", "Holder seed review required:"))
+            or not str(error).startswith(("Negative holder balance after reduction:", "Holder seed review required:",
+                                         "Holder snapshot integrity:"))
         ):
             raise
         previous_path = Path("data/current/xnet_holder_state.json")
@@ -452,9 +517,11 @@ def derive_holders_guarded(
         quality = {
             "schema_version": 1,
             "status": "DEGRADED",
-            "reason": "holder_seed_review" if str(error).startswith("Holder seed review required:") else "holder_balance_integrity",
+            "reason": ("holder_seed_review" if str(error).startswith("Holder seed review required:")
+                       else "holder_snapshot_unavailable" if str(error).startswith("Holder snapshot integrity:")
+                       else "holder_balance_integrity"),
             "error": str(error),
-            "holder_data_as_of_utc": previous_as_of,
+            "holder_data_as_of_utc": previous.get("balance_as_of_utc") or previous_as_of,
             "checked_at_utc": datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
             "automatic_recheck": not str(error).startswith("Holder seed review required:"),
             "methodology_changed": False,
@@ -465,11 +532,14 @@ def derive_holders_guarded(
         quality = {
             "schema_version": 1,
             "status": "HEALTHY",
-            "holder_data_as_of_utc": holder["latest_transfer_event_utc"],
+            "holder_data_as_of_utc": holder.get("balance_as_of_utc") or holder["latest_transfer_event_utc"],
             "checked_at_utc": datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
             "automatic_recheck": True,
             "methodology_changed": False,
         }
+        if holder.get("baseline_id"):
+            quality.update(balance_basis=holder["balance_basis"],baseline_id=holder["baseline_id"],
+                           baseline_slot=holder["baseline_slot"],mint_conservation_residual_raw="0")
     quality_path.parent.mkdir(parents=True, exist_ok=True)
     quality_path.write_text(json.dumps(quality, indent=2) + "\n")
 

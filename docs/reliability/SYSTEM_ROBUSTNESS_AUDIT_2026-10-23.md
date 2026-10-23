@@ -1,5 +1,10 @@
 # Autonomous system audit — 23 October 2026
 
+**Latest recovery design:** [autonomous finalized holder reconciliation](FINALIZED_HOLDER_RECONCILIATION.md)
+uses complete same-bank account/mint inventories, retains the original seed and
+eliminates the historical opening conflict as a blocker to current holder updates.
+The chronological investigation and earlier degraded states below remain evidence.
+
 ## Scope and live baseline
 
 Reviewed the complete scheduled path: source/feed collection, Dune admission,

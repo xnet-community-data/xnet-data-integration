@@ -382,7 +382,9 @@ def write_operational_health(state):
         sources[key] = {**sources.get(key, {}), "source_asof": at}
         config["domains"][key] = {"source_key": key, "max_age_seconds": max_age}
     evidence("xnet_transfers", "data/current/xnet_supply_state.json", "latest_transfer_event_utc")
-    evidence("holders", "data/current/xnet_holder_state.json", "latest_transfer_event_utc")
+    evidence("holders", "data/current/xnet_holder_state.json",
+             "balance_as_of_utc" if state.get("holder_reconciliation",{}).get("active_baseline_id")
+             else "latest_transfer_event_utc")
     evidence("bbb_dex", "data/current/xnet_bbb_trade_state.json", "latest_trade_utc", max_age=172800)
     evidence("devices", "data/current/xnet_network_state.json", "devices.observed_at_utc", max_age=172800)
     evidence("offload", "data/current/xnet_network_state.json", "offload.data_as_of", daily=True, max_age=172800)
@@ -391,7 +393,8 @@ def write_operational_health(state):
     issues = deepcopy(state.get("source_errors", {}))
     if "indexer_lag" in issues:
         issues.setdefault("xnet_transfers",issues["indexer_lag"])
-        issues.setdefault("holders",issues["indexer_lag"])
+        if not state.get("holder_reconciliation",{}).get("active_baseline_id"):
+            issues.setdefault("holders",issues["indexer_lag"])
     if "holder_integrity" in issues or "holders" in state.get("domain_holds", {}):
         issues["holders"] = issues.get("holder_integrity", state.get("domain_holds", {}).get("holders"))
     # Report source freshness separately from permission to spend. A Dune guard
@@ -737,7 +740,11 @@ def _holder_quality_proven(quality, holder):
                          and str(quality.get("error", "")).startswith("Negative holder balance after reduction:"))
                         or (quality.get("status") == "HEALTHY" and not quality.get("error")))
         return (valid_status and quality.get("methodology_changed") is False
-                and quality["holder_data_as_of_utc"] == holder.get("latest_transfer_event_utc")
+                and quality["holder_data_as_of_utc"] == (holder.get("balance_as_of_utc") or holder.get("latest_transfer_event_utc"))
+                and (not holder.get("baseline_id") or (
+                    quality.get("baseline_id")==holder["baseline_id"]
+                    and quality.get("baseline_slot")==holder.get("baseline_slot")
+                    and quality.get("mint_conservation_residual_raw")=="0"))
                 and at <= checked <= now())
     except BudgetInputError:
         return False
@@ -1080,6 +1087,9 @@ def reconcile_historical_manifest(state, billing):
         from v3_holder_seed_review import held as seed_review_held
         if seed_review_held(state):
             recon["manifest_deferred_reason"]="Positive pre-seed conflict requires reviewed opening facts; no speculative paid holder backfill"
+            return False
+        if state.get("holder_reconciliation",{}).get("active_baseline_id") and holder_integrity_degraded(state):
+            recon["manifest_deferred_reason"]="Holder inventory renews independently by free finalized snapshot; no paid manifest substitute"
             return False
 
     recon = state.setdefault("reconciliation", {})
@@ -1557,16 +1567,31 @@ def refresh_independent_data(state):
         return 1
 
 
+def refresh_finalized_holders(state, *, activate=False):
+    from v3_holder_snapshot_runtime import activate as activate_source, refresh as refresh_source
+    names = ("ROOT","CONFIG","STATE","HEALTH","now","stamp","load","save","checkpoint","run",
+             "publish","sync_holder_integrity_error","write_operational_health")
+    runtime = SimpleNamespace(**{key:globals()[key] for key in names})
+    if activate:
+        activate_source(runtime,state)
+    return refresh_source(runtime,state)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--resume", action="store_true", help="Explicitly clear a reviewed pause; never used by cron")
     parser.add_argument("--cached-only", action="store_true", help="Publish independent API/cache data; never submit or export Dune work")
+    parser.add_argument("--activate-holder-snapshot", action="store_true",
+                        help="Activate the user-approved free finalized holder source; requires --cached-only")
     parser.add_argument("--benchmark", action="store_true", help="Measure query costs without changing canonical state")
     parser.add_argument("--benchmark-sources", action="store_true", help="Measure bounded sources only")
     parser.add_argument("--benchmark-batches", type=int, choices=range(1, 4), default=1)
     parser.add_argument("--benchmark-repetitions", type=int, choices=range(1, 7), default=1)
     args = parser.parse_args()
+    if args.activate_holder_snapshot and not args.cached_only:
+        parser.error("--activate-holder-snapshot requires --cached-only; activation cannot buy Dune work")
     state = load_authoritative_state()
+    refresh_finalized_holders(state,activate=args.activate_holder_snapshot)
     if args.cached_only:
         return refresh_independent_data(state)
     migrate_holder_hold(state)

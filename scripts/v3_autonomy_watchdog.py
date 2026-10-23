@@ -6,7 +6,9 @@ integrity independently of generated time or the age of the last quiet-chain
 event. Nonzero exit alerts through GitHub Actions without pausing the runner.
 """
 import argparse
+import csv
 from datetime import datetime, timezone
+from decimal import Decimal
 import hashlib
 import json
 import os
@@ -86,6 +88,22 @@ def evaluate(state, config, quality, now, *, external=None):
         problems.append("Finalized transfer witnesses remain absent/conflicting in indexed data; bounded day rechecks are pending")
     if state.get("holder_seed_review",{}).get("status")=="requires_review":
         problems.append(state["holder_seed_review"]["error"])
+    baseline=state.get("holder_reconciliation",{}).get("active_baseline_id")
+    if state.get("holder_reconciliation_authorization") and not baseline:
+        problems.append("Finalized holder source is authorized but has no accepted complete inventory yet")
+    if state.get("source_errors",{}).get("holder_snapshot"):
+        warnings.append("Finalized holder source retry pending: "+str(state["source_errors"]["holder_snapshot"].get("error")))
+    if baseline:
+        from v3_holder_snapshot import AUTHORIZATION_REF, MAX_AGE_SECONDS
+        at=quality.get("holder_data_as_of_utc")
+        observed=instant(at)
+        age=(now-observed).total_seconds() if observed else None
+        healthy=(quality.get("baseline_id")==baseline and quality.get("mint_conservation_residual_raw")=="0"
+                 and state.get("holder_reconciliation_authorization",{}).get("approval_ref")==AUTHORIZATION_REF
+                 and age is not None and 0<=age<=MAX_AGE_SECONDS)
+        if not healthy:problems.append("Independent finalized holder snapshot is stale or lacks matching source/conservation proof")
+        domains["holder_inventory"]={"status":"healthy" if healthy else "stalled",
+            "accepted_coverage_or_refresh_utc":at,"age_seconds":age,"maximum_delay_seconds":MAX_AGE_SECONDS}
     # Independent APIs have their own source-success clock; do not confuse an
     # unchanged daily observation with a stopped poller.
     network = state.get("external_sources", {}).get("network", {})
@@ -121,10 +139,36 @@ def main():
         state=validate_journal((root/"data/current/v3_refresh_state.json").read_bytes())
         config=json.loads((root/"config/v3_refresh.json").read_text())
         quality=json.loads((root/"data/current/xnet_holder_integrity.json").read_text())
+        baseline=state.get("holder_reconciliation",{}).get("active_baseline_id")
+        if baseline:
+            from v3_holder_snapshot import PATH, validate_baseline
+            proof=json.loads((root/PATH).read_text())
+            owners,receipt=validate_baseline(proof)
+            if (proof["baseline_id"]!=baseline or quality.get("baseline_slot")!=receipt["slot"]
+                    or quality.get("holder_data_as_of_utc")!=receipt["block_time_utc"]):
+                raise ValueError("Holder health does not match the complete finalized snapshot proof")
+            with (root/"data/derived/xnet_owner_balances.csv").open(newline="") as handle:
+                rows=list(csv.DictReader(handle))
+            actual={row["owner"]:Decimal(row["xnet_balance"])*Decimal(10**8) for row in rows}
+            if (len(actual)!=len(rows) or actual!={owner:Decimal(raw) for owner,raw in owners.items()}):
+                raise ValueError("Published owner balances differ from the complete finalized inventory")
+            holder=json.loads((root/"data/current/xnet_holder_state.json").read_text())
+            chain=json.loads((root/"data/current/xnet_chain_snapshot.json").read_text())
+            bundle=json.loads((root/"data/current/xnet_live_bundle.json").read_text())
+            if (holder.get("positive_holder_count")!=len(owners) or chain.get("holder_count_positive")!=len(owners)
+                    or holder.get("baseline_id")!=baseline or chain.get("holder_snapshot_id")!=baseline
+                    or bundle.get("chain")!=chain):
+                raise ValueError("Holder counts/bundle differ from the verified snapshot generation")
+            for minimum,key in ((1,"holders_ge_1_xnet"),(100,"holders_ge_100_xnet"),(1000,"holders_ge_1000_xnet")):
+                count=sum(int(raw)>=minimum*10**8 for raw in owners.values())
+                if holder.get(key)!=count or chain.get(key)!=count:
+                    raise ValueError("Published holder thresholds differ from the finalized raw balances")
+            if Decimal(holder["outstanding_balance_sum_xnet"])*Decimal(10**8)!=Decimal(receipt["mint_supply_raw"]):
+                raise ValueError("Published holder total does not conserve the same-bank mint supply")
         external={key:json.loads((root/f"data/current/xnet_{key}_state.json").read_text())
                   for key in ("market","network","revenue")}
         report=evaluate(state,config,quality,datetime.now(timezone.utc),external=external)
-    except (OSError, ValueError, TypeError, AttributeError, KeyError, OverflowError, StateError) as error:
+    except (OSError, ValueError, TypeError, AttributeError, KeyError, ArithmeticError, StateError) as error:
         report={"status":"unhealthy","problems":[f"Cannot validate service evidence: {error}"],"warnings":[]}
     output=root/"state/v3_autonomy_audit.json";output.parent.mkdir(parents=True,exist_ok=True)
     output.write_text(json.dumps(report,indent=2)+"\n")

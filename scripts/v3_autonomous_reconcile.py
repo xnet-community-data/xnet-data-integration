@@ -64,7 +64,8 @@ def repair_days(state, config, now, *, seed_cutoff=None):
             days.add(now.date().isoformat())
     primary_days = set(days)
     from v3_holder_seed_review import held as seed_review_held
-    if "holder_integrity" in state.get("source_errors", {}) and not seed_review_held(state):
+    if ("holder_integrity" in state.get("source_errors", {}) and not seed_review_held(state)
+            and not state.get("holder_reconciliation",{}).get("active_baseline_id")):
         # An outflow can arrive before its older indexed inflow, including on
         # TODAY. Recheck recent days first, not a week of old healthy days before
         # the affected current day. Successful days still retain their cooldown.

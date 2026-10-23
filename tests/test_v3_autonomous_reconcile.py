@@ -166,6 +166,12 @@ class AutonomousReconciliationTests(unittest.TestCase):
         self.state["source_errors"]={"holder_integrity":{"error":"late inflow missing"}}
         days=repair_days(self.state,self.runtime.CONFIG,NOW)
         self.assertEqual(days[:2],["2026-10-20","2026-10-19"])
+    def test_independent_holder_source_outage_never_buys_speculative_transfer_scans(self):
+        self.state["pending_executions"]={}
+        self.state["queries"]["xnet_transfers"]={"completed_at_utc":"2026-10-20T11:00:00Z"}
+        self.state["source_errors"]={"holder_integrity":{"error":"Holder snapshot integrity: 429"}}
+        self.state["holder_reconciliation"]={"active_baseline_id":"accepted-bank"}
+        self.assertEqual(repair_days(self.state,self.runtime.CONFIG,NOW),[])
 
     def test_holder_recovery_stops_optional_scans_once_current_day_fixes_it(self):
         self.state["pending_executions"]={}

@@ -1,5 +1,10 @@
 # Continued holder-opening review — 23 October 2026
 
+**Subsequent operational resolution:** [finalized holder reconciliation](FINALIZED_HOLDER_RECONCILIATION.md)
+replaces the live working basis with complete, same-slot account/mint snapshots.
+The historical findings below are retained, not rewritten; the old seed is no
+longer a prerequisite for correct current holder balances.
+
 ## Production fence is active, not merely configured
 
 Read-only verification of live-state revision

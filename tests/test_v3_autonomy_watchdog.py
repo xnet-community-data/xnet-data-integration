@@ -51,6 +51,20 @@ class WatchdogTests(unittest.TestCase):
         s,_,_=fixture();s["holder_seed_review"]={"status":"requires_review","error":"Missing pre-seed opening requires review"}
         self.assertEqual(self.check(s)["status"],"unhealthy")
         self.assertTrue(any("pre-seed" in problem for problem in self.check(s)["problems"]))
+    def test_complete_holder_source_needs_matching_proof_and_actual_snapshot_freshness(self):
+        from v3_holder_snapshot import AUTHORIZATION_REF
+        s,c,q=fixture();s["holder_reconciliation"]={"active_baseline_id":"bank-proof"}
+        s["holder_reconciliation_authorization"]={"approval_ref":AUTHORIZATION_REF}
+        q.update(baseline_id="bank-proof",holder_data_as_of_utc=at(),mint_conservation_residual_raw="0")
+        self.assertEqual(self.check(s,c,q)["status"],"healthy")
+        q["holder_data_as_of_utc"]=at(7)
+        self.assertEqual(self.check(s,c,q)["status"],"unhealthy")
+        q["holder_data_as_of_utc"]=at();q["baseline_id"]="other-proof"
+        self.assertEqual(self.check(s,c,q)["status"],"unhealthy")
+    def test_authorized_holder_bootstrap_is_not_satisfied_by_an_old_seed(self):
+        from v3_holder_snapshot import AUTHORIZATION_REF
+        s,c,q=fixture();s["holder_reconciliation_authorization"]={"approval_ref":AUTHORIZATION_REF}
+        self.assertEqual(self.check(s,c,q)["status"],"unhealthy")
     def test_ambiguous_submission_fails_without_clearing_it(self):
         s,_,_=fixture();s["pending_executions"]={"current":{"execution_id":None}}
         old=deepcopy(s);self.assertEqual(self.check(s)["status"],"unhealthy");self.assertEqual(s,old)

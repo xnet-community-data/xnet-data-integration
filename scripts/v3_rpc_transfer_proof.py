@@ -109,6 +109,11 @@ def _derive_transaction(capture):
                     or info.get("account") in xnet)
         if not relevant:
             continue
+        if kind == "getAccountDataSize":
+            require(info.get("mint") == MINT, "Account-size query mint mismatch")
+            # SPL's exact read-only size query cannot move tokens or change
+            # authority. Every financial leg and account delta is still proved.
+            continue
         if kind in {"initializeAccount", "initializeAccount2", "initializeAccount3", "initializeImmutableOwner"}:
             account = info.get("account")
             require(account in xnet and account not in raw["pre"] and account in raw["post"],

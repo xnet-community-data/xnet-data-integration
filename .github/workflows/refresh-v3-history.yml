@@ -13,6 +13,8 @@ on:
       - "scripts/v3_autonomy_watchdog.py"
       - "scripts/v3_indexer_lag.py"
       - "scripts/v3_holder_seed_review.py"
+      - "scripts/v3_holder_snapshot.py"
+      - "scripts/v3_holder_snapshot_runtime.py"
       - "scripts/v3_result_cache.py"
       - "scripts/v3_standing_budget.py"
       - "scripts/v3_autonomous_estimates.py"
@@ -42,6 +44,10 @@ on:
         default: false
       cached_only:
         description: "Publish independent API/cache data without any Dune execution or export"
+        type: boolean
+        default: false
+      activate_holder_snapshot:
+        description: "Activate approved free, same-slot finalized holder reconciliation; no Dune spending"
         type: boolean
         default: false
 
@@ -77,11 +83,16 @@ jobs:
           DUNE_API_KEY: ${{ secrets.DUNE_API_KEY }}
           RESUME: ${{ inputs.resume }}
           # Deployments must never silently submit paid verification work.
-          CACHED_ONLY: ${{ github.event_name == 'push' || inputs.cached_only }}
+          CACHED_ONLY: ${{ github.event_name == 'push' || inputs.cached_only || inputs.activate_holder_snapshot }}
           EVENT: ${{ github.event_name }}
+          ACTIVATE_HOLDER_SNAPSHOT: ${{ inputs.activate_holder_snapshot }}
         run: |
           if [ "$CACHED_ONLY" = "true" ]; then
-            python scripts/v3_refresh_dashboard.py --cached-only
+            if [ "$ACTIVATE_HOLDER_SNAPSHOT" = "true" ]; then
+              python scripts/v3_refresh_dashboard.py --activate-holder-snapshot --cached-only
+            else
+              python scripts/v3_refresh_dashboard.py --cached-only
+            fi
           elif [ "$RESUME" = "true" ]; then
             python scripts/v3_refresh_dashboard.py --resume
           else

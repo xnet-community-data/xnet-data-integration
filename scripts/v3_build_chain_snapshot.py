@@ -603,6 +603,21 @@ snapshot = {
     "holder_count_positive":
         holders["positive_holder_count"],
 
+    "holder_balance_as_of_utc":
+        holders.get("balance_as_of_utc") or holders.get("latest_transfer_event_utc"),
+
+    "holder_balance_basis":
+        holders.get("balance_basis", "original_seed_plus_indexed_transfers"),
+
+    "holder_snapshot_slot":
+        holders.get("baseline_slot"),
+
+    "holder_snapshot_id":
+        holders.get("baseline_id"),
+
+    "holder_mint_conservation_residual_raw":
+        holders.get("mint_conservation_residual_raw"),
+
     "holders_ge_1_xnet":
         holders["holders_ge_1_xnet"],
 

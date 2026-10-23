@@ -142,6 +142,12 @@ deletion or seed change is permitted.
 
 The system-wide follow-up audit and fault boundaries are recorded in
 [`SYSTEM_ROBUSTNESS_AUDIT_2026-10-23.md`](SYSTEM_ROBUSTNESS_AUDIT_2026-10-23.md).
+Current holder recovery is described in
+[`FINALIZED_HOLDER_RECONCILIATION.md`](FINALIZED_HOLDER_RECONCILIATION.md): a
+renewable same-finalized-bank account inventory conserves mint supply exactly and
+does not depend on silently correcting the original historical seed. Source
+activation is a one-time cached-only operation; later scheduled renewal is free
+and autonomous under its own durable, non-spending authority.
 Every refresh now runs a read-only service-health gate, with a separate hourly
 observer for a stopped writer. It checks accepted coverage, not merely a green
 job/generated timestamp or the age of a quiet-chain event. A red health check

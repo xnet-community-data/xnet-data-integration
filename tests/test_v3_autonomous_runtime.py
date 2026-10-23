@@ -26,6 +26,11 @@ def authorized_state():
 
 
 class AutonomousRuntimeTests(unittest.TestCase):
+    def test_holder_source_activation_requires_a_no_dune_invocation(self):
+        with patch("sys.argv",["refresh","--activate-holder-snapshot"]), \
+             patch.object(refresh,"load_authoritative_state") as load,patch.object(refresh,"api") as api:
+            with self.assertRaises(SystemExit) as failure:refresh.main()
+        self.assertEqual(failure.exception.code,2);load.assert_not_called();api.assert_not_called()
     def test_known_opening_conflict_never_buys_a_wide_integrity_scan(self):
         self.state["holder_seed_review"]={"status":"requires_review","error":"preseed facts conflict"}
         self.state["source_errors"]={"holder_integrity":{"error":"historical opening conflict"}}

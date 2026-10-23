@@ -47,6 +47,10 @@ class WatchdogTests(unittest.TestCase):
     def test_explicit_domain_hold_is_not_hidden_by_healthy_quality_file(self):
         s,_,_=fixture();s["domain_holds"]={"holders":{"error":"unresolved original hold"}}
         self.assertEqual(self.check(s)["status"],"unhealthy")
+    def test_opening_review_is_not_hidden_by_a_later_positive_balance(self):
+        s,_,_=fixture();s["holder_seed_review"]={"status":"requires_review","error":"Missing pre-seed opening requires review"}
+        self.assertEqual(self.check(s)["status"],"unhealthy")
+        self.assertTrue(any("pre-seed" in problem for problem in self.check(s)["problems"]))
     def test_ambiguous_submission_fails_without_clearing_it(self):
         s,_,_=fixture();s["pending_executions"]={"current":{"execution_id":None}}
         old=deepcopy(s);self.assertEqual(self.check(s)["status"],"unhealthy");self.assertEqual(s,old)

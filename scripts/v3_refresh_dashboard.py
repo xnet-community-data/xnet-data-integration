@@ -1060,6 +1060,12 @@ def reconcile_historical_manifest(state, billing):
             return False
         from v3_indexer_lag import probe as probe_indexer_lag
         probe_indexer_lag(state,ROOT,load,now())
+        if holder_integrity_degraded(state):
+            from v3_holder_seed_review import probe as probe_seed_review
+            review_before=deepcopy(state.get("holder_seed_review"))
+            probe_seed_review(state,ROOT,load,now())
+            if state.get("holder_seed_review")!=review_before:
+                checkpoint(state)  # Make the review fence visible to the reducer BEFORE it writes holders.
         if repair_days(state, CONFIG, now(), seed_cutoff=seed_day):
             names = ("ROOT", "CONFIG", "STATE", "now", "stamp", "encoded", "load", "save", "run",
                      "execute", "export_source", "stage_consumption", "publish", "checkpoint",
@@ -1070,6 +1076,10 @@ def reconcile_historical_manifest(state, billing):
             # Waiting for a precise-day cooldown is not permission to buy a
             # broad manifest instead (nor to erase a positive missing witness).
             recon["manifest_deferred_reason"]="Precise-day recovery is waiting for scope/cooldown; no broad paid substitute"
+            return False
+        from v3_holder_seed_review import held as seed_review_held
+        if seed_review_held(state):
+            recon["manifest_deferred_reason"]="Positive pre-seed conflict requires reviewed opening facts; no speculative paid holder backfill"
             return False
 
     recon = state.setdefault("reconciliation", {})

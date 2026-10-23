@@ -21,18 +21,18 @@ PROBE_HOURS = 6
 MAX_TRANSACTION_READS = 2
 
 
-def recent_signatures(before=None):
+def recent_signatures(before=None, *, address=MINT):
     options={"limit":32,"commitment":"finalized"}
     if before:options["before"]=before
     body={"jsonrpc":"2.0","id":1,"method":"getSignaturesForAddress",
-          "params":[MINT,options]}
+          "params":[address,options]}
     req=urllib.request.Request(RPC,data=json.dumps(body).encode(),
         headers={"Content-Type":"application/json","User-Agent":"xnet-indexer-lag-probe/1.0"})
     with urllib.request.urlopen(req,timeout=15) as response:
         raw=response.read(MAX_RESPONSE_BYTES+1)
     if len(raw)>MAX_RESPONSE_BYTES:raise ValueError("Oversized activity probe")
     result=json.loads(raw)
-    if result.get("id")!=1 or not isinstance(result.get("result"),list):
+    if not isinstance(result,dict) or result.get("id")!=1 or not isinstance(result.get("result"),list):
         raise ValueError("No finalized activity metadata")
     return result["result"]
 
@@ -96,18 +96,25 @@ def probe(state, root, load, now, *, list_signatures=None, fetch=None):
         if head and isinstance(head[0],dict) and isinstance(head[0].get("signature"),str):
             watch["previous_head_signature"]=head[0]["signature"]
         watch.pop("last_probe_error",None)
+        attempts=watch.setdefault("proof_attempts",{})
+        # Unsupported early candidates must not consume both free slots forever.
+        # Rotate by last attempt, oldest mature activity first among new items.
+        items=sorted((item for item in items if isinstance(item,dict)),
+            key=lambda item:(attempts.get(item.get("signature"),""),
+                             item.get("blockTime") if type(item.get("blockTime")) is int else 0))
         for item in items:
             if requests>=MAX_TRANSACTION_READS:break
             if not isinstance(item,dict) or "err" not in item:continue
             tx=item.get("signature");epoch=item.get("blockTime")
             if (item.get("err") is not None or not isinstance(tx,str) or not tx
-                    or type(epoch) is not int):continue
+                    or type(epoch) is not int or not 0<=epoch<=now.timestamp()):continue
             at=datetime.fromtimestamp(epoch,timezone.utc)
             # Only evidence that already escaped the normal hot window, was
             # before the accepted poll, and lies inside existing repair scope.
             if (at.date()<=cutoff.date() or not cutoff<at<min(covered,now-timedelta(hours=6))
                     or (now.date()-at.date()).days>60 or tx in known or tx in watch["witnesses"]):continue
             requests+=1
+            attempts[tx]=watch["last_probe_at_utc"]
             capture=(fetch or fetch_transaction)(tx)
             try:rows,receipt=derive_transaction(capture)
             except ProofRejected as error:
@@ -117,7 +124,8 @@ def probe(state, root, load, now, *, list_signatures=None, fetch=None):
             state.setdefault("transfer_instruction_proofs",{})[tx]={
                 "capture":capture,"capture_sha256":digest(capture),"receipt":receipt}
             watch["witnesses"][tx]={"first_observed_at_utc":now.isoformat().replace("+00:00","Z"),
-                                       "missing_event_ids":[row["event_id"] for row in rows]}
+                                        "missing_event_ids":[row["event_id"] for row in rows]}
+        watch["proof_attempts"]=dict(sorted(attempts.items(),key=lambda item:item[1])[-64:])
         reconcile_witnesses(state,canonical)
     except (OSError,ValueError,InstructionProofDeferred) as error:
         watch["last_probe_error"]=str(error)  # No mint-mention inference or paid fallback.

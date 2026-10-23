@@ -142,3 +142,51 @@ renewal has already happened in production.
 The goal is bounded self-recovery for routine failures, fair ongoing collection,
 preserved financial meaning, and visible failure when safe automatic recovery is
 impossible—not a promise that upstream services or credentials can never fail.
+
+## Scheduled verification exposed a historical boundary
+
+Do **not** read the healthy overnight baseline above as a final all-clear.
+Scheduled run `39923114670` correctly failed the new service-health check after
+new indexed outflows exposed a material holder deficit. Scheduled run
+`39928219403` then exercised the day-recovery follow-up without dispatch/resume:
+it added **20** genuine late-indexed 22 October rows and retained all predecessor
+facts, but holder integrity **remained degraded**. Ordinary collection/publication
+continued and the last verified holder files were preserved exactly.
+
+Free finalized evidence narrowed that remaining failure beyond an indexing delay:
+
+- Owner/token account `As4nhNHHrhNZMoReGZvEbDTiooNmNATjyjjbadArEJVb` is absent
+  from the immutable 3 October owner seed.
+- A fully decoded 13 May **2025** transaction
+  `ciG7yt1Lmj1givcBTAUGTZe29tyR4jikCQDPjixS1LGFg9p6nKZFenLRNXEd5aMbMFyLQrpUc8jHwatBNJeLara`
+  proves its closing balance of **668601266666670 raw units**.
+- A fully decoded 23 October **2026** transaction
+  `5jVXNRNPHwVdjBa4MnFaBYNPQRt6SF2Kfyapn5KdVQKT7d7s6sZ8rjG7bWzuXWhw4sBRqBKMmvXAu1nBK9dHMyoY`
+  has that **same opening balance** and proves the newly indexed withdrawals.
+  Owner attribution, exact instructions and transaction balance flow agree.
+- Sparse signature history is **not** claimed as complete historical coverage.
+  Equal positive snapshots on either side of the seed are positive grounds for
+  review, not permission to invent an opening balance or missing transfer.
+
+The generalized free diagnostic retains both captures/receipts, the signature
+metadata, exact seed hash and explicit uncertainty. It makes at most one
+signature-page read plus three transaction reads per 24 hours until classified.
+Once a pre-seed conflict requires review, speculative holder-day sweeps and broad
+holder manifests stop; independently proven day omissions and ordinary collectors
+remain eligible under the same standing budget. No global pause/resume is added.
+
+The holder reducer preserves last-good files even if later inflows would make an
+arithmetic balance positive: a known opening conflict cannot be silently cleared
+by unrelated new activity. The observer stays red with the actual review reason.
+Neither canonical rows nor seed entries are replaced or adjusted automatically.
+
+The free indexer sampler also rotates attempted candidates so unsupported early
+instructions cannot consume both proof slots forever. Malformed non-object RPC
+metadata and extreme timestamps fail/defer without turning into a global pause.
+
+**Remaining blocker:** holder accounting cannot honestly be called repaired until
+the historical opening-balance attribution is reviewed. Automatically adding
+6,686,012.66666670 tokens to a seed could double-count supply or misattribute
+another opening owner. Standing spend approval is not approval to change those
+financial facts. This boundary is deliberately visible and financially fenced,
+not disguised as successful autonomous recovery.

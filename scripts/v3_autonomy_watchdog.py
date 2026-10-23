@@ -84,6 +84,8 @@ def evaluate(state, config, quality, now, *, external=None):
         problems.append("Holder integrity is not healthy: " + str(quality.get("error") or quality.get("status")))
     if state.get("source_errors",{}).get("indexer_lag"):
         problems.append("Finalized transfer witnesses remain absent/conflicting in indexed data; bounded day rechecks are pending")
+    if state.get("holder_seed_review",{}).get("status")=="requires_review":
+        problems.append(state["holder_seed_review"]["error"])
     # Independent APIs have their own source-success clock; do not confuse an
     # unchanged daily observation with a stopped poller.
     network = state.get("external_sources", {}).get("network", {})

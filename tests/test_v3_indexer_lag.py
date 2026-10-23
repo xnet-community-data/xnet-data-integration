@@ -9,7 +9,7 @@ sys.path.insert(0,str(ROOT/"scripts"));sys.path.insert(0,str(ROOT/"tests"))
 from test_v3_rpc_transfer_proof import capture
 from v3_rpc_transfer_proof import derive_transaction
 from v3_reduce_chain import TRANSFER_FIELDS
-from v3_indexer_lag import probe,reconcile_witnesses
+from v3_indexer_lag import probe,reconcile_witnesses,recent_signatures
 from v3_live_state_store import StateError
 from v3_autonomy_watchdog import evaluate
 
@@ -118,6 +118,26 @@ class IndexerLagTests(unittest.TestCase):
             forecast=runtime.standing_forecast(state,(self.now+timedelta(days=1)).isoformat())
         entry=next(row for row in forecast["entries"] if row["key"]=="indexer_lag:"+day)
         self.assertEqual(entry["runs"],1)  # No repeated purchase every six hours forever.
+    def test_unsupported_candidates_cannot_starve_later_provable_activity(self):
+        caps={};items=[]
+        for tx in ("a","b","c"):
+            cap=deepcopy(self.cap);cap["signature"]=tx
+            cap["request"]["params"][0]=tx;cap["result"]["transaction"]["signatures"]=[tx]
+            if tx!="c":cap["result"]["meta"].pop("innerInstructions")
+            caps[tx]=cap;items.append({"signature":tx,"err":None,"blockTime":cap["result"]["blockTime"]})
+        self.listing.return_value=items;self.fetch.side_effect=lambda tx:caps[tx]
+        self.run_probe();self.assertFalse(self.state["indexer_lag_watch"]["witnesses"])
+        self.run_probe(self.now+timedelta(hours=1,seconds=1))
+        self.assertIn("c",self.state["indexer_lag_watch"]["witnesses"])
+        self.assertEqual(self.fetch.call_count,4)
+    def test_non_object_rpc_metadata_is_a_typed_free_probe_failure(self):
+        from unittest.mock import MagicMock
+        response=MagicMock();response.__enter__.return_value.read.return_value=b'[]'
+        with patch("v3_indexer_lag.urllib.request.urlopen",return_value=response):
+            with self.assertRaisesRegex(ValueError,"activity metadata"):recent_signatures()
+    def test_extreme_external_timestamp_is_skipped_without_overflow_or_probe(self):
+        self.listing.return_value[0]["blockTime"]=10**40
+        self.run_probe();self.fetch.assert_not_called()
 
 
 if __name__=="__main__":unittest.main()

@@ -65,5 +65,23 @@ class HolderIntegrityTests(unittest.TestCase):
         self.assertEqual(quality["status"], "HEALTHY")
         self.assertEqual(quality["holder_data_as_of_utc"], self.verified["latest_transfer_event_utc"])
 
+    def test_known_seed_conflict_cannot_be_hidden_by_a_later_positive_balance(self):
+        Path("data/current/v3_refresh_state.json").write_text(json.dumps({"holder_seed_review":{
+            "status":"requires_review","error":"historical opening missing"}}))
+        before=Path("data/current/xnet_holder_state.json").read_bytes()
+        with patch.object(reducer,"derive_holders") as derive:
+            reducer.derive_holders_guarded([],allow_stale_holders=True)
+        derive.assert_not_called()
+        self.assertEqual(Path("data/current/xnet_holder_state.json").read_bytes(),before)
+        quality=json.loads(Path("data/current/xnet_holder_integrity.json").read_text())
+        self.assertEqual(quality["reason"],"holder_seed_review");self.assertFalse(quality["automatic_recheck"])
+
+    def test_review_conflict_still_fails_a_strict_reducer(self):
+        Path("data/current/v3_refresh_state.json").write_text(json.dumps({"holder_seed_review":{
+            "status":"requires_review","error":"historical opening missing"}}))
+        with patch.object(reducer,"derive_holders") as derive,self.assertRaisesRegex(RuntimeError,"seed review required"):
+            reducer.derive_holders_guarded([],allow_stale_holders=False)
+        derive.assert_not_called()
+
 if __name__ == "__main__":
     unittest.main()

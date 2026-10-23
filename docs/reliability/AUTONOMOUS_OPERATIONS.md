@@ -94,6 +94,11 @@ never marks an individual charge settled.
   6/12/24-hour nonprogress backoff. Sampling silence is not whole-mint coverage,
   and a fresh query does not clear a known missing witness. Current-day holder
   repair takes priority over older advisory scans; optional work stops once fixed.
+- A bounded free diagnostic can distinguish a positive **pre-seed opening
+  conflict** from a missing recent day. Such evidence stops speculative holder
+  backfills, retains last-good holder files and keeps the health check red for
+  review; it never resets a seed or invents a balance adjustment. Other collectors,
+  precisely witnessed day recovery and independent feeds remain autonomous.
 - Holder last-good fallback, when needed during multi-day recovery, remains
   explicitly degraded; it never becomes a claim of repaired balances. No seed
   resets, amount rescaling, invented routed legs, negative-balance clamping or

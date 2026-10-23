@@ -26,6 +26,15 @@ def authorized_state():
 
 
 class AutonomousRuntimeTests(unittest.TestCase):
+    def test_known_opening_conflict_never_buys_a_wide_integrity_scan(self):
+        self.state["holder_seed_review"]={"status":"requires_review","error":"preseed facts conflict"}
+        self.state["source_errors"]={"holder_integrity":{"error":"historical opening conflict"}}
+        with patch("v3_indexer_lag.probe"),patch("v3_holder_seed_review.probe"), \
+             patch("v3_autonomous_reconcile.repair_days",return_value=[]), \
+             patch.object(refresh,"execute") as execute,patch.object(refresh,"export_source") as export:
+            self.assertFalse(refresh.reconcile_historical_manifest(self.state,{}))
+        execute.assert_not_called();export.assert_not_called()
+        self.assertFalse(self.state.get("paused",False))
     def test_day_recovery_cooldown_cannot_trigger_a_broad_paid_substitute(self):
         self.state["reconciliation"]={"pending_mismatch_days":["2026-10-20"]}
         self.state["additive_day_recovery"]={"2026-10-20":{"next_retry_at_utc":"2026-10-20T18:00:00Z"}}

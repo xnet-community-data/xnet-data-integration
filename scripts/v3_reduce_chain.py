@@ -430,11 +430,16 @@ def derive_holders_guarded(
     """
     quality_path = Path("data/current/xnet_holder_integrity.json")
     try:
+        journal_path = Path("data/current/v3_refresh_state.json")
+        journal = json.loads(journal_path.read_text()) if journal_path.exists() else {}
+        review = journal.get("holder_seed_review", {})
+        if review.get("status") == "requires_review":
+            raise RuntimeError("Holder seed review required: " + review["error"])
         derive_holders(transfers)
     except RuntimeError as error:
         if (
             not allow_stale_holders
-            or not str(error).startswith("Negative holder balance after reduction:")
+            or not str(error).startswith(("Negative holder balance after reduction:", "Holder seed review required:"))
         ):
             raise
         previous_path = Path("data/current/xnet_holder_state.json")
@@ -447,11 +452,11 @@ def derive_holders_guarded(
         quality = {
             "schema_version": 1,
             "status": "DEGRADED",
-            "reason": "holder_balance_integrity",
+            "reason": "holder_seed_review" if str(error).startswith("Holder seed review required:") else "holder_balance_integrity",
             "error": str(error),
             "holder_data_as_of_utc": previous_as_of,
             "checked_at_utc": datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
-            "automatic_recheck": True,
+            "automatic_recheck": not str(error).startswith("Holder seed review required:"),
             "methodology_changed": False,
         }
         print("::warning::Holder integrity failure; preserving last verified holder state: " + str(error), flush=True)

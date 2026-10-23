@@ -106,6 +106,18 @@ class TrackerBoundaryTests(unittest.TestCase):
         self.assertEqual(obligation["cost_credits"],0)
         self.assertEqual(obligation["basis"],"proven_nonacceptance")
 
+    def test_slow_checkpoint_cannot_extend_normal_execution_authority(self):
+        def checkpoint():
+            self.clock+=timedelta(hours=1)
+        guard=lambda:{"operation_approval":{"valid_until_utc":"2026-10-07T10:15:00Z"}}
+        tracker=ExecutionTracker(self.state,self.api,checkpoint,guard,lambda:self.clock,lambda _:None,"medium")
+        with self.assertRaisesRegex(SubmissionRejected,"approval deadline"):
+            tracker.execute(SPEC,{},True,90)
+        self.api.assert_not_called()
+        self.assertEqual(self.state["pending_executions"],{})
+        obligation=next(iter(self.state["financial_journal"]["obligations"].values()))
+        self.assertEqual(obligation["cost_credits"],0)
+
     def test_failed_nonacceptance_checkpoint_is_still_a_durability_barrier(self):
         self.clock=datetime(2026,10,7,23,59,tzinfo=timezone.utc)
         count=0

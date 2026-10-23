@@ -402,15 +402,16 @@ class CapacityTests(Base):
         cache.prepare_export(state, record(EXEC_B), spec(params={"a": 2}), risk_credits=RISK, evidence=EV, timestamp=AT)
         self.cached(state, cache, EXEC_B, params={"a": 2})
         state3 = copy.deepcopy(state)
-        cache.prepare_export(state3, record(EXEC_C), spec(params={"a": 3}), risk_credits=RISK, evidence=EV, timestamp=AT)
         with self.assertRaises(CacheError) as ctx:
-            self.cached(state3, cache, EXEC_C, params={"a": 3})
-        self.assertIn("never evicted", str(ctx.exception))
+            cache.prepare_export(state3, record(EXEC_C), spec(params={"a": 3}), risk_credits=RISK, evidence=EV, timestamp=AT)
+        self.assertIn("unconsumed", str(ctx.exception))
+        self.assertEqual(state3,state)  # no new paid-read intent while full
         self.assertEqual(len(self.records()), 2)
         state4 = copy.deepcopy(state3)
         state4["consumed_executions"] = consumed(EXEC_A)  # the tracker's dict shape
         info = cache.prune_consumed(state4)  # deliberate prune frees headroom
         self.assertEqual(info, {"instruction": "pruned", "dropped": 1})
+        cache.prepare_export(state4, record(EXEC_C), spec(params={"a": 3}), risk_credits=RISK, evidence=EV, timestamp=AT)
         entry = self.cached(state4, cache, EXEC_C, params={"a": 3})
         self.assertEqual(len(self.records()), 2)
         statuses = [m["status"] for m in self.markers(state4).values()]

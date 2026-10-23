@@ -280,6 +280,7 @@ def _carry_entries(lane, exclude_key):
                     "query_parameters": deepcopy(row.get("query_parameters", {})),
                     "performance": row.get("performance"),
                     "shape_version": row.get("shape_version"),
+                    "evidence": deepcopy(row.get("evidence", {})),
                 }
                 previous = entries.get(operation_id)
                 if previous is None:
@@ -313,6 +314,27 @@ def _match_carry(operation, all_items):
     return matches[0] if matches else None
 
 
+def _prior_read_ids(operation, all_items):
+    """Separate authorized read attempts sharing an execution are not aliases.
+
+    This is NOT settlement or a charge match: every listed old liability remains
+    accounted for independently by the ordinary opening/standing risk rules.
+    """
+    values = operation.get("evidence", {}).get("prior_read_liability_ids", [])
+    if not isinstance(values,list) or any(not isinstance(value,str) or not value for value in values):
+        raise BudgetInputError("Prior result-read identities must be a string list")
+    if len(values)!=len(set(values)):
+        raise BudgetInputError("Duplicate prior result-read identity")
+    by_id={item["liability_id"]:item for item in all_items}
+    for identity in values:
+        item=by_id.get(identity)
+        if (item is None or item.get("kind")!="export"
+                or item.get("execution_id")!=operation.get("execution_id")
+                or identity==operation.get("liability_id")):
+            raise BudgetInputError("Prior result-read identity does not match its exact execution")
+    return set(values)
+
+
 def _build_carry(lane, exclude_key, all_items):
     carry = {}
     for operation_id, operation in _carry_entries(lane, exclude_key).items():
@@ -340,6 +362,8 @@ def _open_period(state, config, usage, now_utc):
     if not p["period_start_utc"] <= now < p["period_end_utc"]:
         raise BudgetInputError("Billing period is not active")
     key = _z(p["period_start_utc"]) + "/" + _z(p["period_end_utc"])
+    if state.get("standing_authority_activation") and not state.get(LANE, {}).get("periods"):
+        raise BudgetInputError("Previously activated standing book is missing; refusing a new risk anchor")
     lane = state.setdefault(LANE, {"schema_version": 1, "periods": {}})
     if (not isinstance(lane, dict) or type(lane.get("schema_version")) is not int
             or lane["schema_version"] != 1 or not isinstance(lane.get("periods"), dict)):
@@ -576,10 +600,12 @@ def _evaluate(state, config, usage, now_utc, *, forecast_credits=0.0, quote=None
                      else carry_matches.get(operation_id))
             if exact is not None:
                 continue
+            prior_reads = _prior_read_ids(operation, all_items)
             mismatches = [item for item in all_items
                           if item.get("kind") == "export"
                           and item.get("execution_id") == operation["execution_id"]
-                          and item.get("liability_id") != operation["liability_id"]
+                           and item.get("liability_id") != operation["liability_id"]
+                           and item.get("liability_id") not in prior_reads
                           and item.get("cost_credits") is None]
             if mismatches:
                 blockers.append("export_attempt_identity_mismatch:"

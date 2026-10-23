@@ -26,6 +26,99 @@ def authorized_state():
 
 
 class AutonomousRuntimeTests(unittest.TestCase):
+    def test_rejected_retry_preflight_does_not_strand_a_new_reservation(self):
+        refresh.open_standing_period(self.state,refresh.CONFIG,USAGE,NOW)
+        before=deepcopy(self.state["standing_credit_budget"])
+        cache=Mock();cache.lookup.side_effect=refresh.ManualExportReview("old request")
+        cache.retry_export.side_effect=refresh.CacheError("invalid retry binding")
+        record={"query_id":8894037,"execution_id":"paid","query_parameters":{"lookback_hours":6},
+            "result_metadata":{"column_names":["a"],"total_row_count":1,"total_result_set_bytes":100}}
+        def guard(state):
+            state["budget_decision"]={"report":{"totals":{"limit_credits":3000,"usage_plus_reserve":2000,"dependencies_total":0}}}
+            return {"standing_usage":deepcopy(USAGE)}
+        with patch.object(refresh,"result_cache",return_value=cache),patch.object(refresh,"usage_guard",side_effect=guard), \
+             patch.object(refresh,"export_risk",return_value=(0.5,["sample"])),patch.object(refresh,"api") as api:
+            with self.assertRaises(refresh.CacheError):
+                refresh.export_source(record,{"key":"xnet_transfers","query_id":8894037,"output":"state/retry.json"},1000,state=self.state)
+        api.assert_not_called()
+        self.assertEqual(self.state["standing_credit_budget"],before)
+
+    def test_repeated_early_chart_failures_do_not_starve_later_charts(self):
+        specs=deepcopy(refresh.CONFIG["presentation"][:4])
+        config={**refresh.CONFIG,"sources":[],"presentation":specs,"reconciliation":None,
+                "max_presentation_queries_per_run":2}
+        attempted=[]
+        def fail(spec,**kwargs):
+            attempted.append(spec["key"])
+            raise refresh.ExecutionFailed("provider failure")
+        with tempfile.TemporaryDirectory() as directory,patch.object(refresh,"CONFIG",config), \
+             patch.object(refresh,"load_authoritative_state",return_value=self.state), \
+             patch.object(refresh,"HEALTH",Path(directory)/"missing.json"),patch.object(refresh,"save"), \
+             patch.object(refresh,"sync_independent_network"),patch.object(refresh,"usage_guard",return_value={}), \
+             patch.object(refresh,"publish_data_generation"),patch.object(refresh,"checkpoint"), \
+             patch.object(refresh,"presentation_in_backoff",return_value=False), \
+             patch.object(refresh,"execute",side_effect=fail),patch("sys.argv",["refresh"]):
+            self.assertEqual(refresh.main(),0);self.assertEqual(refresh.main(),0)
+        self.assertEqual(attempted,[spec["key"] for spec in specs])
+        self.assertFalse(self.state["paused"])
+        self.assertEqual(len(self.state["presentation_last_attempts"]),4)
+
+    def test_full_result_cache_denies_new_compute_before_quote_or_submission(self):
+        from v3_result_cache import ExportRetryDeferred
+        cache=Mock();cache.require_capacity.side_effect=ExportRetryDeferred("full")
+        with patch.object(refresh,"result_cache",return_value=cache), \
+             patch.object(refresh,"prepare_standing_spec") as quote,patch.object(refresh,"api") as api:
+            with self.assertRaises(ExportRetryDeferred):
+                refresh.execute({"key":"xnet_transfers","query_id":8894037},state=self.state)
+        quote.assert_not_called();api.assert_not_called()
+        self.assertNotIn("standing_credit_budget",self.state)
+
+    def test_full_result_cache_denies_read_before_any_new_reservation(self):
+        from v3_result_cache import ExportRetryDeferred
+        cache=Mock();cache.lookup.return_value=None
+        cache.require_capacity.side_effect=ExportRetryDeferred("full")
+        record={"query_id":8894037,"execution_id":"paid","query_parameters":{"lookback_hours":6},
+            "result_metadata":{"column_names":["a"],"total_row_count":1,"total_result_set_bytes":100}}
+        with patch.object(refresh,"result_cache",return_value=cache), \
+             patch.object(refresh,"usage_guard") as guard,patch.object(refresh,"api") as api:
+            with self.assertRaises(ExportRetryDeferred):
+                refresh.export_source(record,{"query_id":8894037,"output":"state/test.json"},1000,state=self.state)
+        guard.assert_not_called();api.assert_not_called()
+        self.assertNotIn("standing_credit_budget",self.state)
+
+    def test_interrupted_read_retry_has_one_atomic_archive_intent_debt_barrier(self):
+        from v3_result_cache import ResultCache
+        import hashlib
+        record={"query_id":8894037,"execution_id":"paid","query_parameters":{"lookback_hours":6},
+            "result_metadata":{"column_names":["a"],"total_row_count":1,"total_result_set_bytes":100}}
+        binding={"query_id":8894037,"parameters":record["query_parameters"],"columns":["a"],
+            "sql_sha256":hashlib.sha256(refresh.encoded({"execution_id":"paid","query_id":8894037,
+                "parameters":record["query_parameters"]})).hexdigest()}
+        snapshots=[]
+        def guard(state):
+            state["budget_decision"]={"report":{"totals":{"limit_credits":3000,
+                "usage_plus_reserve":2000,"dependencies_total":0}}}
+            return {"standing_usage":deepcopy(USAGE)}
+        def fetch(path,include_wire_size=False):
+            snap=snapshots[-1]
+            marker=next(iter(snap["result_exports"]["requests"].values()))
+            self.assertEqual(marker["status"],"requested")
+            self.assertEqual(len(snap["result_export_retries"][marker["key"]]),1)
+            self.assertTrue(any(v.get("cache_marker_key")==marker["key"] and k.startswith("export_")
+                for k,v in snap["financial_journal"]["obligations"].items()))
+            return {"state":"QUERY_STATE_COMPLETED","execution_id":"paid","result":{"rows":[{"a":1}]}},120
+        with tempfile.TemporaryDirectory() as directory,patch.object(refresh,"ROOT",Path(directory)), \
+             patch.object(refresh,"usage_guard",side_effect=guard), \
+             patch.object(refresh,"export_risk",return_value=(0.5,["real sample evidence"])), \
+             patch.object(refresh,"checkpoint",side_effect=lambda state:snapshots.append(deepcopy(state))), \
+             patch.object(refresh,"api",side_effect=fetch) as api:
+            (Path(directory)/"data/current").mkdir(parents=True)
+            cache=ResultCache(Path(directory),lambda _:None,allowed_query_ids={8894037})
+            cache.prepare_export(self.state,record,binding,risk_credits=0.5,evidence=["original"],timestamp="2026-10-20T10:00:00Z")
+            refresh.export_source(record,{"key":"xnet_transfers","query_id":8894037,"output":"state/retry.json"},1000,state=self.state)
+        self.assertEqual(api.call_count,1)
+        self.assertEqual(len(self.state["standing_credit_budget"]["periods"][next(iter(self.state["standing_credit_budget"]["periods"]))]["operations"]),1)
+
     def setUp(self):
         self.now = patch.object(refresh,"now",return_value=NOW)
         self.now.start(); self.addCleanup(self.now.stop)

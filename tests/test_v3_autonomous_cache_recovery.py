@@ -136,6 +136,38 @@ class Base(unittest.TestCase):
 
 
 class DefaultBehaviorTests(Base):
+    def test_atomic_retry_checkpoint_contains_new_marker_and_exact_debt(self):
+        from v3_financial_journal import record_export_attempt
+        state,cache,bridge=self.stage()
+        snapshots=[]
+        def checkpoint(candidate):
+            marker=next(iter(candidate["result_exports"]["requests"].values()))
+            record_export_attempt(candidate,"new-read",execution_id=EXEC_A,
+                requested_at_utc=marker["requested_at_utc"],risk_credits=0.8,
+                estimate_evidence="fresh quote",cache_marker_key=marker["key"])
+            snapshots.append(copy.deepcopy(candidate))
+        atomic=ResultCache(self.root,checkpoint,allowed_query_ids={8894037})
+        atomic.retry_export(state,record(),spec(),approval=approval("new-read",quote=0.8),
+            timestamp=at(1000),stage_new_intent=True,evidence=["fresh transport quote"])
+        self.assertEqual(len(snapshots),1)
+        snap=snapshots[0];marker=next(iter(self.markers(snap).values()))
+        self.assertEqual(marker["status"],"requested")
+        self.assertEqual(marker["requested_at_utc"],at(1000))
+        self.assertEqual(marker["risk_credits"],0.8)
+        self.assertIn("new-read",snap[JOURNAL]["obligations"])
+        self.assertEqual(snap[RETRY_LANE][marker["key"]][0]["marker"]["risk_credits"],RISK)
+        with self.assertRaises(ManualExportReview):atomic.lookup(snap,record(),spec())
+
+    def test_atomic_retry_ambiguous_checkpoint_preserves_exact_intent(self):
+        state,cache,bridge=self.stage();bridge.crash_on=bridge.calls+1
+        with self.assertRaises(CheckpointFailed):
+            cache.retry_export(state,record(),spec(),approval=approval("new-read"),
+                timestamp=at(1000),stage_new_intent=True,evidence=EV)
+        marker=next(iter(self.markers(state).values()))
+        self.assertEqual(marker["status"],"requested")
+        self.assertEqual(marker["requested_at_utc"],at(1000))
+        self.assertIn(marker["key"],state[RETRY_LANE])
+
     def test_default_global_hold_is_preserved(self):
         state, cache, bridge = self.stage()
         before = bridge.calls

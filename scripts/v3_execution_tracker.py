@@ -533,18 +533,23 @@ class ExecutionTracker:
             # If the POST response is lost or the runner dies, this intent blocks
             # automatic resubmission rather than guessing that nothing ran.
             self._checkpoint()
-            if spec.get("execution_not_after_utc") is not None and self.now() >= parse_instant(spec["execution_not_after_utc"], "execution scope deadline"):
+            scope_expired = (spec.get("execution_not_after_utc") is not None
+                and self.now() >= parse_instant(spec["execution_not_after_utc"], "execution scope deadline"))
+            approval_expiry = pending.get("operation_approval", {}).get("valid_until_utc")
+            approval_expired = bool(approval_expiry and self.now() >= parse_instant(approval_expiry,"execution authority expiry"))
+            if scope_expired or approval_expired:
                 # This is authoritative local nonacceptance: no execute transport
                 # has been invoked. Do not let a slow checkpoint shift a relative
                 # UTC-day query across midnight after its approval was recorded.
                 reject_submission(self.state, pending)
                 self.state.setdefault("rejected_submissions", []).append({
                     "key":key,"query_id":spec["query_id"],"at_utc":self.stamp(),
-                    "basis":"local_scope_deadline_before_transport"})
+                    "basis":("local_scope_deadline_before_transport" if scope_expired
+                             else "local_approval_expired_before_transport")})
                 self.state["rejected_submissions"] = self.state["rejected_submissions"][-50:]
                 del self.pending()[key]
                 self._checkpoint()
-                raise SubmissionRejected("Immutable UTC-day deadline passed before transport; replan offsets")
+                raise SubmissionRejected("Execution scope/approval deadline passed before transport; reprice and replan")
             body = {"performance": spec.get("performance", self.performance)}
             if params:
                 body["query_parameters"] = params

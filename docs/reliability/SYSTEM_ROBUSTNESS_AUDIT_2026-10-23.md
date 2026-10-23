@@ -1,0 +1,123 @@
+# Autonomous system audit — 23 October 2026
+
+## Scope and live baseline
+
+Reviewed the complete scheduled path: source/feed collection, Dune admission,
+execution identity and lifecycle, interrupted downloads, canonical reduction,
+holder/supply checks, source reconciliation, presentation scheduling, exact-base
+publication, billing renewal and operational alerting. External adapter accounting,
+SQL meaning, seeds and dashboard layout are unchanged.
+
+The overnight baseline was **not just green workflow jobs**: accepted transfer
+coverage advanced through 06:07 UTC, canonical rows reached 4,703, holder integrity
+was healthy, all prior financial facts/obligations remained present, and provider
+usage was 1,852.060 / 4,000. Revenue-source sync, independent Dune revenue
+publication and credit monitoring also completed successfully on their schedules.
+
+## Concrete gaps hardened
+
+1. **False-green service status.** A successful process could preserve stale data
+   behind a source hold indefinitely. A read-only watchdog now checks accepted
+   collection coverage, presentation execution age, source holds, standing policy,
+   holder integrity and independent API/feed clocks. It runs after every refresh
+   and in a separately scheduled hourly workflow. A stalled service fails the
+   check and appears in GitHub Actions summaries/artifacts; it does not pause the
+   runner or prevent automatic recovery. The observer has read-only GitHub access,
+   no Dune secret, no Dune calls and no publication permission.
+2. **Interrupted-read reservation/identity gap.** A new retry could be mistaken
+   for the unknown charge of a different read sharing the same execution. Each
+   new quoted read now explicitly identifies the old liabilities it is NOT
+   replacing. Those old obligations remain fully accounted for. The retry archive,
+   new requested marker and exact new financial attempt cross **one checkpoint**,
+   not two checkpoints separated by a crash window.
+3. **Cache backpressure after spending.** A full two-entry cache was previously
+   detected only after downloading a third result. Capacity is now checked before
+   new source compute and before a read/reservation. Unconsumed results are never
+   evicted; this condition defers automatically, while presentations/independent
+   domains continue. Post-download validation remains a second line of defense.
+4. **Authority expiring during a slow checkpoint.** Normal execution approvals,
+   not only UTC-day boundaries, are rechecked after the durable intent and before
+   the execute transport. Proven local non-submission retains an audited zero-cost
+   intent; no provider execution is guessed. Export approval is also rechecked
+   immediately before transport. Its uncertain intent/risk is conservatively
+   retained for a fresh bounded retry rather than fabricating charge settlement.
+5. **Presentation starvation.** A repeatedly failing early chart could consume the
+   same bounded slots every run, starving later daily charts. Source-invalidated
+   charts retain priority; attempts now rotate within each priority class using
+   a durable last-attempt clock. Per-run query count and ordinary budgets do not
+   increase.
+6. **Unbridgeable gaps wasting repair credits.** Beyond the already authorized
+   60-day recovery horizon, recent-day scans cannot bridge the missing frontier.
+   The planner no longer repeatedly buys such scans. It retains evidence, refuses
+   unsupported new scopes and surfaces the stalled source instead of claiming
+   successful coverage.
+7. **Lost financial book after activation.** A previously activated service cannot
+   silently create a fresh spending anchor if its durable risk book disappears.
+   New spending refuses that state and the observer reports the corruption. A
+   genuinely new verified billing period still renews normally within the existing
+   book; this guard does not prevent the approved renewal.
+8. **Provider transport edge cases.** Ordinary Dune API requests now refuse
+   redirects instead of forwarding credentials or a paid POST to another URL.
+   Non-object metadata produces a typed retryable error rather than an accidental
+   global pause. Incomplete result transport retains its observed charge and exact
+   execution and uses the bounded fresh-read recovery path, not a permanent manual
+   hold. A schema/financial contradiction remains refused.
+9. **Mutable CLI dependency.** The nightly label updater previously executed the
+   upstream `main` installer and selected a changing latest CLI beside the Dune
+   key. It now downloads the same v0.1.18 release already used successfully in
+   production, verifies its hardcoded SHA-256 before extraction/execution, and
+   installs it in a step without the Dune secret. Counter logic/layout is unchanged;
+   no query execution or export is introduced by this metadata-only updater.
+
+## Safety/availability boundaries checked
+
+| Failure/transition | Required behavior |
+|---|---|
+| Provider timeout / known execution ID | Poll/reuse the exact execution; never resubmit it |
+| Lost submission response / no ID | Deny speculative new paid submissions; alert |
+| Billing/MCP unavailable | Deny new spending, keep free feeds and known-result recovery available, recheck |
+| Cost outlier | Record actual charge; reprice future work, never rewrite an unknown bill |
+| Cache/download interruption | Fresh read approval, old liabilities retained, at most three read attempts/execution/UTC day |
+| Cache full | No new compute/read purchase; no eviction of unconsumed evidence |
+| Duplicate locator / new account | Complete finalized instruction proof and token balance-flow reconciliation |
+| Holder deficit | Explicit last-good/degraded holder state; bounded additive-day repair, no material clamp or seed reset |
+| Midnight / current partial day | Bind original engine day; advance only the verified contiguous frontier |
+| Publication response lost / moved predecessor | Exact generation/receipt barrier; no stale compensating write |
+| One source or presentation fails | Preserve last good, bounded retry/backoff, fair opportunities for other domains |
+| Billing period renews | Exact fresh non-overlapping period; carry unknown risks, do not reset liabilities |
+| Scheduler/poller stalls | Independently scheduled read-only observer reports missing accepted coverage |
+
+The existing fault-injection suites cover publication crashes before/after
+acceptance, lost HTTP responses, tampered cache data, outliers, scoped SQL drift,
+renewal, lower usage counters, carryover liabilities, feed isolation and exact
+bundle agreement. Added regressions exercise the concrete gaps above without
+performing paid investigation.
+
+An **offline simulation using the production journal** confirmed that a lower
+account counter cannot reduce the usage high-water and that verified November
+renewal admits normal operation while retaining all 1,401 baseline obligations
+and 18 legacy unknowns. This is a simulation, not a claim that the future billing
+renewal has already happened in production.
+
+## What “autonomous” does not guarantee
+
+- Dune estimates and local admission controls are not provider-enforced caps.
+  Actual charges may exceed quotes; new spending then uses the observed higher
+  exposure. The approved target/reserves and unspent-quota fence remain unchanged.
+- Query completion proves a collection attempt/snapshot, not whole-chain indexer
+  completeness or fresh activity on a quiet token. Event timestamps stay distinct
+  from collection coverage and newly generated presentation timestamps.
+- A revoked credential, unprovable acceptance, real contradictory financial
+  correction, unauthorized SQL/policy change or historical scope outside approval
+  may require administrative review. Guessing those facts is not safe autonomy.
+- GitHub’s scheduled jobs can be delayed; grace windows accommodate ordinary
+  delays. The independent observer detects a stopped writer while GitHub Actions
+  still runs. A platform-wide GitHub outage cannot be detected from within GitHub
+  itself; external monitoring would be a separate service decision.
+- Failed checks use standard GitHub Actions visibility/notifications. Actual email
+  or mobile delivery depends on repository/account notification settings; no new
+  notification service was silently connected.
+
+The goal is bounded self-recovery for routine failures, fair ongoing collection,
+preserved financial meaning, and visible failure when safe automatic recovery is
+impossible—not a promise that upstream services or credentials can never fail.

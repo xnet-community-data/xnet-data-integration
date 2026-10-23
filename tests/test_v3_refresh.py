@@ -125,7 +125,7 @@ class RefreshTests(unittest.TestCase):
             )
             with self.subTest(code=code), patch.dict(
                 "os.environ", {"DUNE_API_KEY": "test-key"}
-            ), patch("urllib.request.urlopen", side_effect=error):
+            ), patch.object(refresh,"dune_open", side_effect=error):
                 with self.assertRaises(RuntimeError) as ctx:
                     refresh.api("query/1/execute", {"performance": "medium"})
                 self.assertNotIsInstance(ctx.exception, refresh.SubmissionRejected)
@@ -138,11 +138,27 @@ class RefreshTests(unittest.TestCase):
             hdrs=None,
             fp=io.BytesIO(b'{"error":"server failure"}'),
         )
-        with patch.dict("os.environ", {"DUNE_API_KEY": "test-key"}), patch(
-            "urllib.request.urlopen", side_effect=error
+        with patch.dict("os.environ", {"DUNE_API_KEY": "test-key"}), patch.object(
+            refresh,"dune_open", side_effect=error
         ):
             with self.assertRaises(RuntimeError):
                 refresh.api("query/1/execute", {"performance": "medium"})
+
+    def test_dune_transport_refuses_redirects_and_uses_opener_open(self):
+        opener=Mock()
+        with patch("urllib.request.build_opener",return_value=opener) as build:
+            refresh.dune_open("request",timeout=45)
+        opener.open.assert_called_once_with("request",timeout=45)
+        handler=build.call_args.args[0]
+        self.assertIsNone(handler.redirect_request(None,None,302,"redirect",{},"https://untrusted.example/"))
+
+    def test_non_object_metadata_is_a_typed_transient_failure(self):
+        response=Mock();response.read.return_value=b'[]'
+        transport=Mock();transport.__enter__=Mock(return_value=response);transport.__exit__=Mock(return_value=False)
+        with patch.dict("os.environ",{"DUNE_API_KEY":"test-key"}),patch.object(refresh,"dune_open",return_value=transport):
+            with self.assertRaisesRegex(RuntimeError,"non-object"):
+                refresh.api("query/1")
+            self.assertEqual(refresh.api("execution/known/results",include_wire_size=True),(None,2))
 
     def test_export_allowance_checked_before_download(self):
         record = {"execution_id": "test", "result_metadata": {
@@ -203,7 +219,7 @@ class RefreshTests(unittest.TestCase):
             remaining = refresh.export_source(record, spec, 3000, max_bytes=2000000, state=state)
         self.assertEqual(remaining, 2996)  # 3000 point allowance minus 4 (2 rows x 2 columns)
         self.assertEqual([entry[0] for entry in order.mock_calls],
-                         ["lookup", "usage_guard", "export_risk", "prune_consumed", "prepare_export", "api", "cache_result"])
+                          ["lookup", "prune_consumed", "usage_guard", "export_risk", "prepare_export", "api", "cache_result"])
         guard.assert_called_once_with(state)
         risk.assert_called_once_with(state, record, spec, 1500000)
         binding = cache.lookup.call_args.args[2]  # the immutable execution binding, not a SQL-version guess

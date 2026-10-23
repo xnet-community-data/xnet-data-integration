@@ -5,7 +5,7 @@ import hashlib
 
 from v3_credit_budget import parse_instant
 from v3_holder_snapshot import (PATH, AUTHORIZATION_REF, acquire, validate_baseline,
-                               SnapshotRejected)
+                               SnapshotRejected, ACQUISITION_VERSION)
 from v3_live_state_store import MACHINE_OWNED, StateError
 
 
@@ -27,6 +27,7 @@ def activate(runtime, state):
             "approval_ref":AUTHORIZATION_REF,"authorized_by":"user",
             "activated_at_utc":runtime.stamp(),"dune_spending_authority":False,
             "basis":"User requested end-to-end autonomous recovery; complete same-finalized-bank account inventories, original seed retained"}
+        state.setdefault("holder_reconciliation",{"schema_version":1,"baseline_history":[]})["acquisition_version"] = ACQUISITION_VERSION
         runtime.checkpoint(state)
 
 
@@ -36,8 +37,15 @@ def refresh(runtime, state, *, acquire_snapshot=None):
     lane = state.setdefault("holder_reconciliation", {"schema_version":1,"baseline_history":[]})
     now = runtime.now()
     retry = lane.get("next_retry_at_utc")
-    if retry and now < parse_instant(retry,"holder snapshot retry"):
+    previous_version = lane.get("acquisition_version",1)
+    if retry and now < parse_instant(retry,"holder snapshot retry") and previous_version == ACQUISITION_VERSION:
         return False
+    if previous_version != ACQUISITION_VERSION:
+        lane.setdefault("acquisition_policy_history",[]).append({"previous_version":previous_version,
+            "version":ACQUISITION_VERSION,"changed_at_utc":runtime.stamp(),
+            "previous_retry_at_utc":retry,"previous_error":lane.get("last_error"),
+            "basis":"Bounded exact-bank alignment retry upgrade; no relaxation of snapshot acceptance"})
+        lane["acquisition_version"] = ACQUISITION_VERSION
     last = lane.get("last_success_at_utc")
     cadence = int(runtime.CONFIG["holder_reconciliation"].get("cadence_minutes",120))
     quality = runtime.load(runtime.ROOT/"data/current/xnet_holder_integrity.json", {})
@@ -73,7 +81,9 @@ def refresh(runtime, state, *, acquire_snapshot=None):
     immutable_metadata = (root/"data/xnet_owner_balances_seed_metadata.json").read_bytes()
     canonical = (root/"data/canonical/xnet_transfers.csv").read_bytes()
     seed_hash = hashlib.sha256(immutable_seed).hexdigest()
-    if lane.get("original_seed_sha256",seed_hash) != seed_hash:
+    expected_seed = (lane.get("original_seed_sha256")
+                     or state.get("holder_seed_review",{}).get("seed_sha256") or seed_hash)
+    if expected_seed != seed_hash:
         raise StateError("Original holder seed changed; source migration cannot overwrite its provenance")
     publishing = False
     try:

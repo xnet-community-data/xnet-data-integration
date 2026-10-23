@@ -8,7 +8,7 @@ from unittest.mock import Mock,patch
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/"scripts"));sys.path.insert(0,str(ROOT/"tests"))
 import v3_reduce_chain as reducer
-from v3_holder_snapshot import PATH,AUTHORIZATION_REF,SnapshotRejected,make_baseline
+from v3_holder_snapshot import PATH,AUTHORIZATION_REF,SnapshotRejected,make_baseline,ACQUISITION_VERSION
 from v3_holder_snapshot_runtime import activate,refresh
 from v3_live_state_store import MACHINE_OWNED,StateError
 from test_v3_holder_snapshot import fixture,NOW,OWNER_A,OWNER_B
@@ -36,7 +36,7 @@ class HolderSnapshotRuntimeTests(unittest.TestCase):
         self.state={"schema_version":1,"queries":{},"paused":False,
             "financial_journal":{"obligations":{"old":{"cost_credits":None,"unresolved":True}}},
             "standing_credit_budget":{"preserve":"financial book"},
-            "holder_reconciliation":{"schema_version":1,"baseline_history":[]},
+            "holder_reconciliation":{"schema_version":1,"baseline_history":[],"acquisition_version":ACQUISITION_VERSION},
             "holder_seed_review":{"status":"requires_review","error":"opening conflict","capture":"retain"},
             "source_errors":{"holder_integrity":{"error":"opening conflict"}}}
         self.clock=NOW
@@ -128,6 +128,17 @@ class HolderSnapshotRuntimeTests(unittest.TestCase):
         self.assertEqual(acquire.call_count,1)
         self.clock+=timedelta(minutes=31);acquire.side_effect=None;acquire.return_value=self.baseline()
         self.assertTrue(refresh(self.runtime,self.state,acquire_snapshot=acquire))
+    def test_client_upgrade_retries_an_old_alignment_failure_without_erasing_evidence(self):
+        self.activate();lane=self.state["holder_reconciliation"]
+        lane.update(acquisition_version=1,last_error="old two-attempt bank alignment",
+                    next_retry_at_utc=(self.clock+timedelta(hours=1)).isoformat())
+        acquire=Mock(return_value=self.baseline())
+        self.assertTrue(refresh(self.runtime,self.state,acquire_snapshot=acquire))
+        acquire.assert_called_once()
+        history=self.state["holder_reconciliation"]["acquisition_policy_history"]
+        self.assertEqual(history[0]["previous_error"],"old two-attempt bank alignment")
+        self.assertEqual(history[0]["previous_version"],1)
+        self.assertFalse(self.state["paused"])
     def test_build_failure_rolls_back_only_candidate_machine_files_and_state(self):
         self.activate();before=deepcopy(self.state);old=(self.root/"data/derived/xnet_owner_balances.csv").read_bytes()
         real=self.run_script

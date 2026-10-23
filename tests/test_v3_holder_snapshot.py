@@ -2,12 +2,12 @@ from copy import deepcopy
 from datetime import datetime,timedelta,timezone
 import base64,json,sys,unittest
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import Mock,patch
 
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/"scripts"))
 from v3_holder_snapshot import (MINT,PROGRAM,RPC,REQUESTS,SnapshotRejected,acquire,
-    b58encode,public_key,make_baseline,validate_baseline,derive)
+    b58encode,public_key,make_baseline,validate_baseline,derive,MAX_ATTEMPTS)
 
 NOW=datetime(2026,10,23,20,tzinfo=timezone.utc)
 OWNER_A=b58encode(b"a"*32);OWNER_B=b58encode(b"b"*32)
@@ -85,16 +85,73 @@ class HolderSnapshotTests(unittest.TestCase):
             with self.subTest(delta=delta),self.assertRaises(SnapshotRejected):derive(c)
     def test_bank_mismatch_retries_are_bounded_before_block_time_read(self):
         wrong=fixture();wrong["responses"][1]["result"]["context"]["slot"]=101
-        read=Mock(side_effect=[wrong["responses"],fixture()["responses"],fixture()["block_time_response"]])
+        read=Mock(side_effect=[wrong["responses"],wrong["responses"][1],
+                              fixture()["responses"],fixture()["block_time_response"]])
         result=acquire(now=lambda:NOW,read=read)
-        self.assertEqual(result["receipt"]["slot"],100);self.assertEqual(read.call_count,3)
+        self.assertEqual(result["receipt"]["slot"],100);self.assertEqual(read.call_count,4)
         self.assertEqual(read.call_args_list[0].args[0],REQUESTS)
-        self.assertEqual(read.call_args_list[2].args[0]["method"],"getBlockTime")
+        self.assertEqual(read.call_args_list[1].args[0],REQUESTS[1])
+        self.assertEqual(read.call_args_list[3].args[0]["method"],"getBlockTime")
     def test_network_failures_do_not_trigger_unbounded_retry_or_a_paid_fallback(self):
         read=Mock(side_effect=OSError("429"))
         with self.assertRaisesRegex(SnapshotRejected,"bounded attempts"):acquire(now=NOW,read=read)
-        self.assertEqual(read.call_count,2)
+        self.assertEqual(read.call_count,2)  # Unknown reads conservatively reserve the 64 MB byte budget.
         self.assertTrue(all(call.args[0]==REQUESTS for call in read.call_args_list))
+    def test_normal_bank_advancement_can_align_after_the_old_two_attempt_limit(self):
+        wrong=fixture();wrong["responses"][1]["result"]["context"]["slot"]=101
+        prefix=[]
+        for _ in range(3):prefix.extend([deepcopy(wrong["responses"]),deepcopy(wrong["responses"][1])])
+        read=Mock(side_effect=prefix+
+                  [fixture()["responses"],fixture()["block_time_response"]])
+        result=acquire(now=NOW,read=read)
+        self.assertEqual(result["capture"]["acquisition"]["attempts"],4)
+        self.assertEqual(len(result["capture"]["acquisition"]["context_samples"]),4)
+        self.assertTrue(result["receipt"]["same_bank_verified"])
+    def test_finalized_responses_from_different_http_batches_can_match_the_same_bank(self):
+        first=fixture();first["responses"][1]["result"]["context"]["slot"]=101
+        second=fixture(slot=101);second["responses"][1]["result"]["context"]["slot"]=102
+        read=Mock(side_effect=[first["responses"],first["responses"][1],second["responses"],
+                              fixture(slot=101)["block_time_response"]])
+        result=acquire(now=NOW,read=read)
+        self.assertEqual(result["receipt"]["slot"],101)
+        selection=result["capture"]["acquisition"]["response_selection"]
+        self.assertEqual(selection["accounts_attempt"],2);self.assertEqual(selection["mint_attempt"],1)
+        contexts=[row["result"]["context"]["slot"] for row in result["capture"]["responses"]]
+        self.assertEqual(contexts,[101,101]);self.assertTrue(result["receipt"]["same_bank_verified"])
+    def test_equal_supply_at_different_banks_never_becomes_an_accepted_snapshot(self):
+        wrong=fixture();wrong["responses"][1]["result"]["context"]["slot"]=101
+        def read(body):return deepcopy(wrong["responses"] if isinstance(body,list) else wrong["responses"][1])
+        transport=Mock(side_effect=read)
+        with self.assertRaises(SnapshotRejected):acquire(now=NOW,read=transport)
+        self.assertEqual(transport.call_count,2*MAX_ATTEMPTS)
+        self.assertFalse(any(isinstance(call.args[0],dict) and call.args[0].get("method")=="getBlockTime"
+                             for call in transport.call_args_list))
+    def test_contradictory_samples_at_an_immutable_context_are_not_joined(self):
+        first=fixture();first["responses"][1]["result"]["context"]["slot"]=101
+        other=deepcopy(first)
+        account=other["responses"][0]["result"]["value"][0]["account"]
+        data=bytearray(base64.b64decode(account["data"][0]));data[64:72]=(1).to_bytes(8,"little")
+        account["data"][0]=base64.b64encode(data).decode()
+        read=Mock(side_effect=[first["responses"],first["responses"][1],other["responses"]])
+        with patch("v3_holder_snapshot.MAX_ATTEMPTS",2),self.assertRaisesRegex(SnapshotRejected,"Contradictory"):
+            acquire(now=NOW,read=read)
+    def test_unknown_transport_reserve_is_not_reported_as_known_download_bytes(self):
+        read=Mock(side_effect=[OSError("response lost"),fixture()["responses"],fixture()["block_time_response"]])
+        result=acquire(now=NOW,read=read)
+        evidence=result["capture"]["acquisition"]
+        self.assertGreater(evidence["uncertain_response_reserve_bytes"],evidence["known_response_bytes"])
+        self.assertEqual(evidence["transport_admission_bytes"],
+                         evidence["uncertain_response_reserve_bytes"]+evidence["known_response_bytes"])
+    def test_alignment_retry_budget_stops_additional_large_reads(self):
+        read=Mock(return_value=fixture()["responses"])
+        with patch("v3_holder_snapshot.MAX_ACQUISITION_BYTES",1),self.assertRaises(SnapshotRejected):
+            acquire(now=NOW,read=read)
+        self.assertEqual(read.call_count,1)
+    def test_elapsed_acquisition_deadline_stops_before_another_transport(self):
+        read=Mock()
+        with patch("v3_holder_snapshot.time.monotonic",side_effect=[0,100]),self.assertRaises(SnapshotRejected):
+            acquire(now=NOW,read=read)
+        read.assert_not_called()
     def test_no_positive_balance_is_dropped_because_it_is_one_raw_unit(self):
         c=fixture();rows=c["responses"][0]["result"]["value"]
         data=bytearray(base64.b64decode(rows[3]["account"]["data"][0]));data[64:72]=(1).to_bytes(8,"little")

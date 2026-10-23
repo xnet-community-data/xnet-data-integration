@@ -190,3 +190,9 @@ the historical opening-balance attribution is reviewed. Automatically adding
 another opening owner. Standing spend approval is not approval to change those
 financial facts. This boundary is deliberately visible and financially fenced,
 not disguised as successful autonomous recovery.
+
+The [continued holder-opening review](HOLDER_OPENING_REVIEW_2026-10-23.md)
+records subsequent genuine scheduled verification, original funding proof,
+bounded operational charges, and the independent mint-total check. The production
+review fence is verified active; the historical accounting prerequisite remains
+unresolved, not represented as an all-clear.

@@ -28,6 +28,35 @@ def balance(index, owner, raw):
 
 
 class RpcProofTests(unittest.TestCase):
+    def test_read_only_account_size_query_is_not_a_missing_financial_leg(self):
+        c=capture()
+        c["result"]["meta"]["innerInstructions"][0]["instructions"].insert(0,{
+            "programId":TOKEN_2022_PROGRAM,"parsed":{"type":"getAccountDataSize",
+                "info":{"mint":MINT,"extensionTypes":["immutableOwner"]}}})
+        rows,proof=derive_transaction(c)
+        self.assertEqual(len(rows),1);self.assertEqual(rows[0]["amount_raw"],"123")
+        self.assertEqual(len(proof["instructions"]),1)
+        self.assertEqual(proof["instructions"][0]["inner"],1)
+        self.assertTrue(proof["balance_flow_verified"])
+
+    def test_read_only_size_query_never_waives_balance_flow_verification(self):
+        c=capture();c["result"]["transaction"]["message"]["instructions"].append({
+            "programId":TOKEN_2022_PROGRAM,"parsed":{"type":"getAccountDataSize","info":{"mint":MINT}}})
+        c["result"]["meta"]["postTokenBalances"][0]["uiTokenAmount"]["amount"]="78"
+        with self.assertRaisesRegex(ProofRejected,"does not reconcile"):derive_transaction(c)
+
+    def test_read_only_size_query_never_waives_authority_validation(self):
+        c=capture();c["result"]["transaction"]["message"]["instructions"].extend([
+            {"programId":TOKEN_2022_PROGRAM,"parsed":{"type":"getAccountDataSize","info":{"mint":MINT}}},
+            {"programId":TOKEN_2022_PROGRAM,"parsed":{"type":"setAuthority","info":{"account":"a","newAuthority":"other"}}}])
+        with self.assertRaisesRegex(ProofRejected,"Unsupported relevant SPL instruction: setAuthority"):
+            derive_transaction(c)
+
+    def test_relevant_size_query_with_wrong_mint_is_not_silently_accepted(self):
+        c=capture();c["result"]["transaction"]["message"]["instructions"].append({
+            "programId":TOKEN_2022_PROGRAM,"parsed":{"type":"getAccountDataSize","info":{"mint":"other","account":"a"}}})
+        with self.assertRaisesRegex(ProofRejected,"query mint mismatch"):derive_transaction(c)
+
     def test_inner_instruction_not_net_balance_inference(self):
         rows, proof = derive_transaction(capture())
         self.assertEqual(len(rows), 1)

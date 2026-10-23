@@ -39678,12 +39678,47 @@
     },
     "schema_version": 1
   },
-  "forced_presentations": [],
+  "forced_presentations": [
+    "current",
+    "holders"
+  ],
   "holder_reconciliation": {
-    "baseline_history": [],
+    "acquisition_policy_history": [
+      {
+        "basis": "Bounded exact-bank alignment retry upgrade; no relaxation of snapshot acceptance",
+        "changed_at_utc": "2026-10-23T19:59:00Z",
+        "previous_error": "Finalized holder snapshot temporarily unavailable after bounded attempts: Snapshot bank advanced within batch; bounded retry",
+        "previous_retry_at_utc": "2026-10-23T20:37:01.114817Z",
+        "previous_version": 1,
+        "version": 2
+      }
+    ],
+    "acquisition_version": 2,
+    "active_baseline_id": "d7be627eef2aefc6e0b12472a1ce0a05c164911bcd79f6909d260e91125af522",
+    "active_slot": 460570652,
+    "baseline_history": [
+      {
+        "account_balance_sum_raw": "128924488079419788",
+        "baseline_id": "d7be627eef2aefc6e0b12472a1ce0a05c164911bcd79f6909d260e91125af522",
+        "block_time_utc": "2026-10-23T19:58:59Z",
+        "capture_sha256": "59b4d561588a10cde664ce24c1d83c341d8abf7746befe19018d77b01391a849",
+        "decimals": 8,
+        "kind": "same_slot_finalized_full_accounts",
+        "mint": "xNETbUB7cRb3AAu2pNG2pUwQcJ2BHcktfvSB8x1Pq6L",
+        "mint_conservation_residual_raw": "0",
+        "mint_supply_raw": "128924488079419788",
+        "owners_sha256": "b8f7552a19e14f849c443362be64eccbfc99f6b9031e86b9ea2b16e14e4c2b1d",
+        "positive_owner_count": 5311,
+        "same_bank_verified": true,
+        "slot": 460570652,
+        "token_account_count": 11919,
+        "token_program": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"
+      }
+    ],
     "last_attempt_at_utc": "2026-10-23T19:37:03Z",
-    "last_error": "Finalized holder snapshot temporarily unavailable after bounded attempts: Snapshot bank advanced within batch; bounded retry",
-    "next_retry_at_utc": "2026-10-23T20:37:01.114817Z",
+    "last_success_at_utc": "2026-10-23T19:59:01Z",
+    "original_seed_metadata_sha256": "1bbc3006c0c9a5b4d185fbc7f50c30a0acd26a9c9b63d3e69e7c11b36d139ac6",
+    "original_seed_sha256": "c4ed3a4a8ac22a097c93fc0d48bc50f22fd2c5442a4b142cbadd04fe90596218",
     "schema_version": 1
   },
   "holder_reconciliation_authorization": {
@@ -40491,6 +40526,13 @@
     "last_probe_at_utc": "2026-10-23T10:11:24.250788Z",
     "observed_raw_balance": "668601266666670",
     "owner": "As4nhNHHrhNZMoReGZvEbDTiooNmNATjyjjbadArEJVb",
+    "resolution": {
+      "baseline_id": "d7be627eef2aefc6e0b12472a1ce0a05c164911bcd79f6909d260e91125af522",
+      "basis": "Complete current holder inventory independently conserves mint supply at the same finalized slot",
+      "historical_seed_not_claimed_repaired": true,
+      "original_seed_retained": true,
+      "resolved_at_utc": "2026-10-23T19:59:01Z"
+    },
     "seed_cutoff_utc": "2026-10-03T12:46:12+00:00",
     "seed_or_canonical_mutated": false,
     "seed_sha256": "c4ed3a4a8ac22a097c93fc0d48bc50f22fd2c5442a4b142cbadd04fe90596218",
@@ -40541,7 +40583,7 @@
         "transactionIndex": 105
       }
     ],
-    "status": "requires_review",
+    "status": "resolved_by_verified_finalized_snapshot",
     "token_account": "As4nhNHHrhNZMoReGZvEbDTiooNmNATjyjjbadArEJVb"
   },
   "indexer_lag_watch": {
@@ -40646,7 +40688,6 @@
     "burns": "inc-165456761256dcbf",
     "commercial": "inc-23ab83465e81d12a",
     "current": "inc-1e78b1f330464b8c",
-    "holders": "inc-a9e02f071baf30af",
     "network": "inc-b5a4f5bf2e573922",
     "pools": "inc-2a05dc1712aa4fd1",
     "revenue": "inc-92bf01e82e3bdbf7",
@@ -53682,19 +53723,7 @@
     }
   ],
   "schema_version": 1,
-  "source_errors": {
-    "holder_integrity": {
-      "automatic_recheck": true,
-      "error": "Holder seed review required: Pre-seed finalized token balance conflicts with an absent owner opening in the immutable seed; no automatic seed adjustment",
-      "failed_at_utc": "2026-10-23T18:39:24Z",
-      "holder_data_as_of_utc": "2026-10-22T23:32:02+00:00"
-    },
-    "holder_snapshot": {
-      "automatic_recheck": true,
-      "error": "Finalized holder snapshot temporarily unavailable after bounded attempts: Snapshot bank advanced within batch; bounded retry",
-      "next_retry_at_utc": "2026-10-23T20:37:01.114817Z"
-    }
-  },
+  "source_errors": {},
   "standing_authority_activation": {
     "user-standing-autonomy-20261020": {
       "activated_at_utc": "2026-10-20T15:17:33.607254Z",

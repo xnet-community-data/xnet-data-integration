@@ -64,12 +64,14 @@ def repair_days(state, config, now, *, seed_cutoff=None):
             days.add(now.date().isoformat())
     primary_days = set(days)
     if "holder_integrity" in state.get("source_errors", {}):
-        # A once-per-day evidence scan of recent closed days can discover late
-        # indexed additions. Already verified unchanged days wait until tomorrow.
-        days.update((now.date() - timedelta(days=i)).isoformat() for i in range(1,8))
+        # An outflow can arrive before its older indexed inflow, including on
+        # TODAY. Recheck recent days first, not a week of old healthy days before
+        # the affected current day. Successful days still retain their cooldown.
+        days.update((now.date() - timedelta(days=i)).isoformat() for i in range(8))
     issues = state.get("additive_day_recovery", {})
     result = []
-    for day in sorted(days,key=lambda value:(value not in primary_days,value)):
+    for day in sorted(days,key=lambda value:(value not in primary_days,
+            value if value in primary_days else -parse_instant(value+"T00:00:00Z","repair day").timestamp())):
         if outside_authorized_horizon and "day_repair:"+day not in pending:
             continue  # Cannot buy repeated recent-day scans to bridge an unapproved hole.
         if seed_cutoff is not None and day <= seed_cutoff:
@@ -135,6 +137,10 @@ def _publish_day(runtime, state, spec, record, result, absolute_day):
             runtime.run("v3_reduce_chain.py", "--rebuild-canonical", "--allow-stale-holders")
             if not ledger.read_bytes().startswith(before) or hashlib.sha256(ledger.read_bytes()).hexdigest() != expected_hash:
                 raise AdditiveDayRejected("Reducer rewrote the accepted canonical prefix")
+            unresolved_indexer_days=set()
+            if state.get("indexer_lag_watch",{}).get("witnesses"):
+                from v3_indexer_lag import reconcile_witnesses
+                unresolved_indexer_days=reconcile_witnesses(state,canonical+additions)
             quality = runtime.load(root / "data/current/xnet_holder_integrity.json", {})
             receipt = {**source_receipt, "canonical_before_sha256":hashlib.sha256(before).hexdigest(),
                 "canonical_after_sha256":expected_hash, "provider_artifact_sha256":hashlib.sha256(runtime.encoded(result)).hexdigest(),
@@ -143,6 +149,7 @@ def _publish_day(runtime, state, spec, record, result, absolute_day):
                 "accepted_at_utc":runtime.stamp(), "collection_completed_at_utc":record.get("completed_at_utc"),
                 "provider_execution_started_at_utc":record["execution_started_at"],
                 "verified_coverage_end_utc":upper.isoformat().replace("+00:00","Z"),
+                "known_indexer_witnesses_unresolved":absolute_day in unresolved_indexer_days,
                 "full_current_day_claimed":False,
                 "instruction_proof_sha256s":{tx:entry["capture_sha256"] for tx,entry in proofs.items()
                     if any(row["tx_id"]==tx for row in rows)}}
@@ -150,19 +157,25 @@ def _publish_day(runtime, state, spec, record, result, absolute_day):
             state.setdefault("autonomous_day_receipts", {})[identity] = receipt
             runtime.stage_consumption(state,spec,record,"verified_additive_utc_day")
             recon = state.setdefault("reconciliation", {})
-            recon["pending_mismatch_days"] = [day for day in recon.get("pending_mismatch_days",[]) if day != absolute_day]
+            recon["pending_mismatch_days"] = [day for day in recon.get("pending_mismatch_days",[])
+                if day != absolute_day or day in unresolved_indexer_days]
             if not recon["pending_mismatch_days"] and "historical_repair" not in state.get("pending_executions", {}):
                 recon.pop("repair_manual_review_required",None)
             state.setdefault("additive_day_recovery", {})[absolute_day] = {
-                "status":"accepted", "receipt_sha256":identity, "execution_id":record["execution_id"],
+                "status":"awaiting_indexer" if absolute_day in unresolved_indexer_days else "accepted",
+                "receipt_sha256":identity, "execution_id":record["execution_id"],
+                "indexer_misses":(state.get("additive_day_recovery",{}).get(absolute_day,{}).get("indexer_misses",0)+1
+                    if absolute_day in unresolved_indexer_days else 0),
                 "added_rows":len(additions), "next_retry_at_utc":(runtime.now()+timedelta(
-                    days=1) if started.date().isoformat()>absolute_day else runtime.now()+timedelta(hours=2)).isoformat().replace("+00:00","Z")}
+                    hours=min(24,6*2**min(state.get("additive_day_recovery",{}).get(absolute_day,{}).get("indexer_misses",0),2)))
+                    if absolute_day in unresolved_indexer_days else runtime.now()+timedelta(days=1)
+                    if started.date().isoformat()>absolute_day else runtime.now()+timedelta(hours=2)).isoformat().replace("+00:00","Z")}
             previous = state["queries"].get("xnet_transfers", {})
             old_coverage = previous.get("continuous_coverage_end_utc") or previous.get("completed_at_utc")
             # Only advance a contiguous frontier, never jump over an unproven day.
             if old_coverage:
                 old = parse_instant(old_coverage,"old coverage")
-                if old.date().isoformat() == absolute_day and upper > old:
+                if old.date().isoformat() == absolute_day and upper > old and absolute_day not in unresolved_indexer_days:
                     state["queries"]["xnet_transfers"] = {**record,
                         "continuous_coverage_end_utc":upper.isoformat().replace("+00:00","Z"),
                         "additive_day_receipt_sha256":identity}
@@ -202,6 +215,8 @@ def recover_additive_days(runtime, state, billing):
     days = repair_days(state,runtime.CONFIG,runtime.now(),seed_cutoff=cutoff)
     limit = runtime.CONFIG["autonomous_operation"]["max_day_repairs_per_run"]
     for day in days[:limit]:
+        if day not in repair_days(state,runtime.CONFIG,runtime.now(),seed_cutoff=cutoff):
+            continue  # A prior repair may already have restored holder integrity.
         key = "day_repair:" + day
         pending = state.get("pending_executions",{}).get(key)
         offset = (runtime.now().date() - parse_instant(day+"T00:00:00Z","day").date()).days

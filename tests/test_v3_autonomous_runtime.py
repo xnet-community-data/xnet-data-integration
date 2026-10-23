@@ -26,6 +26,17 @@ def authorized_state():
 
 
 class AutonomousRuntimeTests(unittest.TestCase):
+    def test_wide_integrity_scans_obey_incident_limit_and_daily_cooldown(self):
+        for attempts,last in ((3,"2026-10-01T00:00:00Z"),(1,"2026-10-20T11:00:00Z")):
+            state=authorized_state();state["source_errors"]={"holder_integrity":{"error":"missing inflow"}}
+            state["reconciliation"]={"integrity_wide_attempts":attempts,"last_integrity_wide_attempt_utc":last}
+            with self.subTest(attempts=attempts),patch("v3_indexer_lag.probe"), \
+                 patch("v3_autonomous_reconcile.repair_days",return_value=[]), \
+                 patch.object(refresh,"execute") as execute,patch.object(refresh,"export_source") as export:
+                self.assertFalse(refresh.reconcile_historical_manifest(state,{}))
+            execute.assert_not_called();export.assert_not_called()
+            self.assertFalse(state.get("paused",False))
+
     def test_rejected_retry_preflight_does_not_strand_a_new_reservation(self):
         refresh.open_standing_period(self.state,refresh.CONFIG,USAGE,NOW)
         before=deepcopy(self.state["standing_credit_budget"])

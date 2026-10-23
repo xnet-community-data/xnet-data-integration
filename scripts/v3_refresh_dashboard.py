@@ -166,7 +166,16 @@ def standing_forecast(state, period_end):
     if recon:
         specs.append(({"key":"reconciliation_manifest", "query_id":recon["manifest_query_id"],
                        "cadence_minutes":recon["weekly_cadence_minutes"], "performance":CONFIG["performance"]},
-                      {"lookback_days":recon["weekly_lookback_days"]}, True))
+                       {"lookback_days":recon["weekly_lookback_days"]}, True))
+        # A proven indexing backlog has its own bounded recheck cadence/cost
+        # family. Include it in pacing instead of pretending recovery is free.
+        for day in state.get("source_errors",{}).get("indexer_lag",{}).get("unresolved_days",[]):
+            offset=(now().date()-datetime.fromisoformat(day).date()).days
+            if 0<=offset<=60:
+                misses=state.get("additive_day_recovery",{}).get(day,{}).get("indexer_misses",0)
+                specs.append(({"key":"indexer_lag:"+day,"query_id":recon["repair_query_id"],
+                    "cadence_minutes":60*min(24,6*2**min(max(0,misses-1),2)),"performance":CONFIG["performance"]},
+                    {"oldest_days_ago":offset,"newest_days_ago":offset},True))
     for spec, params, exports in specs:
         try:
             quote = autonomous_estimate(state, spec, params)
@@ -380,6 +389,9 @@ def write_operational_health(state):
     evidence("revenue", "data/current/xnet_revenue_state.json", "live_fee_accrual.as_of", daily=True, max_age=172800)
     evidence("market", "data/current/xnet_market_state.json", "fetched_at_utc", max_age=7200)
     issues = deepcopy(state.get("source_errors", {}))
+    if "indexer_lag" in issues:
+        issues.setdefault("xnet_transfers",issues["indexer_lag"])
+        issues.setdefault("holders",issues["indexer_lag"])
     if "holder_integrity" in issues or "holders" in state.get("domain_holds", {}):
         issues["holders"] = issues.get("holder_integrity", state.get("domain_holds", {}).get("holders"))
     # Report source freshness separately from permission to spend. A Dune guard
@@ -1017,6 +1029,8 @@ def sync_holder_integrity_error(state, accepted_source=None):
     elif quality.get("status") == "HEALTHY":
         state.setdefault("source_errors", {}).pop("holder_integrity", None)
         state.setdefault("reconciliation", {}).pop("integrity_manifest_clean_at_utc", None)
+        state["reconciliation"].pop("integrity_wide_attempts",None)
+        state["reconciliation"].pop("last_integrity_wide_attempt_utc",None)
     return quality
 
 
@@ -1044,6 +1058,8 @@ def reconcile_historical_manifest(state, billing):
         # small result cache with repair work ahead of those unconsumed effects.
         if any(key in state.get("pending_executions", {}) for key in ("xnet_transfers", "bbb_dex")):
             return False
+        from v3_indexer_lag import probe as probe_indexer_lag
+        probe_indexer_lag(state,ROOT,load,now())
         if repair_days(state, CONFIG, now(), seed_cutoff=seed_day):
             names = ("ROOT", "CONFIG", "STATE", "now", "stamp", "encoded", "load", "save", "run",
                      "execute", "export_source", "stage_consumption", "publish", "checkpoint",
@@ -1127,6 +1143,20 @@ def reconcile_historical_manifest(state, billing):
         "output": "state/v3_transfer_manifest_latest.json",
         "performance": CONFIG["performance"],
     }
+
+    if (autonomous_enabled(state) and force_wide
+            and "reconciliation_manifest" not in state.get("pending_executions",{})):
+        # Precise day recovery remains available, but an unchanged holder
+        # incident must not buy the expensive wide manifest on every cron.
+        attempts=int(recon.get("integrity_wide_attempts",0))
+        if (attempts>=int(CONFIG.get("integrity_repair_max_attempts",3))
+                or not due(recon.get("last_integrity_wide_attempt_utc"),
+                           int(CONFIG.get("integrity_repair_cooldown_minutes",1440)))):
+            recon["manifest_deferred_reason"]="Wide integrity check is bounded per incident/cooldown; precise-day recovery continues"
+            return False
+        recon["integrity_wide_attempts"]=attempts+1
+        recon["last_integrity_wide_attempt_utc"]=stamp()
+        checkpoint(state)
 
     try:
         record = execute(
@@ -1396,6 +1426,10 @@ def publish_data_generation(state, paths, source_records):
                     if key == "xnet_transfers":
                         validate_hot_transfers(paths[key], state)
                         reduce_atomically(paths[key], None)
+                        if state.get("indexer_lag_watch",{}).get("witnesses"):
+                            from v3_indexer_lag import reconcile_witnesses
+                            with (ROOT/"data/canonical/xnet_transfers.csv").open(newline="") as handle:
+                                reconcile_witnesses(state,list(csv.DictReader(handle)))
                         sync_holder_integrity_error(state, accepted_source=record)
                     else:
                         reduce_atomically(None, paths[key])

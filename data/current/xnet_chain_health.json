@@ -1,7 +1,13 @@
 {
   "automatic_retry": true,
   "cadence_minutes": 120,
-  "degraded_sources": {},
+  "degraded_sources": {
+    "holder_snapshot": {
+      "automatic_recheck": true,
+      "error": "Finalized holder snapshot temporarily unavailable after bounded attempts: Free holder acquisition time/byte budget exhausted; contexts=[{'accounts': 461353464, 'mint': 461353463, 'followup_mint': 461353468}, {'accounts': 461353469, 'mint': 461353468, 'followup_mint': 461353471}, {'accounts': 461353472, 'mint': 461353471, 'followup_mint': 461353474}, {'accounts': 461353475, 'mint': 461353474, 'followup_mint': 461353478}, {'accounts': 461353479, 'mint': 461353478, 'followup_mint': 461353481}]",
+      "next_retry_at_utc": "2026-10-25T19:08:42.886167Z"
+    }
+  },
   "error": "Collection recovered; source event timestamps remain explicit and standing Dune spending remains held",
   "holder_snapshot_completed_at_utc": "2026-10-25T15:50:38Z",
   "last_refresh_completed_utc": "2026-10-25T16:52:14Z",
@@ -2800,5 +2806,5 @@
       }
     }
   },
-  "status": "HEALTHY"
+  "status": "DEGRADED"
 }

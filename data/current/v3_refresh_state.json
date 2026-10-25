@@ -4307,7 +4307,7 @@
     },
     "status": "admitted"
   },
-  "chain_completed_at_utc": "2026-10-25T06:40:17Z",
+  "chain_completed_at_utc": "2026-10-25T09:06:04Z",
   "chain_repaired_at_utc": "2026-10-14T23:02:18Z",
   "completed_at_utc": "2026-10-25T08:34:55Z",
   "consumed_executions": {
@@ -7354,6 +7354,15 @@
       "key": "pools",
       "query_id": 8895093,
       "query_parameters": {}
+    },
+    "01M5S4XYXG3FNCTXNC1WARG6YE": {
+      "accepted_at_utc": "2026-10-25T09:06:04Z",
+      "effect": "non_destructive_hot_union",
+      "key": "xnet_transfers",
+      "query_id": 8894037,
+      "query_parameters": {
+        "lookback_hours": 7
+      }
     }
   },
   "cost_breakers": {
@@ -23803,6 +23812,7 @@
         "lookback_hours": 7
       },
       "result_bytes": 1017,
+      "result_row_count": 3,
       "shape_version": null,
       "state": "QUERY_STATE_COMPLETED",
       "submitted_at_utc": "2026-10-25T09:05:38.188007Z"
@@ -44859,8 +44869,7 @@
     "network": "inc-b5a4f5bf2e573922",
     "pools": "inc-2a05dc1712aa4fd1",
     "revenue": "inc-92bf01e82e3bdbf7",
-    "tokenomics": "inc-f43de459c85104b2",
-    "xnet_transfers": "inc-c75f172ad96adebd"
+    "tokenomics": "inc-f43de459c85104b2"
   },
   "paused": false,
   "pending_at_utc": "2026-10-08T21:22:59Z",
@@ -44921,1560 +44930,6 @@
         "query_id": 8894038,
         "state": "QUERY_STATE_FAILED",
         "submitted_at": "2026-10-19T21:37:12.559921Z"
-      },
-      "timeout_seconds": 360
-    },
-    "xnet_transfers": {
-      "billing": {
-        "credits_used": 1883.085,
-        "forecast": {
-          "entries": [
-            {
-              "estimate_evidence": {
-                "aging": {
-                  "applied": false,
-                  "free_hours": 168.0,
-                  "margin_fraction": 0.5,
-                  "max_age_hours": 720.0,
-                  "max_factor": 1.0
-                },
-                "calendar_translation": null,
-                "cost_mean_pooled_credits": 0.19950980466666668,
-                "cost_min_credits": 0.033088236,
-                "cost_observed_max_credits": 0.759088237,
-                "full_evidence_sha256": "259b5df59eb837829d8e009f8fb920d3d628fc1ac0cccd7144dc7b395038e219",
-                "identity": {
-                  "engine": "medium",
-                  "parameters": "{\"lookback_hours\":6}",
-                  "query_id": "8894037",
-                  "shape_version": null
-                },
-                "lookback_scaling": null,
-                "method": "exact_identity_empirical_envelope_mean_plus_3sigma",
-                "pool_counts": {
-                  "exact_stale": 0,
-                  "exact_undated": 0,
-                  "exact_unknown_cost": 0,
-                  "exact_usable": 6,
-                  "family_blocked": 0,
-                  "family_usable": 0,
-                  "matching_rows": 183,
-                  "transfer_blocked": 2,
-                  "transfer_usable": 175
-                },
-                "pool_summary": {
-                  "deduped_rows": 1415,
-                  "duplicate_cost_conflicts": 0,
-                  "raw_rows": 2427,
-                  "skipped": {}
-                },
-                "quote_basis": "credible estimate from local evidence; not a cap, not a guarantee and not spending authority - actual charge is knowable only after execution",
-                "requested_day_offset_days": null,
-                "requested_lookback_hours": 6.0,
-                "sample_ages_hours": [
-                  88.86315173277778,
-                  58.02694007027778,
-                  47.49740600333333,
-                  42.81954600611112,
-                  31.885352482777776,
-                  16.23448479611111
-                ],
-                "sample_execution_ids": [
-                  "01M5FKTVXQXH7NKJ5EVRE5XPF8",
-                  "01M5JXPDN073GYBNGFB59MG4FT",
-                  "01M5M1VFK858B0ZJQXMX33HS9V",
-                  "01M5MHX9THP0YD5VTEZXQ4HMDH",
-                  "01M5NQEPW5SYZJYR2XP5A9YVSG",
-                  "01M5QD63EHK2GGW0ECTQTTGJV3"
-                ],
-                "sample_parameters": [
-                  "{\"lookback_hours\":6}",
-                  "{\"lookback_hours\":6}",
-                  "{\"lookback_hours\":6}",
-                  "{\"lookback_hours\":6}",
-                  "{\"lookback_hours\":6}",
-                  "{\"lookback_hours\":6}"
-                ],
-                "sample_sources": [
-                  [
-                    "execution_history",
-                    "financial_journal"
-                  ],
-                  [
-                    "execution_history",
-                    "financial_journal"
-                  ],
-                  [
-                    "execution_history",
-                    "financial_journal"
-                  ],
-                  [
-                    "execution_history",
-                    "financial_journal"
-                  ],
-                  [
-                    "execution_history",
-                    "financial_journal"
-                  ],
-                  [
-                    "execution_history",
-                    "financial_journal"
-                  ]
-                ]
-              },
-              "expected_compute_credits": 0.19950980466666668,
-              "expected_export_credits": 0.03643088,
-              "key": "xnet_transfers",
-              "runs": 116,
-              "total_credits": 27.369119421333334
-            },
-            {
-              "estimate_evidence": {
-                "aging": {
-                  "applied": false,
-                  "free_hours": 168.0,
-                  "margin_fraction": 0.5,
-                  "max_age_hours": 720.0,
-                  "max_factor": 1.0
-                },
-                "calendar_translation": null,
-                "cost_mean_pooled_credits": 0.11551176519999999,
-                "cost_min_credits": 0.056147059,
-                "cost_observed_max_credits": 0.294735295,
-                "full_evidence_sha256": "c25f6783c6cd8cef9dd6b133425747ff93ab31b3d894a5b9b84a17fa5fe1d41e",
-                "identity": {
-                  "engine": "medium",
-                  "parameters": "{\"lookback_hours\":26}",
-                  "query_id": "8894132",
-                  "shape_version": null
-                },
-                "lookback_scaling": null,
-                "method": "exact_identity_empirical_envelope_mean_plus_3sigma",
-                "pool_counts": {
-                  "exact_stale": 0,
-                  "exact_undated": 0,
-                  "exact_unknown_cost": 0,
-                  "exact_usable": 5,
-                  "family_blocked": 0,
-                  "family_usable": 0,
-                  "matching_rows": 11,
-                  "transfer_blocked": 0,
-                  "transfer_usable": 6
-                },
-                "pool_summary": {
-                  "deduped_rows": 1415,
-                  "duplicate_cost_conflicts": 0,
-                  "raw_rows": 2427,
-                  "skipped": {}
-                },
-                "quote_basis": "credible estimate from local evidence; not a cap, not a guarantee and not spending authority - actual charge is knowable only after execution",
-                "requested_day_offset_days": null,
-                "requested_lookback_hours": 26.0,
-                "sample_ages_hours": [
-                  103.68447049638888,
-                  80.01950779444444,
-                  55.653552203055554,
-                  31.880561005,
-                  7.722368710555555
-                ],
-                "sample_execution_ids": [
-                  "01M5E0Y7HXWHX5QW8SCFA77MEK",
-                  "01M5GJ6GQ9S7AKP0X9K5X4YPZE",
-                  "01M5K5VBA7MQCK2DYTRT2GS99Q",
-                  "01M5NQF4SF5VQXR90GVPX03HYK",
-                  "01M5RAD93AZ8HR3M52DBF11A5K"
-                ],
-                "sample_parameters": [
-                  "{\"lookback_hours\":26}",
-                  "{\"lookback_hours\":26}",
-                  "{\"lookback_hours\":26}",
-                  "{\"lookback_hours\":26}",
-                  "{\"lookback_hours\":26}"
-                ],
-                "sample_sources": [
-                  [
-                    "execution_history",
-                    "financial_journal"
-                  ],
-                  [
-                    "execution_history",
-                    "financial_journal"
-                  ],
-                  [
-                    "execution_history",
-                    "financial_journal"
-                  ],
-                  [
-                    "execution_history",
-                    "financial_journal"
-                  ],
-                  [
-                    "execution_history",
-                    "financial_journal"
-                  ]
-                ]
-              },
-              "expected_compute_credits": 0.11551176519999999,
-              "expected_export_credits": 0.033376666666666666,
-              "key": "bbb_dex",
-              "runs": 10,
-              "total_credits": 1.4888843186666667
-            },
-            {
-              "estimate_evidence": {
-                "aging": {
-                  "applied": true,
-                  "free_hours": 168.0,
-                  "margin_fraction": 0.5,
-                  "max_age_hours": 720.0,
-                  "max_factor": 1.1573353268216586
-                },
-                "calendar_translation": null,
-                "cost_mean_pooled_credits": 0.33099641897278914,
-                "cost_min_credits": 0.0025,
-                "cost_observed_max_credits": 12.418,
-                "full_evidence_sha256": "74d5d53f686e61ff30d102181637d699ef2950b968a75cb0a4a86130b3d34766",
-                "identity": {
-                  "engine": "medium",
-                  "parameters": "",
-                  "query_id": "8894185",
-                  "shape_version": null
-                },
-                "lookback_scaling": null,
-                "method": "exact_identity_empirical_envelope_mean_plus_3sigma",
-                "pool_counts": {
-                  "exact_stale": 0,
-                  "exact_undated": 0,
-                  "exact_unknown_cost": 0,
-                  "exact_usable": 294,
-                  "family_blocked": 0,
-                  "family_usable": 0,
-                  "matching_rows": 294,
-                  "transfer_blocked": 0,
-                  "transfer_usable": 0
-                },
-                "pool_summary": {
-                  "deduped_rows": 1415,
-                  "duplicate_cost_conflicts": 0,
-                  "raw_rows": 2427,
-                  "skipped": {}
-                },
-                "quote_basis": "credible estimate from local evidence; not a cap, not a guarantee and not spending authority - actual charge is knowable only after execution",
-                "requested_day_offset_days": null,
-                "requested_lookback_hours": null,
-                "sample_ages_hours": {
-                  "all_values_sha256": "b7b8406dddbd5d42341094818b1104c384bc017c0bd7c8015fe256b22ac36c27",
-                  "count": 294,
-                  "witnesses": [
-                    303.22640554055556,
-                    302.58330516055554,
-                    302.14098448083337,
-                    301.7154927675,
-                    305.17766399916667,
-                    304.6788125580556,
-                    304.21244100027775,
-                    303.64806867777776
-                  ]
-                },
-                "sample_execution_ids": {
-                  "all_values_sha256": "c8d6451f1956c4ca98bfca7e7b5e7e01b9561d85596b9e11f47ace0bd30e98ea",
-                  "count": 294,
-                  "witnesses": [
-                    "01M4RKW860CSZA7CB72CBY3GFT",
-                    "01M4RP22W4KP47M2A94M03Q8EG",
-                    "01M4RQKGW7PEX6M061NBHMD76Y",
-                    "01M4RS2987HYHM2ESW89E0J5JZ",
-                    "01M4RD5WKBZRS78D8PPNNE6RBN",
-                    "01M4REWP1PJX30XNYBFN2W39Q7",
-                    "01M4RGFZP1CR71BR48GCM2A61K",
-                    "01M4RJD1ZJDTGVDDJWJS2HRVDP"
-                  ]
-                },
-                "sample_parameters": {
-                  "all_values_sha256": "d24f86c87cafa67ba5dab8686b86e2277b698e933bcb712fbc3e1878f11d5050",
-                  "count": 294,
-                  "witnesses": [
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    ""
-                  ]
-                },
-                "sample_sources": {
-                  "all_values_sha256": "25e8969be58a180efdd06cd8aeb6a85999fa1069293bc9ab5afca0cc44f19ffc",
-                  "count": 294,
-                  "witnesses": [
-                    [
-                      "execution_history",
-                      "financial_journal"
-                    ],
-                    [
-                      "execution_history",
-                      "financial_journal"
-                    ],
-                    [
-                      "execution_history",
-                      "financial_journal"
-                    ],
-                    [
-                      "execution_history",
-                      "financial_journal"
-                    ],
-                    [
-                      "financial_journal"
-                    ],
-                    [
-                      "financial_journal"
-                    ],
-                    [
-                      "financial_journal"
-                    ],
-                    [
-                      "financial_journal"
-                    ]
-                  ]
-                }
-              },
-              "expected_compute_credits": 0.33099641897278914,
-              "expected_export_credits": 0.0,
-              "key": "current",
-              "runs": 231,
-              "total_credits": 76.4601727827143
-            },
-            {
-              "estimate_evidence": {
-                "aging": {
-                  "applied": true,
-                  "free_hours": 168.0,
-                  "margin_fraction": 0.5,
-                  "max_age_hours": 720.0,
-                  "max_factor": 1.1573331668780193
-                },
-                "calendar_translation": null,
-                "cost_mean_pooled_credits": 0.1283482205879397,
-                "cost_min_credits": 0.09088469,
-                "cost_observed_max_credits": 0.401504786,
-                "full_evidence_sha256": "12b7db36ec7aea7be177940f976fd5a5ad26c8a36efb361123fafc7bf8e72c2a",
-                "identity": {
-                  "engine": "medium",
-                  "parameters": "",
-                  "query_id": "8895090",
-                  "shape_version": null
-                },
-                "lookback_scaling": null,
-                "method": "exact_identity_empirical_envelope_mean_plus_3sigma",
-                "pool_counts": {
-                  "exact_stale": 0,
-                  "exact_undated": 0,
-                  "exact_unknown_cost": 0,
-                  "exact_usable": 199,
-                  "family_blocked": 0,
-                  "family_usable": 0,
-                  "matching_rows": 199,
-                  "transfer_blocked": 0,
-                  "transfer_usable": 0
-                },
-                "pool_summary": {
-                  "deduped_rows": 1415,
-                  "duplicate_cost_conflicts": 0,
-                  "raw_rows": 2427,
-                  "skipped": {}
-                },
-                "quote_basis": "credible estimate from local evidence; not a cap, not a guarantee and not spending authority - actual charge is knowable only after execution",
-                "requested_day_offset_days": null,
-                "requested_lookback_hours": null,
-                "sample_ages_hours": {
-                  "all_values_sha256": "71d704c2ee9fbbd179910981f611914c5edc11065272f8b40d93b61310348bda",
-                  "count": 199,
-                  "witnesses": [
-                    303.0081723088889,
-                    302.13868753833333,
-                    301.2220970680556,
-                    300.6068712244445,
-                    305.6708307269445,
-                    305.17335706166665,
-                    304.6757761744445,
-                    303.64462830499997
-                  ]
-                },
-                "sample_execution_ids": {
-                  "all_values_sha256": "c262086241b3829801617d708bda8ea6c7b794365ddb1eab28c631a0d66a187e",
-                  "count": 199,
-                  "witnesses": [
-                    "01M4RMM9YPHKSASTANQQ2RJQQW",
-                    "01M4RQKTTGXR34841JH30ENDYY",
-                    "01M4RTRH7M87ZF4N2B1A1JJ873",
-                    "01M4RWW40P2N4VSTYGKBWKX5Z0",
-                    "01M4RBFS2TX7KTDD4TCG52WVPR",
-                    "01M4RD6DZABPQPMGEAJJTGNQY8",
-                    "01M4REX3BZVWBG3V5QNDK9XZGX",
-                    "01M4RJECG6TZSGVWJJ8G8YSAB3"
-                  ]
-                },
-                "sample_parameters": {
-                  "all_values_sha256": "63718f0ed927551d0e49f05405d4ab4875f3988009590ae43aa2b198bda236e2",
-                  "count": 199,
-                  "witnesses": [
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    ""
-                  ]
-                },
-                "sample_sources": {
-                  "all_values_sha256": "f886ac33ae25405ca772394528d230b42444f095d924091ef8f4f3e33a4c3faa",
-                  "count": 199,
-                  "witnesses": [
-                    [
-                      "execution_history",
-                      "financial_journal"
-                    ],
-                    [
-                      "execution_history",
-                      "financial_journal"
-                    ],
-                    [
-                      "execution_history",
-                      "financial_journal"
-                    ],
-                    [
-                      "execution_history",
-                      "financial_journal"
-                    ],
-                    [
-                      "financial_journal"
-                    ],
-                    [
-                      "financial_journal"
-                    ],
-                    [
-                      "financial_journal"
-                    ],
-                    [
-                      "financial_journal"
-                    ]
-                  ]
-                }
-              },
-              "expected_compute_credits": 0.1283482205879397,
-              "expected_export_credits": 0.0,
-              "key": "burns",
-              "runs": 116,
-              "total_credits": 14.888393588201007
-            },
-            {
-              "estimate_evidence": {
-                "aging": {
-                  "applied": true,
-                  "free_hours": 168.0,
-                  "margin_fraction": 0.5,
-                  "max_age_hours": 720.0,
-                  "max_factor": 1.1573309971764292
-                },
-                "calendar_translation": null,
-                "cost_mean_pooled_credits": 0.11733891488832486,
-                "cost_min_credits": 0.08069067,
-                "cost_observed_max_credits": 0.309896174,
-                "full_evidence_sha256": "d662bac0146a92e0add71ed21d6cfffb883d7cc3d1540b04b903769c3aa125ba",
-                "identity": {
-                  "engine": "medium",
-                  "parameters": "",
-                  "query_id": "8895091",
-                  "shape_version": null
-                },
-                "lookback_scaling": null,
-                "method": "exact_identity_empirical_envelope_mean_plus_3sigma",
-                "pool_counts": {
-                  "exact_stale": 0,
-                  "exact_undated": 0,
-                  "exact_unknown_cost": 0,
-                  "exact_usable": 197,
-                  "family_blocked": 0,
-                  "family_usable": 0,
-                  "matching_rows": 197,
-                  "transfer_blocked": 0,
-                  "transfer_usable": 0
-                },
-                "pool_summary": {
-                  "deduped_rows": 1415,
-                  "duplicate_cost_conflicts": 0,
-                  "raw_rows": 2427,
-                  "skipped": {}
-                },
-                "quote_basis": "credible estimate from local evidence; not a cap, not a guarantee and not spending authority - actual charge is knowable only after execution",
-                "requested_day_offset_days": null,
-                "requested_lookback_hours": null,
-                "sample_ages_hours": {
-                  "all_values_sha256": "eacdd6de841a3c2df2601bd0d5a347d5ebbf53e38f43f4ebeedc38e27eea50e2",
-                  "count": 197,
-                  "witnesses": [
-                    303.00560614,
-                    302.13564045361113,
-                    301.21895110305553,
-                    300.6046835180556,
-                    305.66870701444446,
-                    305.1704709352778,
-                    304.6735505952778,
-                    303.6419474411111
-                  ]
-                },
-                "sample_execution_ids": {
-                  "all_values_sha256": "526c9e82df3fb10f1096b400079221bd7a606178140ec7a2ddc1aa09402c1420",
-                  "count": 197,
-                  "witnesses": [
-                    "01M4RMMJT60Y1EG0Q459NSN08K",
-                    "01M4RQM5K4FE64DWQPFSTB065X",
-                    "01M4RTRWB3YFVSQTYGVTZ1VJXY",
-                    "01M4RWWBVZBQTZBN7M0HFEJ09B",
-                    "01M4RBG0HGNBC0WX834JNAC94V",
-                    "01M4RD6R7YDWPPWK9NMJXS1W0T",
-                    "01M4REXB6TQ8QGA9PTNDCS500F",
-                    "01M4RJENZJGDXE1MSCK08FHS0D"
-                  ]
-                },
-                "sample_parameters": {
-                  "all_values_sha256": "ce098198a847b9e6f9ad7c34216a9277d949ded48c57fe5d3761a321d36d1ff4",
-                  "count": 197,
-                  "witnesses": [
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    ""
-                  ]
-                },
-                "sample_sources": {
-                  "all_values_sha256": "0f142a89fb81a58d994eb0ef5bff1cfb62a2053474c0a96d5f841292d7b25cd8",
-                  "count": 197,
-                  "witnesses": [
-                    [
-                      "execution_history",
-                      "financial_journal"
-                    ],
-                    [
-                      "execution_history",
-                      "financial_journal"
-                    ],
-                    [
-                      "execution_history",
-                      "financial_journal"
-                    ],
-                    [
-                      "execution_history",
-                      "financial_journal"
-                    ],
-                    [
-                      "financial_journal"
-                    ],
-                    [
-                      "financial_journal"
-                    ],
-                    [
-                      "financial_journal"
-                    ],
-                    [
-                      "financial_journal"
-                    ]
-                  ]
-                }
-              },
-              "expected_compute_credits": 0.11733891488832486,
-              "expected_export_credits": 0.0,
-              "key": "tokenomics",
-              "runs": 116,
-              "total_credits": 13.611314127045684
-            },
-            {
-              "estimate_evidence": {
-                "aging": {
-                  "applied": true,
-                  "free_hours": 168.0,
-                  "margin_fraction": 0.5,
-                  "max_age_hours": 720.0,
-                  "max_factor": 1.1573286233479267
-                },
-                "calendar_translation": null,
-                "cost_mean_pooled_credits": 0.1136428143939394,
-                "cost_min_credits": 0.097506221,
-                "cost_observed_max_credits": 0.331774403,
-                "full_evidence_sha256": "f9d156dd7e4065b397a3fca9d6bd9ce29546a2b5a449950b52dc9468ef418d72",
-                "identity": {
-                  "engine": "medium",
-                  "parameters": "",
-                  "query_id": "8895092",
-                  "shape_version": null
-                },
-                "lookback_scaling": null,
-                "method": "exact_identity_empirical_envelope_mean_plus_3sigma",
-                "pool_counts": {
-                  "exact_stale": 0,
-                  "exact_undated": 0,
-                  "exact_unknown_cost": 0,
-                  "exact_usable": 198,
-                  "family_blocked": 0,
-                  "family_usable": 0,
-                  "matching_rows": 198,
-                  "transfer_blocked": 0,
-                  "transfer_usable": 0
-                },
-                "pool_summary": {
-                  "deduped_rows": 1415,
-                  "duplicate_cost_conflicts": 0,
-                  "raw_rows": 2427,
-                  "skipped": {}
-                },
-                "quote_basis": "credible estimate from local evidence; not a cap, not a guarantee and not spending authority - actual charge is knowable only after execution",
-                "requested_day_offset_days": null,
-                "requested_lookback_hours": null,
-                "sample_ages_hours": {
-                  "all_values_sha256": "53d3f8f4d385b73f5bd4a1b15341c7f88e3346a31c5250a10a2d434565c3a3b1",
-                  "count": 198,
-                  "witnesses": [
-                    303.0034298038889,
-                    302.13244092388885,
-                    301.21556835833337,
-                    300.6022537463889,
-                    305.66642881194446,
-                    305.16739809166666,
-                    304.6713778272222,
-                    303.63943637
-                  ]
-                },
-                "sample_execution_ids": {
-                  "all_values_sha256": "7ddabb2bf6871756fe51137ea77521c82f21dfe9966eef6533ae35152a281421",
-                  "count": 198,
-                  "witnesses": [
-                    "01M4RMMTGACZ8AYSE29EM14662",
-                    "01M4RQMGX8TYV6PZ5EEQ4PA5NP",
-                    "01M4RTS86N43JEXM30VY4KD19H",
-                    "01M4RWWMEJE8HKQRHV0T7QRYB2",
-                    "01M4RBG8PDSV23NS7E83QTCX3T",
-                    "01M4RD7317BVF29VNE89SG8RPK",
-                    "01M4REXJVTVCCD3T8T5CANMX2F",
-                    "01M4RJEYV1D2ZMVT3VD7PNE530"
-                  ]
-                },
-                "sample_parameters": {
-                  "all_values_sha256": "ca11ee4ece47612b0d07ef63ca9a743015a80aed2c7ec4fd55325243a6c86aa4",
-                  "count": 198,
-                  "witnesses": [
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    ""
-                  ]
-                },
-                "sample_sources": {
-                  "all_values_sha256": "ebf98f20200fe491b27783707675541692c08cec273b26bbed3e72efcc14e495",
-                  "count": 198,
-                  "witnesses": [
-                    [
-                      "execution_history",
-                      "financial_journal"
-                    ],
-                    [
-                      "execution_history",
-                      "financial_journal"
-                    ],
-                    [
-                      "execution_history",
-                      "financial_journal"
-                    ],
-                    [
-                      "execution_history",
-                      "financial_journal"
-                    ],
-                    [
-                      "financial_journal"
-                    ],
-                    [
-                      "financial_journal"
-                    ],
-                    [
-                      "financial_journal"
-                    ],
-                    [
-                      "financial_journal"
-                    ]
-                  ]
-                }
-              },
-              "expected_compute_credits": 0.1136428143939394,
-              "expected_export_credits": 0.0,
-              "key": "holders",
-              "runs": 116,
-              "total_credits": 13.18256646969697
-            },
-            {
-              "estimate_evidence": {
-                "aging": {
-                  "applied": true,
-                  "free_hours": 168.0,
-                  "margin_fraction": 0.5,
-                  "max_age_hours": 720.0,
-                  "max_factor": 1.15732603428593
-                },
-                "calendar_translation": null,
-                "cost_mean_pooled_credits": 0.12142955493402778,
-                "cost_min_credits": 0.095183494,
-                "cost_observed_max_credits": 1.441267943,
-                "full_evidence_sha256": "9c8f9afacaada775e1a5b43bbdd6f79dd83c25044a578ccc692fc82178e22664",
-                "identity": {
-                  "engine": "medium",
-                  "parameters": "",
-                  "query_id": "8895093",
-                  "shape_version": null
-                },
-                "lookback_scaling": null,
-                "method": "exact_identity_empirical_envelope_mean_plus_3sigma",
-                "pool_counts": {
-                  "exact_stale": 0,
-                  "exact_undated": 0,
-                  "exact_unknown_cost": 0,
-                  "exact_usable": 288,
-                  "family_blocked": 0,
-                  "family_usable": 0,
-                  "matching_rows": 288,
-                  "transfer_blocked": 0,
-                  "transfer_usable": 0
-                },
-                "pool_summary": {
-                  "deduped_rows": 1415,
-                  "duplicate_cost_conflicts": 0,
-                  "raw_rows": 2427,
-                  "skipped": {}
-                },
-                "quote_basis": "credible estimate from local evidence; not a cap, not a guarantee and not spending authority - actual charge is knowable only after execution",
-                "requested_day_offset_days": null,
-                "requested_lookback_hours": null,
-                "sample_ages_hours": {
-                  "all_values_sha256": "695b814687c5c58b3837133f209faec43179115a3539b1d0273466dddf643db6",
-                  "count": 288,
-                  "witnesses": [
-                    303.22161545583333,
-                    302.5802871761111,
-                    302.129824655,
-                    301.7135100125,
-                    305.1647274788889,
-                    304.6690085272222,
-                    304.2094100908334,
-                    303.63651537888893
-                  ]
-                },
-                "sample_execution_ids": {
-                  "all_values_sha256": "ae19d2d1e41cbdebb07fff97ae443a5dfe093c3ee49fbb5f51e0e87b479b17d3",
-                  "count": 288,
-                  "witnesses": [
-                    "01M4RKWVT8Y7HHM73A970J6JVZ",
-                    "01M4RP3AF9R48KWFRKD3V8M63B",
-                    "01M4RQMT57JHENV33PT85XPX83",
-                    "01M4RS2HQTDPT31Q2052GN455Q",
-                    "01M4RD7CHDNY674BQ5BHAD9AAH",
-                    "01M4REXV9ZBZ6SPS014Z27WV8N",
-                    "01M4RGGB2NXEV19JPXATXK2GHX",
-                    "01M4RJF960EC1SG68BAGENR9FC"
-                  ]
-                },
-                "sample_parameters": {
-                  "all_values_sha256": "8d8a04d26592aca12f368070b424a29c65d50309863e341e7798bf002ace0c37",
-                  "count": 288,
-                  "witnesses": [
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    ""
-                  ]
-                },
-                "sample_sources": {
-                  "all_values_sha256": "a46ba0ba4dbef06b6fc97265a68cae7c709d80d22b2228cc0886aec5a596e3dc",
-                  "count": 288,
-                  "witnesses": [
-                    [
-                      "execution_history",
-                      "financial_journal"
-                    ],
-                    [
-                      "execution_history",
-                      "financial_journal"
-                    ],
-                    [
-                      "execution_history",
-                      "financial_journal"
-                    ],
-                    [
-                      "execution_history",
-                      "financial_journal"
-                    ],
-                    [
-                      "financial_journal"
-                    ],
-                    [
-                      "financial_journal"
-                    ],
-                    [
-                      "financial_journal"
-                    ],
-                    [
-                      "financial_journal"
-                    ]
-                  ]
-                }
-              },
-              "expected_compute_credits": 0.12142955493402778,
-              "expected_export_credits": 0.0,
-              "key": "pools",
-              "runs": 231,
-              "total_credits": 28.050227189760417
-            },
-            {
-              "estimate_evidence": {
-                "aging": {
-                  "applied": true,
-                  "free_hours": 168.0,
-                  "margin_fraction": 0.5,
-                  "max_age_hours": 720.0,
-                  "max_factor": 1.1494349899454006
-                },
-                "calendar_translation": null,
-                "cost_mean_pooled_credits": 0.11834877788888888,
-                "cost_min_credits": 0.101796174,
-                "cost_observed_max_credits": 0.161022489,
-                "full_evidence_sha256": "318e44eb9dea2a78c0b9b46e6d6c6be9aaa434befb0ba1eb411cd016cbc44117",
-                "identity": {
-                  "engine": "medium",
-                  "parameters": "",
-                  "query_id": "8895088",
-                  "shape_version": null
-                },
-                "lookback_scaling": null,
-                "method": "exact_identity_empirical_envelope_mean_plus_3sigma",
-                "pool_counts": {
-                  "exact_stale": 0,
-                  "exact_undated": 0,
-                  "exact_unknown_cost": 0,
-                  "exact_usable": 9,
-                  "family_blocked": 0,
-                  "family_usable": 0,
-                  "matching_rows": 9,
-                  "transfer_blocked": 0,
-                  "transfer_usable": 0
-                },
-                "pool_summary": {
-                  "deduped_rows": 1415,
-                  "duplicate_cost_conflicts": 0,
-                  "raw_rows": 2427,
-                  "skipped": {}
-                },
-                "quote_basis": "credible estimate from local evidence; not a cap, not a guarantee and not spending authority - actual charge is knowable only after execution",
-                "requested_day_offset_days": null,
-                "requested_lookback_hours": null,
-                "sample_ages_hours": {
-                  "all_values_sha256": "9faef34a89d89939a7604c725c56dcfab45dda50c113bcf8ba545f9d0ba86253",
-                  "count": 9,
-                  "witnesses": [
-                    281.6035817741667,
-                    249.59430503527778,
-                    95.12486705750001,
-                    71.08976024527777,
-                    22.54373526611111,
-                    119.21148089555557,
-                    332.97622889972223,
-                    306.11966580083333
-                  ]
-                },
-                "sample_execution_ids": {
-                  "all_values_sha256": "2f22dceb21caad65c21a6e4f53f50fc4204880c2955a0d1fae29b1396c100373",
-                  "count": 9,
-                  "witnesses": [
-                    "01M4TY3WH4Y7MZE6VJTSPBHPJ4",
-                    "01M4YC0H9M9J3MCZP8BBEH7RV7",
-                    "01M5EYB1ZJX5C7MM97QH1FD5D4",
-                    "01M5HGVMBHB7P3T5F1YX87231Y",
-                    "01M5PQH1XXN2H02DYC5NNN83E0",
-                    "01M5CBFGSA72XH2HPZGFYV06R7",
-                    "01M4NDQXQMG8RJZD76P3EZ8Z4H",
-                    "01M4R9YFBYY4FVHRCHMZJGG406"
-                  ]
-                },
-                "sample_parameters": {
-                  "all_values_sha256": "006728ad269b8a2951898b2aea3f76e86516bfb168b432b3b403721a0ca64547",
-                  "count": 9,
-                  "witnesses": [
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    ""
-                  ]
-                },
-                "sample_sources": {
-                  "all_values_sha256": "0f7619abc8f221786367ae86102ba612bd10090a65093f34318c046994cbbd7e",
-                  "count": 9,
-                  "witnesses": [
-                    [
-                      "execution_history",
-                      "financial_journal"
-                    ],
-                    [
-                      "execution_history",
-                      "financial_journal"
-                    ],
-                    [
-                      "execution_history",
-                      "financial_journal"
-                    ],
-                    [
-                      "execution_history",
-                      "financial_journal"
-                    ],
-                    [
-                      "execution_history",
-                      "financial_journal"
-                    ],
-                    [
-                      "approved_recovery_batches[approved_recovery_batch_20261020].operations['presentation_network']",
-                      "financial_journal"
-                    ],
-                    [
-                      "financial_journal"
-                    ],
-                    [
-                      "financial_journal"
-                    ]
-                  ]
-                }
-              },
-              "expected_compute_credits": 0.11834877788888888,
-              "expected_export_credits": 0.0,
-              "key": "network",
-              "runs": 10,
-              "total_credits": 1.183487778888889
-            },
-            {
-              "estimate_evidence": {
-                "aging": {
-                  "applied": true,
-                  "free_hours": 168.0,
-                  "margin_fraction": 0.5,
-                  "max_age_hours": 720.0,
-                  "max_factor": 1.1494318937708836
-                },
-                "calendar_translation": null,
-                "cost_mean_pooled_credits": 0.22066339922222222,
-                "cost_min_credits": 0.113029412,
-                "cost_observed_max_credits": 0.437941177,
-                "full_evidence_sha256": "707d13eafdd686971698537857312813b093b1993a881a1201410df0fed9a0f1",
-                "identity": {
-                  "engine": "medium",
-                  "parameters": "",
-                  "query_id": "8895089",
-                  "shape_version": null
-                },
-                "lookback_scaling": null,
-                "method": "exact_identity_empirical_envelope_mean_plus_3sigma",
-                "pool_counts": {
-                  "exact_stale": 0,
-                  "exact_undated": 0,
-                  "exact_unknown_cost": 0,
-                  "exact_usable": 9,
-                  "family_blocked": 0,
-                  "family_usable": 0,
-                  "matching_rows": 9,
-                  "transfer_blocked": 0,
-                  "transfer_usable": 0
-                },
-                "pool_summary": {
-                  "deduped_rows": 1415,
-                  "duplicate_cost_conflicts": 0,
-                  "raw_rows": 2427,
-                  "skipped": {}
-                },
-                "quote_basis": "credible estimate from local evidence; not a cap, not a guarantee and not spending authority - actual charge is knowable only after execution",
-                "requested_day_offset_days": null,
-                "requested_lookback_hours": null,
-                "sample_ages_hours": {
-                  "all_values_sha256": "1c49d142af70559e069b27de6c8c01a20dab188cac228e000612586daf2e9841",
-                  "count": 9,
-                  "witnesses": [
-                    281.1554116825,
-                    249.59074761777777,
-                    95.12119676583333,
-                    71.08533094583333,
-                    22.539344880555557,
-                    119.20966659805556,
-                    332.97281072305555,
-                    306.11704552833334
-                  ]
-                },
-                "sample_execution_ids": {
-                  "all_values_sha256": "127f23fbe11e89a8aa52d13169197da80519b954619ad34bd2a016a8d41ec06d",
-                  "count": 9,
-                  "witnesses": [
-                    "01M4TZN35RC0XC56XNJZ12G0XP",
-                    "01M4YC0VMVNX58HYSKHM4HWE8M",
-                    "01M5EYBCVFP4KJFCXN6JC1FGH0",
-                    "01M5HGVZV5EABREAPBJB3RGKMG",
-                    "01M5PQHFZFYYACRR6DFWBP6N4T",
-                    "01M5CBG9ERKRJJC97Z7K817EXA",
-                    "01M4NDR6YYPQBHA258ZSRPVGJR",
-                    "01M4R9YQHXBXGKBW00WT2F526B"
-                  ]
-                },
-                "sample_parameters": {
-                  "all_values_sha256": "006728ad269b8a2951898b2aea3f76e86516bfb168b432b3b403721a0ca64547",
-                  "count": 9,
-                  "witnesses": [
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    ""
-                  ]
-                },
-                "sample_sources": {
-                  "all_values_sha256": "2c57ffe5c5d594574c3856d920744ead6d1aa478080a9d5414ff4deb8f1cd8c0",
-                  "count": 9,
-                  "witnesses": [
-                    [
-                      "execution_history",
-                      "financial_journal"
-                    ],
-                    [
-                      "execution_history",
-                      "financial_journal"
-                    ],
-                    [
-                      "execution_history",
-                      "financial_journal"
-                    ],
-                    [
-                      "execution_history",
-                      "financial_journal"
-                    ],
-                    [
-                      "execution_history",
-                      "financial_journal"
-                    ],
-                    [
-                      "approved_recovery_batches[approved_recovery_batch_20261020].operations['presentation_commercial']",
-                      "financial_journal"
-                    ],
-                    [
-                      "financial_journal"
-                    ],
-                    [
-                      "financial_journal"
-                    ]
-                  ]
-                }
-              },
-              "expected_compute_credits": 0.22066339922222222,
-              "expected_export_credits": 0.0,
-              "key": "commercial",
-              "runs": 10,
-              "total_credits": 2.2066339922222222
-            },
-            {
-              "estimate_evidence": {
-                "aging": {
-                  "applied": true,
-                  "free_hours": 168.0,
-                  "margin_fraction": 0.5,
-                  "max_age_hours": 720.0,
-                  "max_factor": 1.1502379298465177
-                },
-                "calendar_translation": null,
-                "cost_mean_pooled_credits": 20.696617647666667,
-                "cost_min_credits": 8.960147059,
-                "cost_observed_max_credits": 39.136617648,
-                "full_evidence_sha256": "a4e135a6338b6adf62174fab8b8bb50d05b83643c76d033023de2e07f1ff4198",
-                "identity": {
-                  "engine": "medium",
-                  "parameters": "{\"lookback_days\":30}",
-                  "query_id": "8893945",
-                  "shape_version": null
-                },
-                "lookback_scaling": null,
-                "method": "exact_identity_empirical_envelope_mean_plus_3sigma",
-                "pool_counts": {
-                  "exact_stale": 0,
-                  "exact_undated": 0,
-                  "exact_unknown_cost": 0,
-                  "exact_usable": 3,
-                  "family_blocked": 0,
-                  "family_usable": 0,
-                  "matching_rows": 7,
-                  "transfer_blocked": 0,
-                  "transfer_usable": 0
-                },
-                "pool_summary": {
-                  "deduped_rows": 1415,
-                  "duplicate_cost_conflicts": 0,
-                  "raw_rows": 2427,
-                  "skipped": {}
-                },
-                "quote_basis": "credible estimate from local evidence; not a cap, not a guarantee and not spending authority - actual charge is knowable only after execution",
-                "requested_day_offset_days": null,
-                "requested_lookback_hours": null,
-                "sample_ages_hours": [
-                  227.48913570166667,
-                  113.17762898555556,
-                  333.86267455055554
-                ],
-                "sample_execution_ids": [
-                  "01M50QVNESBXMT31576X7058MG",
-                  "01M5D0AP0EHFFKR1CGQ4X6NF3G",
-                  "01M4NAP2Z3WNG48Q435N85FG6C"
-                ],
-                "sample_parameters": [
-                  "{\"lookback_days\":30}",
-                  "{\"lookback_days\":30}",
-                  "{\"lookback_days\":30}"
-                ],
-                "sample_sources": [
-                  [
-                    "execution_history",
-                    "financial_journal"
-                  ],
-                  [
-                    "execution_history",
-                    "financial_journal"
-                  ],
-                  [
-                    "financial_journal"
-                  ]
-                ]
-              },
-              "expected_compute_credits": 20.696617647666667,
-              "expected_export_credits": 0.04163,
-              "key": "reconciliation_manifest",
-              "runs": 2,
-              "total_credits": 41.476495295333336
-            }
-          ],
-          "expected_credits": 219.91729496386282,
-          "independently_unpriced_domains": []
-        },
-        "guard_credits": 3000.0,
-        "operation_approval": {
-          "approval_ref": "user-standing-autonomy-20261020",
-          "approved_at_utc": "2026-10-25T09:05:36.699405Z",
-          "estimate_evidence": "{\"aging\": {\"applied\": false, \"free_hours\": 168.0, \"margin_fraction\": 0.5, \"max_age_hours\": 720.0, \"max_factor\": 1.0}, \"calendar_translation\": null, \"cost_mean_pooled_credits\": 0.12799875109090908, \"cost_min_credits\": 0.016147059, \"cost_observed_max_credits\": 0.720735295, \"full_evidence_sha256\": \"b49f79aa494741fbd314570e153831e6afe6fcdb769c7d37a9e7e2168300a713\", \"identity\": {\"engine\": \"medium\", \"parameters\": \"{\\\"lookback_hours\\\":7}\", \"query_id\": \"8894037\", \"shape_version\": null}, \"lookback_scaling\": null, \"method\": \"exact_identity_empirical_envelope_mean_plus_3sigma\", \"pool_counts\": {\"exact_stale\": 0, \"exact_undated\": 0, \"exact_unknown_cost\": 0, \"exact_usable\": 33, \"family_blocked\": 0, \"family_usable\": 0, \"matching_rows\": 183, \"transfer_blocked\": 2, \"transfer_usable\": 148}, \"pool_summary\": {\"deduped_rows\": 1415, \"duplicate_cost_conflicts\": 0, \"raw_rows\": 2427, \"skipped\": {}}, \"quote_basis\": \"credible estimate from local evidence; not a cap, not a guarantee and not spending authority - actual charge is knowable only after execution\", \"requested_day_offset_days\": null, \"requested_lookback_hours\": 7.0, \"sample_ages_hours\": {\"all_values_sha256\": \"1adb19590c9e585cee6198d345ad27949b29110cac8d1212262bea3fd0801fd7\", \"count\": 33, \"witnesses\": [111.25573207111111, 108.98665067611113, 106.54368551222223, 104.37635466472221, 9.648928968611111, 7.176826216111111, 4.880447273611112, 2.423193426388889]}, \"sample_execution_ids\": {\"all_values_sha256\": \"59fff2970fbcf4c13dee2c189b6feae836fc436b944e5ccb0bc6fa657d650c80\", \"count\": 33, \"witnesses\": [\"01M5D6YR2MXYZ5JVRYG4Q6WQ5Y\", \"01M5DEQZXNRC0QDP9JB5NSCW8K\", \"01M5DQ4D05D04KCWK4N8066P79\", \"01M5DYJK29F57C1B5H6B4VHX8Z\", \"01M5R3SNAGHEJRE5GWEBR10T1W\", \"01M5RC989E0GWP7QMC48A4YW78\", \"01M5RM587ETMPCD3SV5YV9YJ7D\", \"01M5RWKG8ASSTF10SEFRXFBKXD\"]}, \"sample_parameters\": {\"all_values_sha256\": \"e365171315afea5d4d0e762a0834b5db64dc7901bd5b1d9713a346294cbf115c\", \"count\": 33, \"witnesses\": [\"{\\\"lookback_hours\\\":7}\", \"{\\\"lookback_hours\\\":7}\", \"{\\\"lookback_hours\\\":7}\", \"{\\\"lookback_hours\\\":7}\", \"{\\\"lookback_hours\\\":7}\", \"{\\\"lookback_hours\\\":7}\", \"{\\\"lookback_hours\\\":7}\", \"{\\\"lookback_hours\\\":7}\"]}, \"sample_sources\": {\"all_values_sha256\": \"062ce290d2d31536523d0fe55b311b16d7f9f6e54b3a1f2540495ed8badaa520\", \"count\": 33, \"witnesses\": [[\"execution_history\", \"financial_journal\"], [\"execution_history\", \"financial_journal\"], [\"execution_history\", \"financial_journal\"], [\"execution_history\", \"financial_journal\"], [\"execution_history\", \"financial_journal\"], [\"execution_history\", \"financial_journal\"], [\"execution_history\", \"financial_journal\"], [\"execution_history\", \"financial_journal\"]]}}",
-          "execution_id": null,
-          "financial_authority": false,
-          "kind": "execution",
-          "operation_id": "97be6b452841405390bbee47b9d7083c",
-          "performance": "medium",
-          "query_id": 8894037,
-          "query_parameters": {
-            "lookback_hours": 7
-          },
-          "query_version": 10,
-          "quote_credits": 0.720735295,
-          "shape_version": null,
-          "sql_sha256": "7e66eed7837e82733ac773e59a8e8959f7305f8561a5cbe8679fd434c9b57f8f",
-          "valid_until_utc": "2026-10-25T09:20:36.699405Z"
-        },
-        "operation_quote": {
-          "cost_estimate_credits": 0.720735295,
-          "estimate_is_authority": false,
-          "estimate_is_hard_cap": false,
-          "evidence": {
-            "aging": {
-              "applied": false,
-              "free_hours": 168.0,
-              "margin_fraction": 0.5,
-              "max_age_hours": 720.0,
-              "max_factor": 1.0
-            },
-            "calendar_translation": null,
-            "cost_mean_pooled_credits": 0.12799875109090908,
-            "cost_min_credits": 0.016147059,
-            "cost_observed_max_credits": 0.720735295,
-            "full_evidence_sha256": "b49f79aa494741fbd314570e153831e6afe6fcdb769c7d37a9e7e2168300a713",
-            "identity": {
-              "engine": "medium",
-              "parameters": "{\"lookback_hours\":7}",
-              "query_id": "8894037",
-              "shape_version": null
-            },
-            "lookback_scaling": null,
-            "method": "exact_identity_empirical_envelope_mean_plus_3sigma",
-            "pool_counts": {
-              "exact_stale": 0,
-              "exact_undated": 0,
-              "exact_unknown_cost": 0,
-              "exact_usable": 33,
-              "family_blocked": 0,
-              "family_usable": 0,
-              "matching_rows": 183,
-              "transfer_blocked": 2,
-              "transfer_usable": 148
-            },
-            "pool_summary": {
-              "deduped_rows": 1415,
-              "duplicate_cost_conflicts": 0,
-              "raw_rows": 2427,
-              "skipped": {}
-            },
-            "quote_basis": "credible estimate from local evidence; not a cap, not a guarantee and not spending authority - actual charge is knowable only after execution",
-            "requested_day_offset_days": null,
-            "requested_lookback_hours": 7.0,
-            "sample_ages_hours": {
-              "all_values_sha256": "1adb19590c9e585cee6198d345ad27949b29110cac8d1212262bea3fd0801fd7",
-              "count": 33,
-              "witnesses": [
-                111.25573207111111,
-                108.98665067611113,
-                106.54368551222223,
-                104.37635466472221,
-                9.648928968611111,
-                7.176826216111111,
-                4.880447273611112,
-                2.423193426388889
-              ]
-            },
-            "sample_execution_ids": {
-              "all_values_sha256": "59fff2970fbcf4c13dee2c189b6feae836fc436b944e5ccb0bc6fa657d650c80",
-              "count": 33,
-              "witnesses": [
-                "01M5D6YR2MXYZ5JVRYG4Q6WQ5Y",
-                "01M5DEQZXNRC0QDP9JB5NSCW8K",
-                "01M5DQ4D05D04KCWK4N8066P79",
-                "01M5DYJK29F57C1B5H6B4VHX8Z",
-                "01M5R3SNAGHEJRE5GWEBR10T1W",
-                "01M5RC989E0GWP7QMC48A4YW78",
-                "01M5RM587ETMPCD3SV5YV9YJ7D",
-                "01M5RWKG8ASSTF10SEFRXFBKXD"
-              ]
-            },
-            "sample_parameters": {
-              "all_values_sha256": "e365171315afea5d4d0e762a0834b5db64dc7901bd5b1d9713a346294cbf115c",
-              "count": 33,
-              "witnesses": [
-                "{\"lookback_hours\":7}",
-                "{\"lookback_hours\":7}",
-                "{\"lookback_hours\":7}",
-                "{\"lookback_hours\":7}",
-                "{\"lookback_hours\":7}",
-                "{\"lookback_hours\":7}",
-                "{\"lookback_hours\":7}",
-                "{\"lookback_hours\":7}"
-              ]
-            },
-            "sample_sources": {
-              "all_values_sha256": "062ce290d2d31536523d0fe55b311b16d7f9f6e54b3a1f2540495ed8badaa520",
-              "count": 33,
-              "witnesses": [
-                [
-                  "execution_history",
-                  "financial_journal"
-                ],
-                [
-                  "execution_history",
-                  "financial_journal"
-                ],
-                [
-                  "execution_history",
-                  "financial_journal"
-                ],
-                [
-                  "execution_history",
-                  "financial_journal"
-                ],
-                [
-                  "execution_history",
-                  "financial_journal"
-                ],
-                [
-                  "execution_history",
-                  "financial_journal"
-                ],
-                [
-                  "execution_history",
-                  "financial_journal"
-                ],
-                [
-                  "execution_history",
-                  "financial_journal"
-                ]
-              ]
-            }
-          },
-          "expected_credits": 0.12799875109090908,
-          "kind": "execution",
-          "now_utc": "2026-10-25T09:05:34.704761Z",
-          "reasons": [],
-          "status": "estimated"
-        },
-        "period_end": "2026-11-04T00:00:00Z",
-        "period_start": "2026-10-04T16:35:49Z",
-        "projected_period_credits": 2103.002294963863,
-        "standing_usage": {
-          "credits_included": 4000.0,
-          "credits_used": 1883.085,
-          "exact_end": true,
-          "observed_at_utc": "2026-10-25T09:05:34.763634Z",
-          "period_end_utc": "2026-11-04T00:00:00Z",
-          "period_start_utc": "2026-10-04T16:35:49Z",
-          "provider": {
-            "endpoint": "https://api.dune.com/mcp/v1",
-            "protocol_version": "2025-03-26",
-            "session_established": false,
-            "tool": "getUsage",
-            "transport": "mcp_streamable_http"
-          },
-          "raw": {
-            "billingPeriodEnd": "2026-11-04T00:00:00.000Z",
-            "billingPeriodStart": "2026-10-04T16:35:49.000Z",
-            "creditsQuota": 4000,
-            "creditsUsed": 1883.085,
-            "subscriptionPlanName": "analyst_fluid_engine_v2"
-          }
-        },
-        "target_credits": 2500
-      },
-      "execution_id": "01M5S4XYXG3FNCTXNC1WARG6YE",
-      "execution_id_format": "ulid",
-      "financial_attempt_id": "97be6b452841405390bbee47b9d7083c",
-      "key": "xnet_transfers",
-      "operation_approval": {
-        "approval_ref": "user-standing-autonomy-20261020",
-        "approved_at_utc": "2026-10-25T09:05:36.699405Z",
-        "estimate_evidence": "{\"aging\": {\"applied\": false, \"free_hours\": 168.0, \"margin_fraction\": 0.5, \"max_age_hours\": 720.0, \"max_factor\": 1.0}, \"calendar_translation\": null, \"cost_mean_pooled_credits\": 0.12799875109090908, \"cost_min_credits\": 0.016147059, \"cost_observed_max_credits\": 0.720735295, \"full_evidence_sha256\": \"b49f79aa494741fbd314570e153831e6afe6fcdb769c7d37a9e7e2168300a713\", \"identity\": {\"engine\": \"medium\", \"parameters\": \"{\\\"lookback_hours\\\":7}\", \"query_id\": \"8894037\", \"shape_version\": null}, \"lookback_scaling\": null, \"method\": \"exact_identity_empirical_envelope_mean_plus_3sigma\", \"pool_counts\": {\"exact_stale\": 0, \"exact_undated\": 0, \"exact_unknown_cost\": 0, \"exact_usable\": 33, \"family_blocked\": 0, \"family_usable\": 0, \"matching_rows\": 183, \"transfer_blocked\": 2, \"transfer_usable\": 148}, \"pool_summary\": {\"deduped_rows\": 1415, \"duplicate_cost_conflicts\": 0, \"raw_rows\": 2427, \"skipped\": {}}, \"quote_basis\": \"credible estimate from local evidence; not a cap, not a guarantee and not spending authority - actual charge is knowable only after execution\", \"requested_day_offset_days\": null, \"requested_lookback_hours\": 7.0, \"sample_ages_hours\": {\"all_values_sha256\": \"1adb19590c9e585cee6198d345ad27949b29110cac8d1212262bea3fd0801fd7\", \"count\": 33, \"witnesses\": [111.25573207111111, 108.98665067611113, 106.54368551222223, 104.37635466472221, 9.648928968611111, 7.176826216111111, 4.880447273611112, 2.423193426388889]}, \"sample_execution_ids\": {\"all_values_sha256\": \"59fff2970fbcf4c13dee2c189b6feae836fc436b944e5ccb0bc6fa657d650c80\", \"count\": 33, \"witnesses\": [\"01M5D6YR2MXYZ5JVRYG4Q6WQ5Y\", \"01M5DEQZXNRC0QDP9JB5NSCW8K\", \"01M5DQ4D05D04KCWK4N8066P79\", \"01M5DYJK29F57C1B5H6B4VHX8Z\", \"01M5R3SNAGHEJRE5GWEBR10T1W\", \"01M5RC989E0GWP7QMC48A4YW78\", \"01M5RM587ETMPCD3SV5YV9YJ7D\", \"01M5RWKG8ASSTF10SEFRXFBKXD\"]}, \"sample_parameters\": {\"all_values_sha256\": \"e365171315afea5d4d0e762a0834b5db64dc7901bd5b1d9713a346294cbf115c\", \"count\": 33, \"witnesses\": [\"{\\\"lookback_hours\\\":7}\", \"{\\\"lookback_hours\\\":7}\", \"{\\\"lookback_hours\\\":7}\", \"{\\\"lookback_hours\\\":7}\", \"{\\\"lookback_hours\\\":7}\", \"{\\\"lookback_hours\\\":7}\", \"{\\\"lookback_hours\\\":7}\", \"{\\\"lookback_hours\\\":7}\"]}, \"sample_sources\": {\"all_values_sha256\": \"062ce290d2d31536523d0fe55b311b16d7f9f6e54b3a1f2540495ed8badaa520\", \"count\": 33, \"witnesses\": [[\"execution_history\", \"financial_journal\"], [\"execution_history\", \"financial_journal\"], [\"execution_history\", \"financial_journal\"], [\"execution_history\", \"financial_journal\"], [\"execution_history\", \"financial_journal\"], [\"execution_history\", \"financial_journal\"], [\"execution_history\", \"financial_journal\"], [\"execution_history\", \"financial_journal\"]]}}",
-        "execution_id": null,
-        "financial_authority": false,
-        "kind": "execution",
-        "operation_id": "97be6b452841405390bbee47b9d7083c",
-        "performance": "medium",
-        "query_id": 8894037,
-        "query_parameters": {
-          "lookback_hours": 7
-        },
-        "query_version": 10,
-        "quote_credits": 0.720735295,
-        "shape_version": null,
-        "sql_sha256": "7e66eed7837e82733ac773e59a8e8959f7305f8561a5cbe8679fd434c9b57f8f",
-        "valid_until_utc": "2026-10-25T09:20:36.699405Z"
-      },
-      "operation_quote": {
-        "cost_estimate_credits": 0.720735295,
-        "estimate_is_authority": false,
-        "estimate_is_hard_cap": false,
-        "evidence": {
-          "aging": {
-            "applied": false,
-            "free_hours": 168.0,
-            "margin_fraction": 0.5,
-            "max_age_hours": 720.0,
-            "max_factor": 1.0
-          },
-          "calendar_translation": null,
-          "cost_mean_pooled_credits": 0.12799875109090908,
-          "cost_min_credits": 0.016147059,
-          "cost_observed_max_credits": 0.720735295,
-          "full_evidence_sha256": "b49f79aa494741fbd314570e153831e6afe6fcdb769c7d37a9e7e2168300a713",
-          "identity": {
-            "engine": "medium",
-            "parameters": "{\"lookback_hours\":7}",
-            "query_id": "8894037",
-            "shape_version": null
-          },
-          "lookback_scaling": null,
-          "method": "exact_identity_empirical_envelope_mean_plus_3sigma",
-          "pool_counts": {
-            "exact_stale": 0,
-            "exact_undated": 0,
-            "exact_unknown_cost": 0,
-            "exact_usable": 33,
-            "family_blocked": 0,
-            "family_usable": 0,
-            "matching_rows": 183,
-            "transfer_blocked": 2,
-            "transfer_usable": 148
-          },
-          "pool_summary": {
-            "deduped_rows": 1415,
-            "duplicate_cost_conflicts": 0,
-            "raw_rows": 2427,
-            "skipped": {}
-          },
-          "quote_basis": "credible estimate from local evidence; not a cap, not a guarantee and not spending authority - actual charge is knowable only after execution",
-          "requested_day_offset_days": null,
-          "requested_lookback_hours": 7.0,
-          "sample_ages_hours": {
-            "all_values_sha256": "1adb19590c9e585cee6198d345ad27949b29110cac8d1212262bea3fd0801fd7",
-            "count": 33,
-            "witnesses": [
-              111.25573207111111,
-              108.98665067611113,
-              106.54368551222223,
-              104.37635466472221,
-              9.648928968611111,
-              7.176826216111111,
-              4.880447273611112,
-              2.423193426388889
-            ]
-          },
-          "sample_execution_ids": {
-            "all_values_sha256": "59fff2970fbcf4c13dee2c189b6feae836fc436b944e5ccb0bc6fa657d650c80",
-            "count": 33,
-            "witnesses": [
-              "01M5D6YR2MXYZ5JVRYG4Q6WQ5Y",
-              "01M5DEQZXNRC0QDP9JB5NSCW8K",
-              "01M5DQ4D05D04KCWK4N8066P79",
-              "01M5DYJK29F57C1B5H6B4VHX8Z",
-              "01M5R3SNAGHEJRE5GWEBR10T1W",
-              "01M5RC989E0GWP7QMC48A4YW78",
-              "01M5RM587ETMPCD3SV5YV9YJ7D",
-              "01M5RWKG8ASSTF10SEFRXFBKXD"
-            ]
-          },
-          "sample_parameters": {
-            "all_values_sha256": "e365171315afea5d4d0e762a0834b5db64dc7901bd5b1d9713a346294cbf115c",
-            "count": 33,
-            "witnesses": [
-              "{\"lookback_hours\":7}",
-              "{\"lookback_hours\":7}",
-              "{\"lookback_hours\":7}",
-              "{\"lookback_hours\":7}",
-              "{\"lookback_hours\":7}",
-              "{\"lookback_hours\":7}",
-              "{\"lookback_hours\":7}",
-              "{\"lookback_hours\":7}"
-            ]
-          },
-          "sample_sources": {
-            "all_values_sha256": "062ce290d2d31536523d0fe55b311b16d7f9f6e54b3a1f2540495ed8badaa520",
-            "count": 33,
-            "witnesses": [
-              [
-                "execution_history",
-                "financial_journal"
-              ],
-              [
-                "execution_history",
-                "financial_journal"
-              ],
-              [
-                "execution_history",
-                "financial_journal"
-              ],
-              [
-                "execution_history",
-                "financial_journal"
-              ],
-              [
-                "execution_history",
-                "financial_journal"
-              ],
-              [
-                "execution_history",
-                "financial_journal"
-              ],
-              [
-                "execution_history",
-                "financial_journal"
-              ],
-              [
-                "execution_history",
-                "financial_journal"
-              ]
-            ]
-          }
-        },
-        "expected_credits": 0.12799875109090908,
-        "kind": "execution",
-        "now_utc": "2026-10-25T09:05:34.704761Z",
-        "reasons": [],
-        "status": "estimated"
-      },
-      "post_run_threshold_credits": 1.5,
-      "query_id": 8894037,
-      "query_parameters": {
-        "lookback_hours": 7
-      },
-      "queue_timeout_seconds": 120,
-      "run_timeout_seconds": 180,
-      "shape_version": null,
-      "spec_identity": {
-        "key": "xnet_transfers",
-        "performance": "medium",
-        "query_id": 8894037
-      },
-      "submitted_at_utc": "2026-10-25T09:05:38.188007Z",
-      "terminal_status": {
-        "execution_cost_credits": 0.050970589,
-        "execution_ended_at": "2026-10-25T09:05:43.396908503Z",
-        "execution_id": "01M5S4XYXG3FNCTXNC1WARG6YE",
-        "execution_started_at": "2026-10-25T09:05:41.844672548Z",
-        "expires_at": "2027-01-23T09:05:43.396916Z",
-        "is_execution_finished": true,
-        "query_id": 8894037,
-        "result_metadata": {
-          "column_names": [
-            "block_date",
-            "block_time",
-            "block_slot",
-            "tx_id",
-            "action",
-            "from_owner",
-            "to_owner",
-            "from_token_account",
-            "to_token_account",
-            "amount_raw",
-            "amount_xnet",
-            "event_multiplicity"
-          ],
-          "column_types": [
-            "date",
-            "timestamp(3) with time zone",
-            "bigint",
-            "varchar",
-            "varchar",
-            "varchar",
-            "varchar",
-            "varchar",
-            "varchar",
-            "uint256",
-            "double",
-            "bigint"
-          ],
-          "datapoint_count": 36,
-          "execution_time_millis": 1552,
-          "pending_time_millis": 547,
-          "result_set_bytes": 1017,
-          "row_count": 3,
-          "total_result_set_bytes": 1017,
-          "total_row_count": 3
-        },
-        "state": "QUERY_STATE_COMPLETED",
-        "submitted_at": "2026-10-25T09:05:41.297168Z"
       },
       "timeout_seconds": 360
     }
@@ -57680,7 +56135,7 @@
     },
     "xnet_transfers": {
       "billing": {
-        "credits_used": 1882.062,
+        "credits_used": 1883.085,
         "forecast": {
           "entries": [
             {
@@ -57696,7 +56151,7 @@
                 "cost_mean_pooled_credits": 0.19950980466666668,
                 "cost_min_credits": 0.033088236,
                 "cost_observed_max_credits": 0.759088237,
-                "full_evidence_sha256": "edd17adf0e5befd3eef06db483608d64789ce8bfca3e69bdf48cd1d5a190477f",
+                "full_evidence_sha256": "259b5df59eb837829d8e009f8fb920d3d628fc1ac0cccd7144dc7b395038e219",
                 "identity": {
                   "engine": "medium",
                   "parameters": "{\"lookback_hours\":6}",
@@ -57712,26 +56167,26 @@
                   "exact_usable": 6,
                   "family_blocked": 0,
                   "family_usable": 0,
-                  "matching_rows": 182,
+                  "matching_rows": 183,
                   "transfer_blocked": 2,
-                  "transfer_usable": 174
+                  "transfer_usable": 175
                 },
                 "pool_summary": {
-                  "deduped_rows": 1407,
+                  "deduped_rows": 1415,
                   "duplicate_cost_conflicts": 0,
-                  "raw_rows": 2419,
+                  "raw_rows": 2427,
                   "skipped": {}
                 },
                 "quote_basis": "credible estimate from local evidence; not a cap, not a guarantee and not spending authority - actual charge is knowable only after execution",
                 "requested_day_offset_days": null,
                 "requested_lookback_hours": 6.0,
                 "sample_ages_hours": [
-                  86.43776003305557,
-                  55.601548370555555,
-                  45.072014303611105,
-                  40.39415430638889,
-                  29.459960783055557,
-                  13.809093096388889
+                  88.86315173277778,
+                  58.02694007027778,
+                  47.49740600333333,
+                  42.81954600611112,
+                  31.885352482777776,
+                  16.23448479611111
                 ],
                 "sample_execution_ids": [
                   "01M5FKTVXQXH7NKJ5EVRE5XPF8",
@@ -57779,8 +56234,8 @@
               "expected_compute_credits": 0.19950980466666668,
               "expected_export_credits": 0.03643088,
               "key": "xnet_transfers",
-              "runs": 117,
-              "total_credits": 27.605060106
+              "runs": 116,
+              "total_credits": 27.369119421333334
             },
             {
               "estimate_evidence": {
@@ -57795,7 +56250,7 @@
                 "cost_mean_pooled_credits": 0.11551176519999999,
                 "cost_min_credits": 0.056147059,
                 "cost_observed_max_credits": 0.294735295,
-                "full_evidence_sha256": "b8f525e4ed1d584d85d5c53cc6eb0471193b2ac8d98c552362df6cab1e8f7dbe",
+                "full_evidence_sha256": "c25f6783c6cd8cef9dd6b133425747ff93ab31b3d894a5b9b84a17fa5fe1d41e",
                 "identity": {
                   "engine": "medium",
                   "parameters": "{\"lookback_hours\":26}",
@@ -57816,20 +56271,20 @@
                   "transfer_usable": 6
                 },
                 "pool_summary": {
-                  "deduped_rows": 1407,
+                  "deduped_rows": 1415,
                   "duplicate_cost_conflicts": 0,
-                  "raw_rows": 2419,
+                  "raw_rows": 2427,
                   "skipped": {}
                 },
                 "quote_basis": "credible estimate from local evidence; not a cap, not a guarantee and not spending authority - actual charge is knowable only after execution",
                 "requested_day_offset_days": null,
                 "requested_lookback_hours": 26.0,
                 "sample_ages_hours": [
-                  101.25907849805556,
-                  77.59411579611111,
-                  53.22816020472223,
-                  29.45516900666667,
-                  5.2969767122222216
+                  103.68447049638888,
+                  80.01950779444444,
+                  55.653552203055554,
+                  31.880561005,
+                  7.722368710555555
                 ],
                 "sample_execution_ids": [
                   "01M5E0Y7HXWHX5QW8SCFA77MEK",
@@ -57881,13 +56336,13 @@
                   "free_hours": 168.0,
                   "margin_fraction": 0.5,
                   "max_age_hours": 720.0,
-                  "max_factor": 1.1551384137167875
+                  "max_factor": 1.1573353268216586
                 },
                 "calendar_translation": null,
-                "cost_mean_pooled_credits": 0.33171426309931507,
+                "cost_mean_pooled_credits": 0.33099641897278914,
                 "cost_min_credits": 0.0025,
                 "cost_observed_max_credits": 12.418,
-                "full_evidence_sha256": "ca66934f6cfacb8fad1906dec550fb41615126b003f017e54015efc132278aba",
+                "full_evidence_sha256": "74d5d53f686e61ff30d102181637d699ef2950b968a75cb0a4a86130b3d34766",
                 "identity": {
                   "engine": "medium",
                   "parameters": "",
@@ -57900,53 +56355,53 @@
                   "exact_stale": 0,
                   "exact_undated": 0,
                   "exact_unknown_cost": 0,
-                  "exact_usable": 292,
+                  "exact_usable": 294,
                   "family_blocked": 0,
                   "family_usable": 0,
-                  "matching_rows": 292,
+                  "matching_rows": 294,
                   "transfer_blocked": 0,
                   "transfer_usable": 0
                 },
                 "pool_summary": {
-                  "deduped_rows": 1407,
+                  "deduped_rows": 1415,
                   "duplicate_cost_conflicts": 0,
-                  "raw_rows": 2419,
+                  "raw_rows": 2427,
                   "skipped": {}
                 },
                 "quote_basis": "credible estimate from local evidence; not a cap, not a guarantee and not spending authority - actual charge is knowable only after execution",
                 "requested_day_offset_days": null,
                 "requested_lookback_hours": null,
                 "sample_ages_hours": {
-                  "all_values_sha256": "3cfcc87f1a5df28162832fdc3031735e7bce705006f3ce88eb66d95c7d48a236",
-                  "count": 292,
+                  "all_values_sha256": "b7b8406dddbd5d42341094818b1104c384bc017c0bd7c8015fe256b22ac36c27",
+                  "count": 294,
                   "witnesses": [
-                    301.22267661,
-                    300.80101347277775,
-                    300.1579130927778,
-                    299.71559241305556,
-                    303.24832769027773,
-                    302.7522719313889,
-                    302.2534204902778,
-                    301.7870489325
+                    303.22640554055556,
+                    302.58330516055554,
+                    302.14098448083337,
+                    301.7154927675,
+                    305.17766399916667,
+                    304.6788125580556,
+                    304.21244100027775,
+                    303.64806867777776
                   ]
                 },
                 "sample_execution_ids": {
-                  "all_values_sha256": "2af496e4d90a7b93149d61542866a307661ab576e33e0d58961b64942d6a799f",
-                  "count": 292,
+                  "all_values_sha256": "c8d6451f1956c4ca98bfca7e7b5e7e01b9561d85596b9e11f47ace0bd30e98ea",
+                  "count": 294,
                   "witnesses": [
-                    "01M4RJD1ZJDTGVDDJWJS2HRVDP",
                     "01M4RKW860CSZA7CB72CBY3GFT",
                     "01M4RP22W4KP47M2A94M03Q8EG",
                     "01M4RQKGW7PEX6M061NBHMD76Y",
-                    "01M4RBFBGZGEQJD4SJGQ30SYCK",
+                    "01M4RS2987HYHM2ESW89E0J5JZ",
                     "01M4RD5WKBZRS78D8PPNNE6RBN",
                     "01M4REWP1PJX30XNYBFN2W39Q7",
-                    "01M4RGFZP1CR71BR48GCM2A61K"
+                    "01M4RGFZP1CR71BR48GCM2A61K",
+                    "01M4RJD1ZJDTGVDDJWJS2HRVDP"
                   ]
                 },
                 "sample_parameters": {
-                  "all_values_sha256": "7766a9ad5ab88d9076d87d245eee0e8d3327949f378bd777ea74d15ebea41fbe",
-                  "count": 292,
+                  "all_values_sha256": "d24f86c87cafa67ba5dab8686b86e2277b698e933bcb712fbc3e1878f11d5050",
+                  "count": 294,
                   "witnesses": [
                     "",
                     "",
@@ -57959,8 +56414,8 @@
                   ]
                 },
                 "sample_sources": {
-                  "all_values_sha256": "25a69161ec215f90d5978e58ff50f5bda3f83c8779f4e40b7d21ed68782d31d4",
-                  "count": 292,
+                  "all_values_sha256": "25e8969be58a180efdd06cd8aeb6a85999fa1069293bc9ab5afca0cc44f19ffc",
+                  "count": 294,
                   "witnesses": [
                     [
                       "execution_history",
@@ -57993,11 +56448,11 @@
                   ]
                 }
               },
-              "expected_compute_credits": 0.33171426309931507,
+              "expected_compute_credits": 0.33099641897278914,
               "expected_export_credits": 0.0,
               "key": "current",
-              "runs": 234,
-              "total_credits": 77.62113756523972
+              "runs": 231,
+              "total_credits": 76.4601727827143
             },
             {
               "estimate_evidence": {
@@ -58006,13 +56461,13 @@
                   "free_hours": 168.0,
                   "margin_fraction": 0.5,
                   "max_age_hours": 720.0,
-                  "max_factor": 1.1551362535894727
+                  "max_factor": 1.1573331668780193
                 },
                 "calendar_translation": null,
-                "cost_mean_pooled_credits": 0.12844892326262625,
+                "cost_mean_pooled_credits": 0.1283482205879397,
                 "cost_min_credits": 0.09088469,
                 "cost_observed_max_credits": 0.401504786,
-                "full_evidence_sha256": "db5f7d81272e51781e15017925af4671d106f57e182aeed2980aa095d71925c9",
+                "full_evidence_sha256": "12b7db36ec7aea7be177940f976fd5a5ad26c8a36efb361123fafc7bf8e72c2a",
                 "identity": {
                   "engine": "medium",
                   "parameters": "",
@@ -58025,53 +56480,53 @@
                   "exact_stale": 0,
                   "exact_undated": 0,
                   "exact_unknown_cost": 0,
-                  "exact_usable": 198,
+                  "exact_usable": 199,
                   "family_blocked": 0,
                   "family_usable": 0,
-                  "matching_rows": 198,
+                  "matching_rows": 199,
                   "transfer_blocked": 0,
                   "transfer_usable": 0
                 },
                 "pool_summary": {
-                  "deduped_rows": 1407,
+                  "deduped_rows": 1415,
                   "duplicate_cost_conflicts": 0,
-                  "raw_rows": 2419,
+                  "raw_rows": 2427,
                   "skipped": {}
                 },
                 "quote_basis": "credible estimate from local evidence; not a cap, not a guarantee and not spending authority - actual charge is knowable only after execution",
                 "requested_day_offset_days": null,
                 "requested_lookback_hours": null,
                 "sample_ages_hours": {
-                  "all_values_sha256": "bec378d053e70647b9149e1e7d0bfb21e7e6cdcd6bdb48e0a8868ba389c59318",
-                  "count": 198,
+                  "all_values_sha256": "71d704c2ee9fbbd179910981f611914c5edc11065272f8b40d93b61310348bda",
+                  "count": 199,
                   "witnesses": [
-                    301.21923603444446,
-                    300.58278003833334,
-                    299.7132952677778,
-                    298.7967047975,
-                    304.1580762530555,
-                    303.2454384563889,
-                    302.7479647911111,
-                    302.25038390388886
+                    303.0081723088889,
+                    302.13868753833333,
+                    301.2220970680556,
+                    300.6068712244445,
+                    305.6708307269445,
+                    305.17335706166665,
+                    304.6757761744445,
+                    303.64462830499997
                   ]
                 },
                 "sample_execution_ids": {
-                  "all_values_sha256": "7a95c64eff8d48b73b6487ed94b9964e809759ac922349309b4b8ceb4b54ce63",
-                  "count": 198,
+                  "all_values_sha256": "c262086241b3829801617d708bda8ea6c7b794365ddb1eab28c631a0d66a187e",
+                  "count": 199,
                   "witnesses": [
-                    "01M4RJECG6TZSGVWJJ8G8YSAB3",
                     "01M4RMM9YPHKSASTANQQ2RJQQW",
                     "01M4RQKTTGXR34841JH30ENDYY",
                     "01M4RTRH7M87ZF4N2B1A1JJ873",
-                    "01M4R8BGKV32Q8419JG4S7HPD8",
+                    "01M4RWW40P2N4VSTYGKBWKX5Z0",
                     "01M4RBFS2TX7KTDD4TCG52WVPR",
                     "01M4RD6DZABPQPMGEAJJTGNQY8",
-                    "01M4REX3BZVWBG3V5QNDK9XZGX"
+                    "01M4REX3BZVWBG3V5QNDK9XZGX",
+                    "01M4RJECG6TZSGVWJJ8G8YSAB3"
                   ]
                 },
                 "sample_parameters": {
-                  "all_values_sha256": "ca11ee4ece47612b0d07ef63ca9a743015a80aed2c7ec4fd55325243a6c86aa4",
-                  "count": 198,
+                  "all_values_sha256": "63718f0ed927551d0e49f05405d4ab4875f3988009590ae43aa2b198bda236e2",
+                  "count": 199,
                   "witnesses": [
                     "",
                     "",
@@ -58084,8 +56539,8 @@
                   ]
                 },
                 "sample_sources": {
-                  "all_values_sha256": "dbb0c3a9d43d9c6953e9eedde2da64eb49af2a81ec1db4a69e5c283b8ce5e5fb",
-                  "count": 198,
+                  "all_values_sha256": "f886ac33ae25405ca772394528d230b42444f095d924091ef8f4f3e33a4c3faa",
+                  "count": 199,
                   "witnesses": [
                     [
                       "execution_history",
@@ -58118,11 +56573,11 @@
                   ]
                 }
               },
-              "expected_compute_credits": 0.12844892326262625,
+              "expected_compute_credits": 0.1283482205879397,
               "expected_export_credits": 0.0,
               "key": "burns",
-              "runs": 117,
-              "total_credits": 15.028524021727272
+              "runs": 116,
+              "total_credits": 14.888393588201007
             },
             {
               "estimate_evidence": {
@@ -58131,142 +56586,17 @@
                   "free_hours": 168.0,
                   "margin_fraction": 0.5,
                   "max_age_hours": 720.0,
-                  "max_factor": 1.15513408330314
+                  "max_factor": 1.1573309971764292
                 },
                 "calendar_translation": null,
-                "cost_mean_pooled_credits": 0.11739238459693878,
+                "cost_mean_pooled_credits": 0.11733891488832486,
                 "cost_min_credits": 0.08069067,
                 "cost_observed_max_credits": 0.309896174,
-                "full_evidence_sha256": "cfd436de78543026c4d06f88997127392ba2e1ab9d9e6a45a777379a8551b490",
+                "full_evidence_sha256": "d662bac0146a92e0add71ed21d6cfffb883d7cc3d1540b04b903769c3aa125ba",
                 "identity": {
                   "engine": "medium",
                   "parameters": "",
                   "query_id": "8895091",
-                  "shape_version": null
-                },
-                "lookback_scaling": null,
-                "method": "exact_identity_empirical_envelope_mean_plus_3sigma",
-                "pool_counts": {
-                  "exact_stale": 0,
-                  "exact_undated": 0,
-                  "exact_unknown_cost": 0,
-                  "exact_usable": 196,
-                  "family_blocked": 0,
-                  "family_usable": 0,
-                  "matching_rows": 196,
-                  "transfer_blocked": 0,
-                  "transfer_usable": 0
-                },
-                "pool_summary": {
-                  "deduped_rows": 1407,
-                  "duplicate_cost_conflicts": 0,
-                  "raw_rows": 2419,
-                  "skipped": {}
-                },
-                "quote_basis": "credible estimate from local evidence; not a cap, not a guarantee and not spending authority - actual charge is knowable only after execution",
-                "requested_day_offset_days": null,
-                "requested_lookback_hours": null,
-                "sample_ages_hours": {
-                  "all_values_sha256": "6962ec7cde4281a83e6fcce70916e61466dba9bd0c40bab49e8d5f21019a3b0e",
-                  "count": 196,
-                  "witnesses": [
-                    301.216554525,
-                    300.58021322388885,
-                    299.7102475375,
-                    298.79355818694444,
-                    304.155265885,
-                    303.24331409833337,
-                    302.7450780191666,
-                    302.2481576791667
-                  ]
-                },
-                "sample_execution_ids": {
-                  "all_values_sha256": "bca36b6f081ff50074879b2eb4d0ca65a6da5e20687a15dbe9d31872c80988da",
-                  "count": 196,
-                  "witnesses": [
-                    "01M4RJENZJGDXE1MSCK08FHS0D",
-                    "01M4RMMJT60Y1EG0Q459NSN08K",
-                    "01M4RQM5K4FE64DWQPFSTB065X",
-                    "01M4RTRWB3YFVSQTYGVTZ1VJXY",
-                    "01M4R8BTFEZFZJMEFXDP1KPFEE",
-                    "01M4RBG0HGNBC0WX834JNAC94V",
-                    "01M4RD6R7YDWPPWK9NMJXS1W0T",
-                    "01M4REXB6TQ8QGA9PTNDCS500F"
-                  ]
-                },
-                "sample_parameters": {
-                  "all_values_sha256": "26f7c2676be5fec5267a9d44650d430b3bc50a3180d7d91b5a639e4a9454d58a",
-                  "count": 196,
-                  "witnesses": [
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    ""
-                  ]
-                },
-                "sample_sources": {
-                  "all_values_sha256": "dcdfe8d9166de9b5e0138823d41a57b36d05a9d1a8590421c1da0a1e32e6dff5",
-                  "count": 196,
-                  "witnesses": [
-                    [
-                      "execution_history",
-                      "financial_journal"
-                    ],
-                    [
-                      "execution_history",
-                      "financial_journal"
-                    ],
-                    [
-                      "execution_history",
-                      "financial_journal"
-                    ],
-                    [
-                      "execution_history",
-                      "financial_journal"
-                    ],
-                    [
-                      "financial_journal"
-                    ],
-                    [
-                      "financial_journal"
-                    ],
-                    [
-                      "financial_journal"
-                    ],
-                    [
-                      "financial_journal"
-                    ]
-                  ]
-                }
-              },
-              "expected_compute_credits": 0.11739238459693878,
-              "expected_export_credits": 0.0,
-              "key": "tokenomics",
-              "runs": 117,
-              "total_credits": 13.734908997841837
-            },
-            {
-              "estimate_evidence": {
-                "aging": {
-                  "applied": true,
-                  "free_hours": 168.0,
-                  "margin_fraction": 0.5,
-                  "max_age_hours": 720.0,
-                  "max_factor": 1.155131709026268
-                },
-                "calendar_translation": null,
-                "cost_mean_pooled_credits": 0.11364076203045687,
-                "cost_min_credits": 0.097506221,
-                "cost_observed_max_credits": 0.331774403,
-                "full_evidence_sha256": "ded6dbb508cc6cab6d55fa00a4c172e544e9649e742c21c6cd4039b89ec6a48d",
-                "identity": {
-                  "engine": "medium",
-                  "parameters": "",
-                  "query_id": "8895092",
                   "shape_version": null
                 },
                 "lookback_scaling": null,
@@ -58283,40 +56613,40 @@
                   "transfer_usable": 0
                 },
                 "pool_summary": {
-                  "deduped_rows": 1407,
+                  "deduped_rows": 1415,
                   "duplicate_cost_conflicts": 0,
-                  "raw_rows": 2419,
+                  "raw_rows": 2427,
                   "skipped": {}
                 },
                 "quote_basis": "credible estimate from local evidence; not a cap, not a guarantee and not spending authority - actual charge is knowable only after execution",
                 "requested_day_offset_days": null,
                 "requested_lookback_hours": null,
                 "sample_ages_hours": {
-                  "all_values_sha256": "804f54839af779e754bcd7b3b56fa9c0c278c6566826fa3625e851de00aa388c",
+                  "all_values_sha256": "eacdd6de841a3c2df2601bd0d5a347d5ebbf53e38f43f4ebeedc38e27eea50e2",
                   "count": 197,
                   "witnesses": [
-                    301.2140429588889,
-                    300.5780363927778,
-                    299.70704751277776,
-                    298.7901749472222,
-                    304.1528607305556,
-                    303.24103540083337,
-                    302.74200468055557,
-                    302.24598441611107
+                    303.00560614,
+                    302.13564045361113,
+                    301.21895110305553,
+                    300.6046835180556,
+                    305.66870701444446,
+                    305.1704709352778,
+                    304.6735505952778,
+                    303.6419474411111
                   ]
                 },
                 "sample_execution_ids": {
-                  "all_values_sha256": "f7645ea9706a307f74994de66a40fe5668414329b7ef493a279f89d215b8e0c1",
+                  "all_values_sha256": "526c9e82df3fb10f1096b400079221bd7a606178140ec7a2ddc1aa09402c1420",
                   "count": 197,
                   "witnesses": [
-                    "01M4RJEYV1D2ZMVT3VD7PNE530",
-                    "01M4RMMTGACZ8AYSE29EM14662",
-                    "01M4RQMGX8TYV6PZ5EEQ4PA5NP",
-                    "01M4RTS86N43JEXM30VY4KD19H",
-                    "01M4R8C3310VQ7R2S95E66A4TT",
-                    "01M4RBG8PDSV23NS7E83QTCX3T",
-                    "01M4RD7317BVF29VNE89SG8RPK",
-                    "01M4REXJVTVCCD3T8T5CANMX2F"
+                    "01M4RMMJT60Y1EG0Q459NSN08K",
+                    "01M4RQM5K4FE64DWQPFSTB065X",
+                    "01M4RTRWB3YFVSQTYGVTZ1VJXY",
+                    "01M4RWWBVZBQTZBN7M0HFEJ09B",
+                    "01M4RBG0HGNBC0WX834JNAC94V",
+                    "01M4RD6R7YDWPPWK9NMJXS1W0T",
+                    "01M4REXB6TQ8QGA9PTNDCS500F",
+                    "01M4RJENZJGDXE1MSCK08FHS0D"
                   ]
                 },
                 "sample_parameters": {
@@ -58334,7 +56664,7 @@
                   ]
                 },
                 "sample_sources": {
-                  "all_values_sha256": "64a4970c0b04444171cb919ce54237e0a621ddbb77c90d7f0d0c2e6c097ba87f",
+                  "all_values_sha256": "0f142a89fb81a58d994eb0ef5bff1cfb62a2053474c0a96d5f841292d7b25cd8",
                   "count": 197,
                   "witnesses": [
                     [
@@ -58368,11 +56698,11 @@
                   ]
                 }
               },
-              "expected_compute_credits": 0.11364076203045687,
+              "expected_compute_credits": 0.11733891488832486,
               "expected_export_credits": 0.0,
-              "key": "holders",
-              "runs": 117,
-              "total_credits": 13.295969157563453
+              "key": "tokenomics",
+              "runs": 116,
+              "total_credits": 13.611314127045684
             },
             {
               "estimate_evidence": {
@@ -58381,17 +56711,17 @@
                   "free_hours": 168.0,
                   "margin_fraction": 0.5,
                   "max_age_hours": 720.0,
-                  "max_factor": 1.1551291172393316
+                  "max_factor": 1.1573286233479267
                 },
                 "calendar_translation": null,
-                "cost_mean_pooled_credits": 0.1215138157062937,
-                "cost_min_credits": 0.095183494,
-                "cost_observed_max_credits": 1.441267943,
-                "full_evidence_sha256": "a085bd2d9e889cbe9197aba2df6eaa18fc5b637cfb570060cd8acc54b79f67be",
+                "cost_mean_pooled_credits": 0.1136428143939394,
+                "cost_min_credits": 0.097506221,
+                "cost_observed_max_credits": 0.331774403,
+                "full_evidence_sha256": "f9d156dd7e4065b397a3fca9d6bd9ce29546a2b5a449950b52dc9468ef418d72",
                 "identity": {
                   "engine": "medium",
                   "parameters": "",
-                  "query_id": "8895093",
+                  "query_id": "8895092",
                   "shape_version": null
                 },
                 "lookback_scaling": null,
@@ -58400,53 +56730,53 @@
                   "exact_stale": 0,
                   "exact_undated": 0,
                   "exact_unknown_cost": 0,
-                  "exact_usable": 286,
+                  "exact_usable": 198,
                   "family_blocked": 0,
                   "family_usable": 0,
-                  "matching_rows": 286,
+                  "matching_rows": 198,
                   "transfer_blocked": 0,
                   "transfer_usable": 0
                 },
                 "pool_summary": {
-                  "deduped_rows": 1407,
+                  "deduped_rows": 1415,
                   "duplicate_cost_conflicts": 0,
-                  "raw_rows": 2419,
+                  "raw_rows": 2427,
                   "skipped": {}
                 },
                 "quote_basis": "credible estimate from local evidence; not a cap, not a guarantee and not spending authority - actual charge is knowable only after execution",
                 "requested_day_offset_days": null,
                 "requested_lookback_hours": null,
                 "sample_ages_hours": {
-                  "all_values_sha256": "47cec478dd22a87ab4e56af579b8bc64108303a73cd4e8224dddd35c81aedccf",
-                  "count": 286,
+                  "all_values_sha256": "53d3f8f4d385b73f5bd4a1b15341c7f88e3346a31c5250a10a2d434565c3a3b1",
+                  "count": 198,
                   "witnesses": [
-                    301.7840136713889,
-                    301.21111895944443,
-                    300.79621903638883,
-                    300.1548907566667,
-                    303.69633810277776,
-                    303.23913902888887,
-                    302.7393310594444,
-                    302.2436121077778
+                    303.0034298038889,
+                    302.13244092388885,
+                    301.21556835833337,
+                    300.6022537463889,
+                    305.66642881194446,
+                    305.16739809166666,
+                    304.6713778272222,
+                    303.63943637
                   ]
                 },
                 "sample_execution_ids": {
-                  "all_values_sha256": "a110598d37b4497ef6660393932fdb7b9ccb794396bb23af5000474985f51f14",
-                  "count": 286,
+                  "all_values_sha256": "7ddabb2bf6871756fe51137ea77521c82f21dfe9966eef6533ae35152a281421",
+                  "count": 198,
                   "witnesses": [
-                    "01M4RGGB2NXEV19JPXATXK2GHX",
-                    "01M4RJF960EC1SG68BAGENR9FC",
-                    "01M4RKWVT8Y7HHM73A970J6JVZ",
-                    "01M4RP3AF9R48KWFRKD3V8M63B",
-                    "01M4R9Y81NHT00J3TK164JV9R2",
-                    "01M4RBGFDE2GH3SJSSDQGNWKZT",
-                    "01M4RD7CHDNY674BQ5BHAD9AAH",
-                    "01M4REXV9ZBZ6SPS014Z27WV8N"
+                    "01M4RMMTGACZ8AYSE29EM14662",
+                    "01M4RQMGX8TYV6PZ5EEQ4PA5NP",
+                    "01M4RTS86N43JEXM30VY4KD19H",
+                    "01M4RWWMEJE8HKQRHV0T7QRYB2",
+                    "01M4RBG8PDSV23NS7E83QTCX3T",
+                    "01M4RD7317BVF29VNE89SG8RPK",
+                    "01M4REXJVTVCCD3T8T5CANMX2F",
+                    "01M4RJEYV1D2ZMVT3VD7PNE530"
                   ]
                 },
                 "sample_parameters": {
-                  "all_values_sha256": "9494e36d7b6a18b5cc62f7601d7c4c1bbbe0bbfaef82c484ad93da9819bf6c11",
-                  "count": 286,
+                  "all_values_sha256": "ca11ee4ece47612b0d07ef63ca9a743015a80aed2c7ec4fd55325243a6c86aa4",
+                  "count": 198,
                   "witnesses": [
                     "",
                     "",
@@ -58459,8 +56789,8 @@
                   ]
                 },
                 "sample_sources": {
-                  "all_values_sha256": "508b035fe62b899797eead5d32e08d9b0742bfb65f9ce0b7622f8aeffe2e6788",
-                  "count": 286,
+                  "all_values_sha256": "ebf98f20200fe491b27783707675541692c08cec273b26bbed3e72efcc14e495",
+                  "count": 198,
                   "witnesses": [
                     [
                       "execution_history",
@@ -58493,11 +56823,11 @@
                   ]
                 }
               },
-              "expected_compute_credits": 0.1215138157062937,
+              "expected_compute_credits": 0.1136428143939394,
               "expected_export_credits": 0.0,
-              "key": "pools",
-              "runs": 234,
-              "total_credits": 28.434232875272727
+              "key": "holders",
+              "runs": 116,
+              "total_credits": 13.18256646969697
             },
             {
               "estimate_evidence": {
@@ -58506,13 +56836,138 @@
                   "free_hours": 168.0,
                   "margin_fraction": 0.5,
                   "max_age_hours": 720.0,
-                  "max_factor": 1.1472380727367653
+                  "max_factor": 1.15732603428593
+                },
+                "calendar_translation": null,
+                "cost_mean_pooled_credits": 0.12142955493402778,
+                "cost_min_credits": 0.095183494,
+                "cost_observed_max_credits": 1.441267943,
+                "full_evidence_sha256": "9c8f9afacaada775e1a5b43bbdd6f79dd83c25044a578ccc692fc82178e22664",
+                "identity": {
+                  "engine": "medium",
+                  "parameters": "",
+                  "query_id": "8895093",
+                  "shape_version": null
+                },
+                "lookback_scaling": null,
+                "method": "exact_identity_empirical_envelope_mean_plus_3sigma",
+                "pool_counts": {
+                  "exact_stale": 0,
+                  "exact_undated": 0,
+                  "exact_unknown_cost": 0,
+                  "exact_usable": 288,
+                  "family_blocked": 0,
+                  "family_usable": 0,
+                  "matching_rows": 288,
+                  "transfer_blocked": 0,
+                  "transfer_usable": 0
+                },
+                "pool_summary": {
+                  "deduped_rows": 1415,
+                  "duplicate_cost_conflicts": 0,
+                  "raw_rows": 2427,
+                  "skipped": {}
+                },
+                "quote_basis": "credible estimate from local evidence; not a cap, not a guarantee and not spending authority - actual charge is knowable only after execution",
+                "requested_day_offset_days": null,
+                "requested_lookback_hours": null,
+                "sample_ages_hours": {
+                  "all_values_sha256": "695b814687c5c58b3837133f209faec43179115a3539b1d0273466dddf643db6",
+                  "count": 288,
+                  "witnesses": [
+                    303.22161545583333,
+                    302.5802871761111,
+                    302.129824655,
+                    301.7135100125,
+                    305.1647274788889,
+                    304.6690085272222,
+                    304.2094100908334,
+                    303.63651537888893
+                  ]
+                },
+                "sample_execution_ids": {
+                  "all_values_sha256": "ae19d2d1e41cbdebb07fff97ae443a5dfe093c3ee49fbb5f51e0e87b479b17d3",
+                  "count": 288,
+                  "witnesses": [
+                    "01M4RKWVT8Y7HHM73A970J6JVZ",
+                    "01M4RP3AF9R48KWFRKD3V8M63B",
+                    "01M4RQMT57JHENV33PT85XPX83",
+                    "01M4RS2HQTDPT31Q2052GN455Q",
+                    "01M4RD7CHDNY674BQ5BHAD9AAH",
+                    "01M4REXV9ZBZ6SPS014Z27WV8N",
+                    "01M4RGGB2NXEV19JPXATXK2GHX",
+                    "01M4RJF960EC1SG68BAGENR9FC"
+                  ]
+                },
+                "sample_parameters": {
+                  "all_values_sha256": "8d8a04d26592aca12f368070b424a29c65d50309863e341e7798bf002ace0c37",
+                  "count": 288,
+                  "witnesses": [
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    ""
+                  ]
+                },
+                "sample_sources": {
+                  "all_values_sha256": "a46ba0ba4dbef06b6fc97265a68cae7c709d80d22b2228cc0886aec5a596e3dc",
+                  "count": 288,
+                  "witnesses": [
+                    [
+                      "execution_history",
+                      "financial_journal"
+                    ],
+                    [
+                      "execution_history",
+                      "financial_journal"
+                    ],
+                    [
+                      "execution_history",
+                      "financial_journal"
+                    ],
+                    [
+                      "execution_history",
+                      "financial_journal"
+                    ],
+                    [
+                      "financial_journal"
+                    ],
+                    [
+                      "financial_journal"
+                    ],
+                    [
+                      "financial_journal"
+                    ],
+                    [
+                      "financial_journal"
+                    ]
+                  ]
+                }
+              },
+              "expected_compute_credits": 0.12142955493402778,
+              "expected_export_credits": 0.0,
+              "key": "pools",
+              "runs": 231,
+              "total_credits": 28.050227189760417
+            },
+            {
+              "estimate_evidence": {
+                "aging": {
+                  "applied": true,
+                  "free_hours": 168.0,
+                  "margin_fraction": 0.5,
+                  "max_age_hours": 720.0,
+                  "max_factor": 1.1494349899454006
                 },
                 "calendar_translation": null,
                 "cost_mean_pooled_credits": 0.11834877788888888,
                 "cost_min_credits": 0.101796174,
                 "cost_observed_max_credits": 0.161022489,
-                "full_evidence_sha256": "62db1132a2a6cceb234bbae1801f169592148cdd7010c12b1b9e3ba08e7abc7d",
+                "full_evidence_sha256": "318e44eb9dea2a78c0b9b46e6d6c6be9aaa434befb0ba1eb411cd016cbc44117",
                 "identity": {
                   "engine": "medium",
                   "parameters": "",
@@ -58533,26 +56988,26 @@
                   "transfer_usable": 0
                 },
                 "pool_summary": {
-                  "deduped_rows": 1407,
+                  "deduped_rows": 1415,
                   "duplicate_cost_conflicts": 0,
-                  "raw_rows": 2419,
+                  "raw_rows": 2427,
                   "skipped": {}
                 },
                 "quote_basis": "credible estimate from local evidence; not a cap, not a guarantee and not spending authority - actual charge is knowable only after execution",
                 "requested_day_offset_days": null,
                 "requested_lookback_hours": null,
                 "sample_ages_hours": {
-                  "all_values_sha256": "74d5f174dce86fa344102878f3de0f96ced2f86dd6183df708bc2a6d54824125",
+                  "all_values_sha256": "9faef34a89d89939a7604c725c56dcfab45dda50c113bcf8ba545f9d0ba86253",
                   "count": 9,
                   "witnesses": [
-                    279.17818517583333,
-                    247.16890843694443,
-                    92.69947045916668,
-                    68.66436364694444,
-                    20.118338667777778,
-                    116.78608429722223,
-                    330.5508323013889,
-                    303.6942692025
+                    281.6035817741667,
+                    249.59430503527778,
+                    95.12486705750001,
+                    71.08976024527777,
+                    22.54373526611111,
+                    119.21148089555557,
+                    332.97622889972223,
+                    306.11966580083333
                   ]
                 },
                 "sample_execution_ids": {
@@ -58633,13 +57088,13 @@
                   "free_hours": 168.0,
                   "margin_fraction": 0.5,
                   "max_age_hours": 720.0,
-                  "max_factor": 1.1472349779149054
+                  "max_factor": 1.1494318937708836
                 },
                 "calendar_translation": null,
                 "cost_mean_pooled_credits": 0.22066339922222222,
                 "cost_min_credits": 0.113029412,
                 "cost_observed_max_credits": 0.437941177,
-                "full_evidence_sha256": "eee692fc8457a344730e0871011046aa05b1e37be93f593841da5ef58424bffb",
+                "full_evidence_sha256": "707d13eafdd686971698537857312813b093b1993a881a1201410df0fed9a0f1",
                 "identity": {
                   "engine": "medium",
                   "parameters": "",
@@ -58660,26 +57115,26 @@
                   "transfer_usable": 0
                 },
                 "pool_summary": {
-                  "deduped_rows": 1407,
+                  "deduped_rows": 1415,
                   "duplicate_cost_conflicts": 0,
-                  "raw_rows": 2419,
+                  "raw_rows": 2427,
                   "skipped": {}
                 },
                 "quote_basis": "credible estimate from local evidence; not a cap, not a guarantee and not spending authority - actual charge is knowable only after execution",
                 "requested_day_offset_days": null,
                 "requested_lookback_hours": null,
                 "sample_ages_hours": {
-                  "all_values_sha256": "5ac13877b68b5f0c5786675e661d288342c3322f30e629a346104fe12a3b2534",
+                  "all_values_sha256": "1c49d142af70559e069b27de6c8c01a20dab188cac228e000612586daf2e9841",
                   "count": 9,
                   "witnesses": [
-                    278.7300165775,
-                    247.16535251277776,
-                    92.69580166083334,
-                    68.65993584083333,
-                    20.113949775555557,
-                    116.78427149305556,
-                    330.5474156180556,
-                    303.69165042333333
+                    281.1554116825,
+                    249.59074761777777,
+                    95.12119676583333,
+                    71.08533094583333,
+                    22.539344880555557,
+                    119.20966659805556,
+                    332.97281072305555,
+                    306.11704552833334
                   ]
                 },
                 "sample_execution_ids": {
@@ -58760,13 +57215,13 @@
                   "free_hours": 168.0,
                   "margin_fraction": 0.5,
                   "max_age_hours": 720.0,
-                  "max_factor": 1.1480410142280597
+                  "max_factor": 1.1502379298465177
                 },
                 "calendar_translation": null,
                 "cost_mean_pooled_credits": 20.696617647666667,
                 "cost_min_credits": 8.960147059,
                 "cost_observed_max_credits": 39.136617648,
-                "full_evidence_sha256": "fe03840f302035664f1bb7ff9af379238b8c327690babaf825eb9bf4ac4d0c45",
+                "full_evidence_sha256": "a4e135a6338b6adf62174fab8b8bb50d05b83643c76d033023de2e07f1ff4198",
                 "identity": {
                   "engine": "medium",
                   "parameters": "{\"lookback_days\":30}",
@@ -58787,18 +57242,18 @@
                   "transfer_usable": 0
                 },
                 "pool_summary": {
-                  "deduped_rows": 1407,
+                  "deduped_rows": 1415,
                   "duplicate_cost_conflicts": 0,
-                  "raw_rows": 2419,
+                  "raw_rows": 2427,
                   "skipped": {}
                 },
                 "quote_basis": "credible estimate from local evidence; not a cap, not a guarantee and not spending authority - actual charge is knowable only after execution",
                 "requested_day_offset_days": null,
                 "requested_lookback_hours": null,
                 "sample_ages_hours": [
-                  225.06374085888888,
-                  110.75223414277778,
-                  331.4372797077778
+                  227.48913570166667,
+                  113.17762898555556,
+                  333.86267455055554
                 ],
                 "sample_execution_ids": [
                   "01M50QVNESBXMT31576X7058MG",
@@ -58831,18 +57286,18 @@
               "total_credits": 41.476495295333336
             }
           ],
-          "expected_credits": 222.07533410875612,
+          "expected_credits": 219.91729496386282,
           "independently_unpriced_domains": []
         },
         "guard_credits": 3000.0,
         "operation_approval": {
           "approval_ref": "user-standing-autonomy-20261020",
-          "approved_at_utc": "2026-10-25T06:40:05.254407Z",
-          "estimate_evidence": "{\"aging\": {\"applied\": false, \"free_hours\": 168.0, \"margin_fraction\": 0.5, \"max_age_hours\": 720.0, \"max_factor\": 1.0}, \"calendar_translation\": null, \"cost_mean_pooled_credits\": 0.13130661646875, \"cost_min_credits\": 0.016147059, \"cost_observed_max_credits\": 0.720735295, \"full_evidence_sha256\": \"3c3c3dee461e585ec71e67622c157e06d16403cc1060cc309c7a48cff9dbbb14\", \"identity\": {\"engine\": \"medium\", \"parameters\": \"{\\\"lookback_hours\\\":7}\", \"query_id\": \"8894037\", \"shape_version\": null}, \"lookback_scaling\": null, \"method\": \"exact_identity_empirical_envelope_mean_plus_3sigma\", \"pool_counts\": {\"exact_stale\": 0, \"exact_undated\": 0, \"exact_unknown_cost\": 0, \"exact_usable\": 32, \"family_blocked\": 0, \"family_usable\": 0, \"matching_rows\": 182, \"transfer_blocked\": 2, \"transfer_usable\": 148}, \"pool_summary\": {\"deduped_rows\": 1407, \"duplicate_cost_conflicts\": 0, \"raw_rows\": 2419, \"skipped\": {}}, \"quote_basis\": \"credible estimate from local evidence; not a cap, not a guarantee and not spending authority - actual charge is knowable only after execution\", \"requested_day_offset_days\": null, \"requested_lookback_hours\": 7.0, \"sample_ages_hours\": {\"all_values_sha256\": \"4cebd479f9eb5686e7a5101eeebec92796be1967dd3b26882db77b4024a9e341\", \"count\": 32, \"witnesses\": [108.83035062861111, 106.56126923361111, 104.11830406972221, 101.95097322222222, 9.6707310075, 7.223547526111111, 4.751444773611111, 2.4550658311111113]}, \"sample_execution_ids\": {\"all_values_sha256\": \"f10c8c66ff170e588d68780c11214852fcee8f4281c83ecab1c45070db9b9254\", \"count\": 32, \"witnesses\": [\"01M5D6YR2MXYZ5JVRYG4Q6WQ5Y\", \"01M5DEQZXNRC0QDP9JB5NSCW8K\", \"01M5DQ4D05D04KCWK4N8066P79\", \"01M5DYJK29F57C1B5H6B4VHX8Z\", \"01M5QVCP3CFF13KYVHDG5FGM52\", \"01M5R3SNAGHEJRE5GWEBR10T1W\", \"01M5RC989E0GWP7QMC48A4YW78\", \"01M5RM587ETMPCD3SV5YV9YJ7D\"]}, \"sample_parameters\": {\"all_values_sha256\": \"b4468d879a7ea1a2c02d3f72d45404695366bd72a11dc6a6a56b683c1e421f53\", \"count\": 32, \"witnesses\": [\"{\\\"lookback_hours\\\":7}\", \"{\\\"lookback_hours\\\":7}\", \"{\\\"lookback_hours\\\":7}\", \"{\\\"lookback_hours\\\":7}\", \"{\\\"lookback_hours\\\":7}\", \"{\\\"lookback_hours\\\":7}\", \"{\\\"lookback_hours\\\":7}\", \"{\\\"lookback_hours\\\":7}\"]}, \"sample_sources\": {\"all_values_sha256\": \"69ab209ff60bc25e6df8bd61d5109f3df3f8a1e651bbad3e3d9ae3a19bf748c2\", \"count\": 32, \"witnesses\": [[\"execution_history\", \"financial_journal\"], [\"execution_history\", \"financial_journal\"], [\"execution_history\", \"financial_journal\"], [\"execution_history\", \"financial_journal\"], [\"execution_history\", \"financial_journal\"], [\"execution_history\", \"financial_journal\"], [\"execution_history\", \"financial_journal\"], [\"execution_history\", \"financial_journal\"]]}}",
+          "approved_at_utc": "2026-10-25T09:05:36.699405Z",
+          "estimate_evidence": "{\"aging\": {\"applied\": false, \"free_hours\": 168.0, \"margin_fraction\": 0.5, \"max_age_hours\": 720.0, \"max_factor\": 1.0}, \"calendar_translation\": null, \"cost_mean_pooled_credits\": 0.12799875109090908, \"cost_min_credits\": 0.016147059, \"cost_observed_max_credits\": 0.720735295, \"full_evidence_sha256\": \"b49f79aa494741fbd314570e153831e6afe6fcdb769c7d37a9e7e2168300a713\", \"identity\": {\"engine\": \"medium\", \"parameters\": \"{\\\"lookback_hours\\\":7}\", \"query_id\": \"8894037\", \"shape_version\": null}, \"lookback_scaling\": null, \"method\": \"exact_identity_empirical_envelope_mean_plus_3sigma\", \"pool_counts\": {\"exact_stale\": 0, \"exact_undated\": 0, \"exact_unknown_cost\": 0, \"exact_usable\": 33, \"family_blocked\": 0, \"family_usable\": 0, \"matching_rows\": 183, \"transfer_blocked\": 2, \"transfer_usable\": 148}, \"pool_summary\": {\"deduped_rows\": 1415, \"duplicate_cost_conflicts\": 0, \"raw_rows\": 2427, \"skipped\": {}}, \"quote_basis\": \"credible estimate from local evidence; not a cap, not a guarantee and not spending authority - actual charge is knowable only after execution\", \"requested_day_offset_days\": null, \"requested_lookback_hours\": 7.0, \"sample_ages_hours\": {\"all_values_sha256\": \"1adb19590c9e585cee6198d345ad27949b29110cac8d1212262bea3fd0801fd7\", \"count\": 33, \"witnesses\": [111.25573207111111, 108.98665067611113, 106.54368551222223, 104.37635466472221, 9.648928968611111, 7.176826216111111, 4.880447273611112, 2.423193426388889]}, \"sample_execution_ids\": {\"all_values_sha256\": \"59fff2970fbcf4c13dee2c189b6feae836fc436b944e5ccb0bc6fa657d650c80\", \"count\": 33, \"witnesses\": [\"01M5D6YR2MXYZ5JVRYG4Q6WQ5Y\", \"01M5DEQZXNRC0QDP9JB5NSCW8K\", \"01M5DQ4D05D04KCWK4N8066P79\", \"01M5DYJK29F57C1B5H6B4VHX8Z\", \"01M5R3SNAGHEJRE5GWEBR10T1W\", \"01M5RC989E0GWP7QMC48A4YW78\", \"01M5RM587ETMPCD3SV5YV9YJ7D\", \"01M5RWKG8ASSTF10SEFRXFBKXD\"]}, \"sample_parameters\": {\"all_values_sha256\": \"e365171315afea5d4d0e762a0834b5db64dc7901bd5b1d9713a346294cbf115c\", \"count\": 33, \"witnesses\": [\"{\\\"lookback_hours\\\":7}\", \"{\\\"lookback_hours\\\":7}\", \"{\\\"lookback_hours\\\":7}\", \"{\\\"lookback_hours\\\":7}\", \"{\\\"lookback_hours\\\":7}\", \"{\\\"lookback_hours\\\":7}\", \"{\\\"lookback_hours\\\":7}\", \"{\\\"lookback_hours\\\":7}\"]}, \"sample_sources\": {\"all_values_sha256\": \"062ce290d2d31536523d0fe55b311b16d7f9f6e54b3a1f2540495ed8badaa520\", \"count\": 33, \"witnesses\": [[\"execution_history\", \"financial_journal\"], [\"execution_history\", \"financial_journal\"], [\"execution_history\", \"financial_journal\"], [\"execution_history\", \"financial_journal\"], [\"execution_history\", \"financial_journal\"], [\"execution_history\", \"financial_journal\"], [\"execution_history\", \"financial_journal\"], [\"execution_history\", \"financial_journal\"]]}}",
           "execution_id": null,
           "financial_authority": false,
           "kind": "execution",
-          "operation_id": "e2990a335eee42f19c4ddb71d5af6313",
+          "operation_id": "97be6b452841405390bbee47b9d7083c",
           "performance": "medium",
           "query_id": 8894037,
           "query_parameters": {
@@ -58852,7 +57307,7 @@
           "quote_credits": 0.720735295,
           "shape_version": null,
           "sql_sha256": "7e66eed7837e82733ac773e59a8e8959f7305f8561a5cbe8679fd434c9b57f8f",
-          "valid_until_utc": "2026-10-25T06:55:05.254407Z"
+          "valid_until_utc": "2026-10-25T09:20:36.699405Z"
         },
         "operation_quote": {
           "cost_estimate_credits": 0.720735295,
@@ -58867,10 +57322,10 @@
               "max_factor": 1.0
             },
             "calendar_translation": null,
-            "cost_mean_pooled_credits": 0.13130661646875,
+            "cost_mean_pooled_credits": 0.12799875109090908,
             "cost_min_credits": 0.016147059,
             "cost_observed_max_credits": 0.720735295,
-            "full_evidence_sha256": "3c3c3dee461e585ec71e67622c157e06d16403cc1060cc309c7a48cff9dbbb14",
+            "full_evidence_sha256": "b49f79aa494741fbd314570e153831e6afe6fcdb769c7d37a9e7e2168300a713",
             "identity": {
               "engine": "medium",
               "parameters": "{\"lookback_hours\":7}",
@@ -58883,53 +57338,53 @@
               "exact_stale": 0,
               "exact_undated": 0,
               "exact_unknown_cost": 0,
-              "exact_usable": 32,
+              "exact_usable": 33,
               "family_blocked": 0,
               "family_usable": 0,
-              "matching_rows": 182,
+              "matching_rows": 183,
               "transfer_blocked": 2,
               "transfer_usable": 148
             },
             "pool_summary": {
-              "deduped_rows": 1407,
+              "deduped_rows": 1415,
               "duplicate_cost_conflicts": 0,
-              "raw_rows": 2419,
+              "raw_rows": 2427,
               "skipped": {}
             },
             "quote_basis": "credible estimate from local evidence; not a cap, not a guarantee and not spending authority - actual charge is knowable only after execution",
             "requested_day_offset_days": null,
             "requested_lookback_hours": 7.0,
             "sample_ages_hours": {
-              "all_values_sha256": "4cebd479f9eb5686e7a5101eeebec92796be1967dd3b26882db77b4024a9e341",
-              "count": 32,
+              "all_values_sha256": "1adb19590c9e585cee6198d345ad27949b29110cac8d1212262bea3fd0801fd7",
+              "count": 33,
               "witnesses": [
-                108.83035062861111,
-                106.56126923361111,
-                104.11830406972221,
-                101.95097322222222,
-                9.6707310075,
-                7.223547526111111,
-                4.751444773611111,
-                2.4550658311111113
+                111.25573207111111,
+                108.98665067611113,
+                106.54368551222223,
+                104.37635466472221,
+                9.648928968611111,
+                7.176826216111111,
+                4.880447273611112,
+                2.423193426388889
               ]
             },
             "sample_execution_ids": {
-              "all_values_sha256": "f10c8c66ff170e588d68780c11214852fcee8f4281c83ecab1c45070db9b9254",
-              "count": 32,
+              "all_values_sha256": "59fff2970fbcf4c13dee2c189b6feae836fc436b944e5ccb0bc6fa657d650c80",
+              "count": 33,
               "witnesses": [
                 "01M5D6YR2MXYZ5JVRYG4Q6WQ5Y",
                 "01M5DEQZXNRC0QDP9JB5NSCW8K",
                 "01M5DQ4D05D04KCWK4N8066P79",
                 "01M5DYJK29F57C1B5H6B4VHX8Z",
-                "01M5QVCP3CFF13KYVHDG5FGM52",
                 "01M5R3SNAGHEJRE5GWEBR10T1W",
                 "01M5RC989E0GWP7QMC48A4YW78",
-                "01M5RM587ETMPCD3SV5YV9YJ7D"
+                "01M5RM587ETMPCD3SV5YV9YJ7D",
+                "01M5RWKG8ASSTF10SEFRXFBKXD"
               ]
             },
             "sample_parameters": {
-              "all_values_sha256": "b4468d879a7ea1a2c02d3f72d45404695366bd72a11dc6a6a56b683c1e421f53",
-              "count": 32,
+              "all_values_sha256": "e365171315afea5d4d0e762a0834b5db64dc7901bd5b1d9713a346294cbf115c",
+              "count": 33,
               "witnesses": [
                 "{\"lookback_hours\":7}",
                 "{\"lookback_hours\":7}",
@@ -58942,8 +57397,8 @@
               ]
             },
             "sample_sources": {
-              "all_values_sha256": "69ab209ff60bc25e6df8bd61d5109f3df3f8a1e651bbad3e3d9ae3a19bf748c2",
-              "count": 32,
+              "all_values_sha256": "062ce290d2d31536523d0fe55b311b16d7f9f6e54b3a1f2540495ed8badaa520",
+              "count": 33,
               "witnesses": [
                 [
                   "execution_history",
@@ -58980,20 +57435,20 @@
               ]
             }
           },
-          "expected_credits": 0.13130661646875,
+          "expected_credits": 0.12799875109090908,
           "kind": "execution",
-          "now_utc": "2026-10-25T06:40:03.331568Z",
+          "now_utc": "2026-10-25T09:05:34.704761Z",
           "reasons": [],
           "status": "estimated"
         },
         "period_end": "2026-11-04T00:00:00Z",
         "period_start": "2026-10-04T16:35:49Z",
-        "projected_period_credits": 2104.137334108756,
+        "projected_period_credits": 2103.002294963863,
         "standing_usage": {
           "credits_included": 4000.0,
-          "credits_used": 1882.062,
+          "credits_used": 1883.085,
           "exact_end": true,
-          "observed_at_utc": "2026-10-25T06:40:03.388669Z",
+          "observed_at_utc": "2026-10-25T09:05:34.763634Z",
           "period_end_utc": "2026-11-04T00:00:00Z",
           "period_start_utc": "2026-10-04T16:35:49Z",
           "provider": {
@@ -59007,21 +57462,24 @@
             "billingPeriodEnd": "2026-11-04T00:00:00.000Z",
             "billingPeriodStart": "2026-10-04T16:35:49.000Z",
             "creditsQuota": 4000,
-            "creditsUsed": 1882.062,
+            "creditsUsed": 1883.085,
             "subscriptionPlanName": "analyst_fluid_engine_v2"
           }
         },
         "target_credits": 2500
       },
-      "completed_at_utc": "2026-10-25T06:40:11.208426842Z",
-      "estimated_export_credits": 0.0,
-      "execution_cost_credits": 0.022147059,
-      "execution_ended_at": "2026-10-25T06:40:11.208426842Z",
-      "execution_id": "01M5RWKG8ASSTF10SEFRXFBKXD",
-      "execution_started_at": "2026-10-25T06:40:10.59763422Z",
-      "export_points": 0,
-      "export_wire_bytes": 0,
-      "financial_attempt_id": "e2990a335eee42f19c4ddb71d5af6313",
+      "completed_at_utc": "2026-10-25T09:05:43.396908503Z",
+      "estimated_export_credits": 0.024829999999999998,
+      "execution_cost_credits": 0.050970589,
+      "execution_ended_at": "2026-10-25T09:05:43.396908503Z",
+      "execution_id": "01M5S4XYXG3FNCTXNC1WARG6YE",
+      "execution_started_at": "2026-10-25T09:05:41.844672548Z",
+      "export_attempt_id": "export_60fd5b792b314044a2f4752fceaded3b",
+      "export_points": 36,
+      "export_requested_at_utc": "2026-10-25T09:05:54.485255Z",
+      "export_reused": false,
+      "export_wire_bytes": 2483,
+      "financial_attempt_id": "97be6b452841405390bbee47b9d7083c",
       "performance": "medium",
       "query_id": 8894037,
       "query_parameters": {
@@ -59056,13 +57514,13 @@
           "double",
           "bigint"
         ],
-        "datapoint_count": 0,
-        "execution_time_millis": 610,
-        "pending_time_millis": 602,
-        "result_set_bytes": 0,
-        "row_count": 0,
-        "total_result_set_bytes": 0,
-        "total_row_count": 0
+        "datapoint_count": 36,
+        "execution_time_millis": 1552,
+        "pending_time_millis": 547,
+        "result_set_bytes": 1017,
+        "row_count": 3,
+        "total_result_set_bytes": 1017,
+        "total_row_count": 3
       },
       "shape_version": null,
       "spec_identity": {

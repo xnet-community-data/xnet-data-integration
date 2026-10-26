@@ -1,7 +1,16 @@
 {
   "automatic_retry": true,
   "cadence_minutes": 120,
-  "degraded_sources": {},
+  "degraded_sources": {
+    "indexer_lag": {
+      "automatic_recheck": true,
+      "error": "Finalized transfer witnesses are absent or conflicting in the indexed ledger",
+      "recheck_cadence_minutes": 360,
+      "unresolved_days": [
+        "2026-10-26"
+      ]
+    }
+  },
   "error": "Collection recovered; source event timestamps remain explicit and standing Dune spending remains held",
   "holder_snapshot_completed_at_utc": "2026-10-26T18:47:45Z",
   "last_refresh_completed_utc": "2026-10-26T18:48:10Z",
@@ -34,7 +43,9 @@
     "manifest_deferred_at_utc": "2026-10-16T20:59:18Z",
     "manifest_deferred_reason": "Positive pre-seed conflict requires reviewed opening facts; no speculative paid holder backfill",
     "manifest_identity_verified": false,
-    "pending_mismatch_days": [],
+    "pending_mismatch_days": [
+      "2026-10-26"
+    ],
     "presentation_invalidated_at_utc": "2026-10-14T23:02:18Z"
   },
   "schema_version": 2,
@@ -2830,5 +2841,5 @@
       }
     }
   },
-  "status": "HEALTHY"
+  "status": "DEGRADED"
 }

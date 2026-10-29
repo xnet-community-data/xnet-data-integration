@@ -134,10 +134,9 @@ rename_existing = {
     ),
 
     "outstanding": (
-        "Balance Outstanding to Transfer",
+        "Foundation Booked Balance",
         (
-            "Latest source-reported balance "
-            "outstanding to transfer."
+            "Foundation-ledger booked balance, distinct from Inc payable and wallet cash."
         ),
     ),
 
@@ -360,7 +359,7 @@ specs = {
 
     "bbb_transfers": {
         "name":
-            "Transferred to Buy & Burn",
+            "Transferred to Foundation",
         "column":
             "cumulative_bbb_transfers_usd",
         "prefix":
@@ -375,7 +374,7 @@ specs = {
             (
                 "Cumulative USD recorded by the "
                 "commercial source as transferred "
-                "to Buy & Burn."
+                "to the Foundation, not on-chain market buys or burns."
             ),
     },
 

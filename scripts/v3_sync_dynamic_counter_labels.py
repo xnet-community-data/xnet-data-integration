@@ -273,6 +273,7 @@ def update_counter(
     label,
     description,
     expected_column,
+    name=None,
 ):
     viz = run_json([
         "dune",
@@ -305,13 +306,14 @@ def update_counter(
             f"Visualization {viz_id} uses an unexpected counter column"
         )
 
-    if options.get("counterLabel") == label and viz.get("description") == description:
+    if (options.get("counterLabel") == label and viz.get("description") == description
+            and (name is None or viz.get("name") == name)):
         print(f"Counter {viz_id} label unchanged.")
         return
 
     options["counterLabel"] = label
 
-    run_json([
+    args = [
         "dune",
         "viz",
         "update",
@@ -328,7 +330,57 @@ def update_counter(
         ),
         "-o",
         "json",
-    ])
+    ]
+    if name is not None:
+        args.extend(["--name", name])
+    run_json(args)
+
+
+def sync_foundation_labels(revenue, vis):
+    """Relabel existing widgets only; never alter query SQL, columns or layout."""
+    foundation = revenue.get("foundation_accounting")
+    if not foundation:
+        return
+    month = month_label(foundation["source_month"])
+    inc = foundation.get("inc_payable_usd")
+    description = (
+        f"Foundation booked balance for {month}; not BBB wallet cash. "
+        + (f"The separate XNET Inc. payable is ${Decimal(inc):,.2f}; " if inc is not None else "")
+        + "the two ledgers have different posting timelines. Future-month balances are excluded."
+    )
+    for key, label, detail, name in (
+        ("foundation_booked_balance", f"{month} Foundation ledger", description,
+         "Foundation Booked Balance"),
+        ("foundation_transfers", "Cumulative Foundation transfers",
+         "Source-recorded transfers to the XNET Foundation, counted once across mirrored ledger rows. "
+         "Funding can support Foundation allocations; this is not proof of DEX buys or token burns.",
+         "Transferred to Foundation"),
+    ):
+        if key in vis:
+            spec = vis[key]
+            update_counter(spec["id"], label, detail, spec["column"], name=name)
+
+    config = ROOT / "config/v3_history_visual_ids.json"
+    if not config.exists():
+        return
+    chart_id = json.loads(config.read_text())["bbb_allocation_transfers"]
+    chart = run_json(["dune", "viz", "get", str(chart_id), "-o", "json"])
+    options = chart.get("options") or {}
+    if isinstance(options, str):
+        options = json.loads(options)
+    fields = {"projected_buy_burn_usd": "Foundation Receivables",
+              "transferred_to_buy_burn_usd": "Transferred to Foundation"}
+    if chart.get("query_id") != 8895089 or not set(fields).issubset(options.get("columnMapping", {})):
+        raise RuntimeError("Foundation chart identity/columns changed; refusing an unrelated visualization update")
+    before = json.dumps(options, sort_keys=True)
+    for column, label in fields.items():
+        options.setdefault("seriesOptions", {}).setdefault(column, {})["name"] = label
+    name = "Foundation Receivables, Transfers & Fiat Operator Payouts"
+    detail = "Foundation-ledger receivables and transfers, plus recorded fiat payouts. " \
+             "Legacy BBB-named columns are compatibility identifiers, not on-chain purchases/burns."
+    if before != json.dumps(options, sort_keys=True) or chart.get("name") != name or chart.get("description") != detail:
+        run_json(["dune", "viz", "update", str(chart_id), "--name", name, "--description", detail,
+                  "--options", json.dumps(options, separators=(",", ":")), "-o", "json"])
 
 
 def main():
@@ -352,6 +404,7 @@ def main():
     )[
         "visualizations"
     ]
+    sync_foundation_labels(revenue, vis)
 
     latest_service = (
         revenue.get(
@@ -466,12 +519,10 @@ def main():
         defi
     )
 
-    if fiat and payment_label:
-        # Fiat settlement follows the same carrier-payment cadence as the
-        # latest cash receipt. Use that reconciled service period rather than
-        # inferring a service month from the row in which the fiat transfer
-        # happens to be reported.
-        fiat_service_label = payment_label
+    if fiat and fiat.get("service_month"):
+        # An unrelated later carrier receipt must not relabel an older payout.
+        # Use THIS payout's reconciled service month, not latest_payment's.
+        fiat_service_label = month_label(fiat["service_month"])
 
         fiat_source_label = month_label(
             fiat.get(
@@ -487,8 +538,8 @@ def main():
             "Cash paid to operators that "
             "chose the XIP-13.1 fiat option "
             f"for {fiat_service_label} service. "
-            "The service period follows the "
-            "latest carrier payment cadence. "
+            "The service period follows this payout's "
+            "reconciled carrier settlement, not the latest unrelated receipt. "
             + (
                 f"The fiat transfer is reported "
                 f"in the {fiat_source_label} source row."
@@ -503,8 +554,8 @@ def main():
             "Share of "
             f"{fiat_service_label} service revenue "
             "routed through the fiat option. "
-            "The service period follows the "
-            "latest carrier payment cadence and "
+            "The service period follows this payout's "
+            "reconciled carrier settlement and "
             "uses the full fiat allocation before "
             "the 75% operator / 5% BBB / "
             "20% operations split."

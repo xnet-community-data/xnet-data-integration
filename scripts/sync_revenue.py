@@ -4,9 +4,10 @@ import csv
 import hashlib
 import io
 import json
+import math
 import re
 import urllib.request
-from datetime import datetime
+from datetime import datetime, timezone
 
 SHEET_ID = "1NebqJ876SNlO4xPihfJWzsH-V0xzgeA-Qw8i5VcHDU4"
 REVENUE_GID = "1205842263"
@@ -71,11 +72,20 @@ METRICS = {
 }
 
 METRIC_ALIASES = {
+    "projected_buy_burn_usd": (
+        "Monthly Receivables from XNET",
+        "Projected Buy & Burn",
+    ),
+    "transferred_to_buy_burn_usd": (
+        "Transferred to Foundation",
+        "Transferred to Buy & Burn",
+    ),
     "transferred_to_fiat_operators_usd": (
         "Payment Sent to Fiat Operators",
         "Transferred to Fiat Operators",
     ),
     "balance_outstanding_to_transfer_usd": (
+        "Balance Due to Foundation",
         "Balance Outstanding to Transfer",
         "Balance Due to Buy/Burn",
     ),
@@ -99,7 +109,10 @@ def parse_number(value, metric, month):
     )
 
     try:
-        return float(cleaned)
+        number = float(cleaned)
+        if not math.isfinite(number):
+            raise ValueError("Nonfinite source value")
+        return number
     except ValueError:
         raise RuntimeError(
             f"Could not parse numeric value for {metric} "
@@ -346,21 +359,13 @@ def parse_epoch_schedule(text):
     return schedule
 
 
-def main():
-    raw_bytes, text = fetch_csv(
-        SOURCE_CSV_URL,
-        [
-            ("GB per month",),
-            ("WiFi Revenue (Projected)",),
-            ("WiFi Payment (Received)",),
-            ("Transferred to Buy & Burn",),
-            (
-                "Balance Outstanding to Transfer",
-                "Balance Due to Buy/Burn",
-            ),
-        ],
-    )
+def parse_revenue(text):
+    """Exact section + label matching, never first-match across two ledgers.
 
+    The three legacy BBB-named output keys remain documented compatibility
+    aliases for the SAME Foundation-ledger series previously published. They
+    are funding/receivable amounts, not evidence of DEX purchases or burns.
+    """
     rows = list(csv.reader(io.StringIO(text)))
 
     header_index = None
@@ -374,42 +379,61 @@ def main():
         raise RuntimeError("Month header row not found")
 
     header = rows[header_index]
+    months = [(i, parse_month(h)) for i, h in enumerate(header) if parse_month(h)]
+    if len({m for _, m in months}) != len(months):
+        raise RuntimeError("Duplicate calendar month in revenue sheet")
+    sections = {"XNET Inc.": "inc", "XNET Inc": "inc",
+                "XNET Foundation": "foundation", "XNET Burn Wallets": "burn_wallets"}
+    sectioned = any(clean(r[0]) in sections for r in rows if r)
+    indexed = []
+    section = None
+    for row_number, row in enumerate(rows[header_index + 1:], header_index + 2):
+        first = clean(row[0]) if row else ""
+        second = clean(row[1]) if len(row) > 1 else ""
+        if sectioned:
+            if first:
+                section = sections.get(first, "other:" + first)
+            indexed.append((section, second, row, row_number))
+        else:
+            indexed.append((None, second or first, row, row_number))
 
-    metric_rows = {}
+    def find(which, aliases, required=True):
+        targets = {clean(v) for v in aliases}
+        matches = [(label, row, number) for sec, label, row, number in indexed
+                   if (not sectioned or sec == which) and label in targets]
+        if len(matches) != 1:
+            if not required and not matches:
+                return None
+            raise RuntimeError(f"Expected exactly one {which} row for {aliases}; found {len(matches)}")
+        return matches[0]
 
-    for key, source_label in METRICS.items():
-        aliases = METRIC_ALIASES.get(key, (source_label,))
-        targets = {clean(label) for label in aliases}
-
-        for row in rows:
-            labels = [
-                clean(row[0]) if len(row) > 0 else "",
-                clean(row[1]) if len(row) > 1 else "",
-            ]
-
-            if any(target in labels for target in targets):
-                metric_rows[key] = row
-                break
-
-        if key not in metric_rows:
-            raise RuntimeError(
-                "Required source row not found. "
-                f"Expected one of: {aliases}"
-            )
-
-    data = []
-
-    for col, heading in enumerate(header):
-        month = parse_month(heading)
-
-        # BFWD and other non-calendar columns are intentionally skipped.
-        if month is None:
+    foundation_keys = {"total_emitted_tokens", "projected_buy_burn_usd",
+        "transferred_to_buy_burn_usd", "transferred_to_fiat_operators_usd",
+        "balance_outstanding_to_transfer_usd"}
+    selected = {key: find("foundation" if key in foundation_keys else "inc",
+                         METRIC_ALIASES.get(key, (label,)))
+                for key, label in METRICS.items()}
+    inc_balance = find("inc", ("Balance Due to Foundation",), required=False) if sectioned else None
+    foundation_due = find("foundation", ("Due Balance from XNET Inc", "Due from XNET Inc"),
+                          required=False) if sectioned else None
+    # These are mirrored postings, NOT additional transfers to add together.
+    inc_transfer = find("inc", ("Payment Sent to Foundation",), required=False) if sectioned else None
+    inc_fiat = find("inc", ("Payment Sent to Fiat Operators",), required=False) if sectioned else None
+    for left, right, label in ((inc_balance, foundation_due, "Inc payable / Foundation due-from"),
+            (inc_transfer, selected["transferred_to_buy_burn_usd"], "Foundation transfer mirrors"),
+            (inc_fiat, selected["transferred_to_fiat_operators_usd"], "Fiat transfer mirrors")):
+        if left is None or right is None:
             continue
-
+        for col, month in months:
+            values = [parse_number(match[1][col] if col < len(match[1]) else "", label, month)
+                      for match in (left, right)]
+            if values[0] != values[1]:
+                raise RuntimeError(f"Conflicting {label} at {month}: {values}")
+    data = []
+    for col, month in months:
         record = {"month": month}
-
         for key, source_label in METRICS.items():
-            row = metric_rows[key]
+            row = selected[key][1]
             value = row[col] if col < len(row) else ""
 
             if key == "wifi_payment_date":
@@ -421,10 +445,30 @@ def main():
                     month,
                 )
 
+        record.update(
+            foundation_monthly_receivable_usd=record["projected_buy_burn_usd"],
+            transferred_to_foundation_usd=record["transferred_to_buy_burn_usd"],
+            foundation_booked_balance_usd=record["balance_outstanding_to_transfer_usd"],
+        )
+        for key, match in (("inc_payable_to_foundation_usd", inc_balance),
+                           ("foundation_due_from_inc_usd", foundation_due)):
+            record[key] = (parse_number(match[1][col] if col < len(match[1]) else "", key, month)
+                           if match else None)
         data.append(record)
 
     if not data:
         raise RuntimeError("No monthly records produced")
+    provenance = {key: {"section": "foundation" if key in foundation_keys else "inc",
+                        "source_label": match[0], "csv_row": match[2]}
+                  for key, match in selected.items()}
+    return data, provenance
+
+
+def main():
+    # Structural validation belongs to parse_revenue's section-aware contract,
+    # not a second list of raw substring requirements that can drift apart.
+    raw_bytes, text = fetch_csv(SOURCE_CSV_URL, [])
+    data, provenance = parse_revenue(text)
 
     raw_sha256 = hashlib.sha256(raw_bytes).hexdigest()
 
@@ -437,6 +481,9 @@ def main():
             "raw_mirror_url": RAW_MIRROR_URL,
             "raw_csv_sha256": raw_sha256,
             "revision_policy": "source_faithful_current_snapshot",
+            "schema_contract": "section_aware_foundation_v2",
+            "fetched_at_utc": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "row_mapping": provenance,
         },
         "notes": {
             "gb_per_month": (
@@ -461,28 +508,24 @@ def main():
                 "from the normalized public feed."
             ),
             "transferred_to_fiat_operators_usd": (
-                "Normalized from the current 'Payment Sent to Fiat Operators' "
-                "row or the equivalent 'Transferred to Fiat Operators' row. "
-                "If both are present, the first matching source row is used; "
-                "the duplicate route is not double-counted."
+                "Foundation section's fiat-transfer posting; the Inc section's "
+                "payment mirror is checked for equality, never counted twice."
             ),
             "balance_outstanding_to_transfer_usd": (
-                "Normalized from the current 'Balance Due to Buy/Burn' "
-                "source row or its historical 'Balance Outstanding to "
-                "Transfer' label. The normalized field name is retained "
-                "for schema continuity."
+                "Compatibility alias for the FOUNDATION section's booked "
+                "balance, not the Inc section's payable or future-month cells."
+            ),
+            "foundation_ledger_compatibility": (
+                "projected_buy_burn_usd, transferred_to_buy_burn_usd and "
+                "balance_outstanding_to_transfer_usd are legacy field names "
+                "for Foundation receivables, transfers and booked balance. "
+                "They do not prove market buys or token burns. Explicit "
+                "Foundation fields are also published; Inc payable is separate."
             ),
         },
         "count": len(data),
         "data": data,
     }
-
-    with open(RAW_PATH, "wb") as f:
-        f.write(raw_bytes)
-
-    with open(JSON_PATH, "w", encoding="utf-8") as f:
-        json.dump(output, f, indent=2, ensure_ascii=False)
-        f.write("\n")
 
     epoch_raw_bytes, epoch_text = fetch_csv(
         EPOCH_SOURCE_CSV_URL,
@@ -528,6 +571,13 @@ def main():
         "data": epoch_schedule,
     }
 
+    # Validate BOTH source contracts before replacing any output. The workflow
+    # then publishes the three files together in its existing Git commit.
+    with open(RAW_PATH, "wb") as f:
+        f.write(raw_bytes)
+    with open(JSON_PATH, "w", encoding="utf-8") as f:
+        json.dump(output, f, indent=2, ensure_ascii=False)
+        f.write("\n")
     with open(EPOCH_JSON_PATH, "w", encoding="utf-8") as f:
         json.dump(
             epoch_output,

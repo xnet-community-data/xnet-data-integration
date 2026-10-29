@@ -5,8 +5,62 @@
     "human_url": "https://docs.google.com/spreadsheets/u/0/d/1NebqJ876SNlO4xPihfJWzsH-V0xzgeA-Qw8i5VcHDU4/htmlview?pli=1#gid=1205842263",
     "csv_url": "https://docs.google.com/spreadsheets/d/1NebqJ876SNlO4xPihfJWzsH-V0xzgeA-Qw8i5VcHDU4/export?format=csv&gid=1205842263",
     "raw_mirror_url": "https://raw.githubusercontent.com/xnet-community-data/xnet-data-integration/main/data/xnet_revenue_sheet_raw.csv",
-    "raw_csv_sha256": "e8efbbdc58b95802e75577e0f0053d33a68865d02570c245fdfbc640ec3c8025",
-    "revision_policy": "source_faithful_current_snapshot"
+    "raw_csv_sha256": "6fa6e6a5a8d544cfe1827b9987f948403981239ca0238e834863f55306a46758",
+    "revision_policy": "source_faithful_current_snapshot",
+    "schema_contract": "section_aware_foundation_v2",
+    "fetched_at_utc": "2026-10-29T00:35:12.751245Z",
+    "row_mapping": {
+      "gb_per_month": {
+        "section": "inc",
+        "source_label": "GB per month",
+        "csv_row": 2
+      },
+      "wifi_revenue_projected_usd": {
+        "section": "inc",
+        "source_label": "WiFi Revenue (Projected)",
+        "csv_row": 3
+      },
+      "blended_rate_per_gb_projected_usd": {
+        "section": "inc",
+        "source_label": "Blended Rate per GB (Projected)",
+        "csv_row": 4
+      },
+      "wifi_payment_received_usd": {
+        "section": "inc",
+        "source_label": "WiFi Payment (Received)",
+        "csv_row": 5
+      },
+      "wifi_payment_date": {
+        "section": "inc",
+        "source_label": "WiFi Payment Date",
+        "csv_row": 6
+      },
+      "total_emitted_tokens": {
+        "section": "foundation",
+        "source_label": "Total Emitted Tokens",
+        "csv_row": 12
+      },
+      "projected_buy_burn_usd": {
+        "section": "foundation",
+        "source_label": "Monthly Receivables from XNET",
+        "csv_row": 14
+      },
+      "transferred_to_buy_burn_usd": {
+        "section": "foundation",
+        "source_label": "Transferred to Foundation",
+        "csv_row": 15
+      },
+      "transferred_to_fiat_operators_usd": {
+        "section": "foundation",
+        "source_label": "Transferred to Fiat Operators",
+        "csv_row": 16
+      },
+      "balance_outstanding_to_transfer_usd": {
+        "section": "foundation",
+        "source_label": "Balance Due to Foundation",
+        "csv_row": 17
+      }
+    }
   },
   "notes": {
     "gb_per_month": "Revenue/billing GB from the XNET revenue sheet. It is distinct from daily network offload GB.",
@@ -14,8 +68,9 @@
     "historical_restatements": "This community analytics mirror is source-faithful: each refresh reflects the XNET team's currently published revenue sheet, including revisions to historical months. Prior values are not frozen when the source accounting is restated.",
     "brought_forward": "The non-calendar BFWD column remains available in the raw CSV but is excluded from monthly records.",
     "token_clearing_price": "Token Clearing Price is intentionally excluded from the normalized public feed.",
-    "transferred_to_fiat_operators_usd": "Normalized from the current 'Payment Sent to Fiat Operators' row or the equivalent 'Transferred to Fiat Operators' row. If both are present, the first matching source row is used; the duplicate route is not double-counted.",
-    "balance_outstanding_to_transfer_usd": "Normalized from the current 'Balance Due to Buy/Burn' source row or its historical 'Balance Outstanding to Transfer' label. The normalized field name is retained for schema continuity."
+    "transferred_to_fiat_operators_usd": "Foundation section's fiat-transfer posting; the Inc section's payment mirror is checked for equality, never counted twice.",
+    "balance_outstanding_to_transfer_usd": "Compatibility alias for the FOUNDATION section's booked balance, not the Inc section's payable or future-month cells.",
+    "foundation_ledger_compatibility": "projected_buy_burn_usd, transferred_to_buy_burn_usd and balance_outstanding_to_transfer_usd are legacy field names for Foundation receivables, transfers and booked balance. They do not prove market buys or token burns. Explicit Foundation fields are also published; Inc payable is separate."
   },
   "count": 28,
   "data": [
@@ -30,7 +85,12 @@
       "projected_buy_burn_usd": null,
       "transferred_to_buy_burn_usd": null,
       "transferred_to_fiat_operators_usd": null,
-      "balance_outstanding_to_transfer_usd": 0.0
+      "balance_outstanding_to_transfer_usd": 0.0,
+      "foundation_monthly_receivable_usd": null,
+      "transferred_to_foundation_usd": null,
+      "foundation_booked_balance_usd": 0.0,
+      "inc_payable_to_foundation_usd": 0.0,
+      "foundation_due_from_inc_usd": 0.0
     },
     {
       "month": "2024-10-01",
@@ -43,7 +103,12 @@
       "projected_buy_burn_usd": null,
       "transferred_to_buy_burn_usd": null,
       "transferred_to_fiat_operators_usd": null,
-      "balance_outstanding_to_transfer_usd": 0.0
+      "balance_outstanding_to_transfer_usd": 0.0,
+      "foundation_monthly_receivable_usd": null,
+      "transferred_to_foundation_usd": null,
+      "foundation_booked_balance_usd": 0.0,
+      "inc_payable_to_foundation_usd": 0.0,
+      "foundation_due_from_inc_usd": 0.0
     },
     {
       "month": "2024-11-01",
@@ -56,7 +121,12 @@
       "projected_buy_burn_usd": null,
       "transferred_to_buy_burn_usd": null,
       "transferred_to_fiat_operators_usd": null,
-      "balance_outstanding_to_transfer_usd": 0.0
+      "balance_outstanding_to_transfer_usd": 0.0,
+      "foundation_monthly_receivable_usd": null,
+      "transferred_to_foundation_usd": null,
+      "foundation_booked_balance_usd": 0.0,
+      "inc_payable_to_foundation_usd": 0.0,
+      "foundation_due_from_inc_usd": 0.0
     },
     {
       "month": "2024-12-01",
@@ -69,7 +139,12 @@
       "projected_buy_burn_usd": null,
       "transferred_to_buy_burn_usd": null,
       "transferred_to_fiat_operators_usd": null,
-      "balance_outstanding_to_transfer_usd": 0.0
+      "balance_outstanding_to_transfer_usd": 0.0,
+      "foundation_monthly_receivable_usd": null,
+      "transferred_to_foundation_usd": null,
+      "foundation_booked_balance_usd": 0.0,
+      "inc_payable_to_foundation_usd": 0.0,
+      "foundation_due_from_inc_usd": 0.0
     },
     {
       "month": "2025-01-01",
@@ -82,7 +157,12 @@
       "projected_buy_burn_usd": null,
       "transferred_to_buy_burn_usd": 1665.03,
       "transferred_to_fiat_operators_usd": null,
-      "balance_outstanding_to_transfer_usd": -1665.03
+      "balance_outstanding_to_transfer_usd": -1665.03,
+      "foundation_monthly_receivable_usd": null,
+      "transferred_to_foundation_usd": 1665.03,
+      "foundation_booked_balance_usd": -1665.03,
+      "inc_payable_to_foundation_usd": 0.0,
+      "foundation_due_from_inc_usd": 0.0
     },
     {
       "month": "2025-02-01",
@@ -95,7 +175,12 @@
       "projected_buy_burn_usd": 1665.03,
       "transferred_to_buy_burn_usd": null,
       "transferred_to_fiat_operators_usd": null,
-      "balance_outstanding_to_transfer_usd": 0.0
+      "balance_outstanding_to_transfer_usd": 0.0,
+      "foundation_monthly_receivable_usd": 1665.03,
+      "transferred_to_foundation_usd": null,
+      "foundation_booked_balance_usd": 0.0,
+      "inc_payable_to_foundation_usd": 868.13,
+      "foundation_due_from_inc_usd": 868.13
     },
     {
       "month": "2025-03-01",
@@ -108,7 +193,12 @@
       "projected_buy_burn_usd": 868.13,
       "transferred_to_buy_burn_usd": 1985.0,
       "transferred_to_fiat_operators_usd": null,
-      "balance_outstanding_to_transfer_usd": -1116.87
+      "balance_outstanding_to_transfer_usd": -1116.87,
+      "foundation_monthly_receivable_usd": 868.13,
+      "transferred_to_foundation_usd": 1985.0,
+      "foundation_booked_balance_usd": -1116.87,
+      "inc_payable_to_foundation_usd": 0.66,
+      "foundation_due_from_inc_usd": 0.66
     },
     {
       "month": "2025-04-01",
@@ -121,7 +211,12 @@
       "projected_buy_burn_usd": 1117.54,
       "transferred_to_buy_burn_usd": 1364.01,
       "transferred_to_fiat_operators_usd": null,
-      "balance_outstanding_to_transfer_usd": -1363.35
+      "balance_outstanding_to_transfer_usd": -1363.35,
+      "foundation_monthly_receivable_usd": 1117.54,
+      "transferred_to_foundation_usd": 1364.01,
+      "foundation_booked_balance_usd": -1363.35,
+      "inc_payable_to_foundation_usd": 0.0,
+      "foundation_due_from_inc_usd": 0.0
     },
     {
       "month": "2025-05-01",
@@ -134,7 +229,12 @@
       "projected_buy_burn_usd": 1363.34,
       "transferred_to_buy_burn_usd": null,
       "transferred_to_fiat_operators_usd": null,
-      "balance_outstanding_to_transfer_usd": 0.0
+      "balance_outstanding_to_transfer_usd": 0.0,
+      "foundation_monthly_receivable_usd": 1363.34,
+      "transferred_to_foundation_usd": null,
+      "foundation_booked_balance_usd": 0.0,
+      "inc_payable_to_foundation_usd": 1694.48,
+      "foundation_due_from_inc_usd": 1694.48
     },
     {
       "month": "2025-06-01",
@@ -147,7 +247,12 @@
       "projected_buy_burn_usd": 1694.48,
       "transferred_to_buy_burn_usd": null,
       "transferred_to_fiat_operators_usd": null,
-      "balance_outstanding_to_transfer_usd": 1694.48
+      "balance_outstanding_to_transfer_usd": 1694.48,
+      "foundation_monthly_receivable_usd": 1694.48,
+      "transferred_to_foundation_usd": null,
+      "foundation_booked_balance_usd": 1694.48,
+      "inc_payable_to_foundation_usd": 3725.81,
+      "foundation_due_from_inc_usd": 3725.81
     },
     {
       "month": "2025-07-01",
@@ -160,7 +265,12 @@
       "projected_buy_burn_usd": 2031.34,
       "transferred_to_buy_burn_usd": 3726.04,
       "transferred_to_fiat_operators_usd": null,
-      "balance_outstanding_to_transfer_usd": -0.23
+      "balance_outstanding_to_transfer_usd": -0.23,
+      "foundation_monthly_receivable_usd": 2031.34,
+      "transferred_to_foundation_usd": 3726.04,
+      "foundation_booked_balance_usd": -0.23,
+      "inc_payable_to_foundation_usd": 1866.36,
+      "foundation_due_from_inc_usd": 1866.36
     },
     {
       "month": "2025-08-01",
@@ -173,7 +283,12 @@
       "projected_buy_burn_usd": 1866.59,
       "transferred_to_buy_burn_usd": null,
       "transferred_to_fiat_operators_usd": null,
-      "balance_outstanding_to_transfer_usd": 1866.36
+      "balance_outstanding_to_transfer_usd": 1866.36,
+      "foundation_monthly_receivable_usd": 1866.59,
+      "transferred_to_foundation_usd": null,
+      "foundation_booked_balance_usd": 1866.36,
+      "inc_payable_to_foundation_usd": 1866.37,
+      "foundation_due_from_inc_usd": 1866.37
     },
     {
       "month": "2025-09-01",
@@ -186,7 +301,12 @@
       "projected_buy_burn_usd": 0.01,
       "transferred_to_buy_burn_usd": 7315.06,
       "transferred_to_fiat_operators_usd": null,
-      "balance_outstanding_to_transfer_usd": -5448.69
+      "balance_outstanding_to_transfer_usd": -5448.69,
+      "foundation_monthly_receivable_usd": 0.01,
+      "transferred_to_foundation_usd": 7315.06,
+      "foundation_booked_balance_usd": -5448.69,
+      "inc_payable_to_foundation_usd": -5.36,
+      "foundation_due_from_inc_usd": -5.36
     },
     {
       "month": "2025-10-01",
@@ -199,7 +319,12 @@
       "projected_buy_burn_usd": 5443.33,
       "transferred_to_buy_burn_usd": 3126.42,
       "transferred_to_fiat_operators_usd": null,
-      "balance_outstanding_to_transfer_usd": -3131.78
+      "balance_outstanding_to_transfer_usd": -3131.78,
+      "foundation_monthly_receivable_usd": 5443.33,
+      "transferred_to_foundation_usd": 3126.42,
+      "foundation_booked_balance_usd": -3131.78,
+      "inc_payable_to_foundation_usd": -134.13,
+      "foundation_due_from_inc_usd": -134.13
     },
     {
       "month": "2025-11-01",
@@ -212,7 +337,12 @@
       "projected_buy_burn_usd": 2997.66,
       "transferred_to_buy_burn_usd": null,
       "transferred_to_fiat_operators_usd": null,
-      "balance_outstanding_to_transfer_usd": -134.13
+      "balance_outstanding_to_transfer_usd": -134.13,
+      "foundation_monthly_receivable_usd": 2997.66,
+      "transferred_to_foundation_usd": null,
+      "foundation_booked_balance_usd": -134.13,
+      "inc_payable_to_foundation_usd": 4162.65,
+      "foundation_due_from_inc_usd": 4162.65
     },
     {
       "month": "2025-12-01",
@@ -225,7 +355,12 @@
       "projected_buy_burn_usd": 4296.78,
       "transferred_to_buy_burn_usd": 4300.09,
       "transferred_to_fiat_operators_usd": null,
-      "balance_outstanding_to_transfer_usd": -137.44
+      "balance_outstanding_to_transfer_usd": -137.44,
+      "foundation_monthly_receivable_usd": 4296.78,
+      "transferred_to_foundation_usd": 4300.09,
+      "foundation_booked_balance_usd": -137.44,
+      "inc_payable_to_foundation_usd": 5840.64,
+      "foundation_due_from_inc_usd": 5840.64
     },
     {
       "month": "2026-01-01",
@@ -238,7 +373,12 @@
       "projected_buy_burn_usd": 5978.08,
       "transferred_to_buy_burn_usd": null,
       "transferred_to_fiat_operators_usd": null,
-      "balance_outstanding_to_transfer_usd": 5840.64
+      "balance_outstanding_to_transfer_usd": 5840.64,
+      "foundation_monthly_receivable_usd": 5978.08,
+      "transferred_to_foundation_usd": null,
+      "foundation_booked_balance_usd": 5840.64,
+      "inc_payable_to_foundation_usd": 9863.69,
+      "foundation_due_from_inc_usd": 9863.69
     },
     {
       "month": "2026-02-01",
@@ -251,7 +391,12 @@
       "projected_buy_burn_usd": 4023.05,
       "transferred_to_buy_burn_usd": 6000.0,
       "transferred_to_fiat_operators_usd": null,
-      "balance_outstanding_to_transfer_usd": 3863.69
+      "balance_outstanding_to_transfer_usd": 3863.69,
+      "foundation_monthly_receivable_usd": 4023.05,
+      "transferred_to_foundation_usd": 6000.0,
+      "foundation_booked_balance_usd": 3863.69,
+      "inc_payable_to_foundation_usd": 10156.03,
+      "foundation_due_from_inc_usd": 10156.03
     },
     {
       "month": "2026-03-01",
@@ -264,7 +409,12 @@
       "projected_buy_burn_usd": 6292.34,
       "transferred_to_buy_burn_usd": null,
       "transferred_to_fiat_operators_usd": null,
-      "balance_outstanding_to_transfer_usd": 10156.03
+      "balance_outstanding_to_transfer_usd": 10156.03,
+      "foundation_monthly_receivable_usd": 6292.34,
+      "transferred_to_foundation_usd": null,
+      "foundation_booked_balance_usd": 10156.03,
+      "inc_payable_to_foundation_usd": 23176.53,
+      "foundation_due_from_inc_usd": 23176.53
     },
     {
       "month": "2026-04-01",
@@ -277,7 +427,12 @@
       "projected_buy_burn_usd": 13020.5,
       "transferred_to_buy_burn_usd": 10962.03,
       "transferred_to_fiat_operators_usd": null,
-      "balance_outstanding_to_transfer_usd": 12214.5
+      "balance_outstanding_to_transfer_usd": 12214.5,
+      "foundation_monthly_receivable_usd": 13020.5,
+      "transferred_to_foundation_usd": 10962.03,
+      "foundation_booked_balance_usd": 12214.5,
+      "inc_payable_to_foundation_usd": 21747.11,
+      "foundation_due_from_inc_usd": 21747.11
     },
     {
       "month": "2026-05-01",
@@ -290,7 +445,12 @@
       "projected_buy_burn_usd": 9532.61,
       "transferred_to_buy_burn_usd": 11899.0,
       "transferred_to_fiat_operators_usd": null,
-      "balance_outstanding_to_transfer_usd": 9848.11
+      "balance_outstanding_to_transfer_usd": 9848.11,
+      "foundation_monthly_receivable_usd": 9532.61,
+      "transferred_to_foundation_usd": 11899.0,
+      "foundation_booked_balance_usd": 9848.11,
+      "inc_payable_to_foundation_usd": 21848.11,
+      "foundation_due_from_inc_usd": 21848.11
     },
     {
       "month": "2026-06-01",
@@ -303,7 +463,12 @@
       "projected_buy_burn_usd": 12000.0,
       "transferred_to_buy_burn_usd": null,
       "transferred_to_fiat_operators_usd": null,
-      "balance_outstanding_to_transfer_usd": 21848.11
+      "balance_outstanding_to_transfer_usd": 21848.11,
+      "foundation_monthly_receivable_usd": 12000.0,
+      "transferred_to_foundation_usd": null,
+      "foundation_booked_balance_usd": 21848.11,
+      "inc_payable_to_foundation_usd": 33848.11,
+      "foundation_due_from_inc_usd": 33848.11
     },
     {
       "month": "2026-07-01",
@@ -316,7 +481,12 @@
       "projected_buy_burn_usd": 12000.0,
       "transferred_to_buy_burn_usd": 12000.0,
       "transferred_to_fiat_operators_usd": null,
-      "balance_outstanding_to_transfer_usd": 21848.11
+      "balance_outstanding_to_transfer_usd": 21848.11,
+      "foundation_monthly_receivable_usd": 12000.0,
+      "transferred_to_foundation_usd": 12000.0,
+      "foundation_booked_balance_usd": 21848.11,
+      "inc_payable_to_foundation_usd": 33848.11,
+      "foundation_due_from_inc_usd": 33848.11
     },
     {
       "month": "2026-08-01",
@@ -329,7 +499,12 @@
       "projected_buy_burn_usd": 12000.0,
       "transferred_to_buy_burn_usd": 8991.0,
       "transferred_to_fiat_operators_usd": null,
-      "balance_outstanding_to_transfer_usd": 24857.11
+      "balance_outstanding_to_transfer_usd": 24857.11,
+      "foundation_monthly_receivable_usd": 12000.0,
+      "transferred_to_foundation_usd": 8991.0,
+      "foundation_booked_balance_usd": 24857.11,
+      "inc_payable_to_foundation_usd": 36857.11,
+      "foundation_due_from_inc_usd": 36857.11
     },
     {
       "month": "2026-09-01",
@@ -342,20 +517,30 @@
       "projected_buy_burn_usd": 12000.0,
       "transferred_to_buy_burn_usd": null,
       "transferred_to_fiat_operators_usd": null,
-      "balance_outstanding_to_transfer_usd": 36857.11
+      "balance_outstanding_to_transfer_usd": 36857.11,
+      "foundation_monthly_receivable_usd": 12000.0,
+      "transferred_to_foundation_usd": null,
+      "foundation_booked_balance_usd": 36857.11,
+      "inc_payable_to_foundation_usd": 63808.23,
+      "foundation_due_from_inc_usd": 63808.23
     },
     {
       "month": "2026-10-01",
       "gb_per_month": null,
       "wifi_revenue_projected_usd": null,
       "blended_rate_per_gb_projected_usd": null,
-      "wifi_payment_received_usd": null,
-      "wifi_payment_date": null,
+      "wifi_payment_received_usd": 32643.19,
+      "wifi_payment_date": "2026-10-26",
       "total_emitted_tokens": 5535714.0,
       "projected_buy_burn_usd": 26951.13,
       "transferred_to_buy_burn_usd": 23985.0,
       "transferred_to_fiat_operators_usd": 1108.18,
-      "balance_outstanding_to_transfer_usd": 38715.05
+      "balance_outstanding_to_transfer_usd": 38715.05,
+      "foundation_monthly_receivable_usd": 26951.13,
+      "transferred_to_foundation_usd": 23985.0,
+      "foundation_booked_balance_usd": 38715.05,
+      "inc_payable_to_foundation_usd": 64829.61,
+      "foundation_due_from_inc_usd": 64829.61
     },
     {
       "month": "2026-11-01",
@@ -365,10 +550,15 @@
       "wifi_payment_received_usd": null,
       "wifi_payment_date": null,
       "total_emitted_tokens": 5357143.0,
-      "projected_buy_burn_usd": null,
+      "projected_buy_burn_usd": 26114.55,
       "transferred_to_buy_burn_usd": null,
       "transferred_to_fiat_operators_usd": null,
-      "balance_outstanding_to_transfer_usd": 38715.05
+      "balance_outstanding_to_transfer_usd": 64829.61,
+      "foundation_monthly_receivable_usd": 26114.55,
+      "transferred_to_foundation_usd": null,
+      "foundation_booked_balance_usd": 64829.61,
+      "inc_payable_to_foundation_usd": 64829.61,
+      "foundation_due_from_inc_usd": 64829.61
     },
     {
       "month": "2026-12-01",
@@ -381,7 +571,12 @@
       "projected_buy_burn_usd": null,
       "transferred_to_buy_burn_usd": null,
       "transferred_to_fiat_operators_usd": null,
-      "balance_outstanding_to_transfer_usd": 38715.05
+      "balance_outstanding_to_transfer_usd": 64829.61,
+      "foundation_monthly_receivable_usd": null,
+      "transferred_to_foundation_usd": null,
+      "foundation_booked_balance_usd": 64829.61,
+      "inc_payable_to_foundation_usd": 64829.61,
+      "foundation_due_from_inc_usd": 64829.61
     }
   ]
 }

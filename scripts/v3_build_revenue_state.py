@@ -219,6 +219,8 @@ latest_balance = max(
     balance_rows,
     key=lambda r: r["month"],
 )
+inc_balance_rows = [r for r in eligible if r.get("inc_payable_to_foundation_usd") is not None]
+latest_inc_balance = max(inc_balance_rows, key=lambda r: r["month"]) if inc_balance_rows else None
 
 
 # --------------------------------------------------
@@ -525,6 +527,9 @@ state = {
                 "mode",
                 "source_faithful_restatement"
             ),
+        "schema_contract": monthly.get("source", {}).get("schema_contract"),
+        "sheet_fetched_at_utc": monthly.get("source", {}).get("fetched_at_utc"),
+        "sheet_sha256": monthly.get("source", {}).get("raw_csv_sha256"),
     },
 
     "latest_service": {
@@ -596,6 +601,7 @@ state = {
     },
 
     "latest_bbb_transfer": {
+        "accounting_basis": "Compatibility name: source-recorded Foundation transfer, not a DEX buy or token burn",
         "source_month":
             (
                 latest_bbb_transfer[
@@ -713,6 +719,20 @@ state = {
                     "balance_outstanding_to_transfer_usd"
                 ]
             ),
+        "accounting_basis": "Foundation booked balance in current-or-earlier source month; not Inc payable or wallet cash",
+    },
+
+    "foundation_accounting": {
+        "source_month": latest_balance["month"],
+        "booked_balance_usd": dec(latest_balance["balance_outstanding_to_transfer_usd"]),
+        "inc_payable_source_month": latest_inc_balance["month"] if latest_inc_balance else None,
+        "inc_payable_usd": dec(latest_inc_balance["inc_payable_to_foundation_usd"]) if latest_inc_balance else None,
+        "due_from_inc_usd": dec(latest_inc_balance.get("foundation_due_from_inc_usd")) if latest_inc_balance else None,
+        "cumulative_receivables_usd": dec(cumulative_projected_bbb),
+        "cumulative_transfers_usd": dec(cumulative_bbb_transfers),
+        "latest_transfer_source_month": latest_bbb_transfer["month"] if latest_bbb_transfer else None,
+        "latest_transfer_usd": dec(latest_bbb_transfer["transferred_to_buy_burn_usd"]) if latest_bbb_transfer else None,
+        "legacy_field_names": "BBB-named funding fields are compatibility aliases, not on-chain purchases/burns",
     },
 
     "cumulative_source_sheet": {
@@ -1007,7 +1027,7 @@ print(
 )
 
 print(
-    "Latest BBB transfer: $",
+    "Latest Foundation transfer: $",
     state[
         "latest_bbb_transfer"
     ][

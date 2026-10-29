@@ -128,9 +128,9 @@ specs = [
      "Latest carrier WiFi payment received.",
      2, "$", None, None),
 
-    ("outstanding", "Balance Outstanding to Transfer",
+    ("outstanding", "Foundation Booked Balance",
      "balance_outstanding_to_transfer_usd",
-     "Balance outstanding to transfer from the XNET revenue sheet. The sheet is updated manually, so this figure can lag actual transfers.",
+      "Foundation-ledger booked balance, distinct from XNET Inc.'s payable and actual wallet cash.",
      2, "$", None, None),
 
     ("bbb_daily_rate", "BBB Daily Rate", "bbb_daily_rate_usd",
@@ -141,9 +141,9 @@ specs = [
      "Total verified XNET burned through Buy & Burn.",
      0, None, " XNET", None),
 
-    ("bbb_transfers", "Transferred to Buy & Burn",
+    ("bbb_transfers", "Transferred to Foundation",
      "cumulative_bbb_transfers_usd",
-     "Total USD transferred to Buy & Burn.",
+     "Source-recorded Foundation transfers, not proof of market buys or token burns.",
      2, "$", None, None),
 
     ("bbb_wallet_balance", "Buy & Burn Wallet Balance",

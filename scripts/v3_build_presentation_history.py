@@ -299,6 +299,10 @@ for month in commercial_months:
                 float(transferred_bbb)
                 if transferred_bbb is not None
                 else None,
+            "foundation_monthly_receivable_usd": src.get("foundation_monthly_receivable_usd"),
+            "transferred_to_foundation_usd": src.get("transferred_to_foundation_usd"),
+            "foundation_booked_balance_usd": src.get("foundation_booked_balance_usd"),
+            "inc_payable_to_foundation_usd": src.get("inc_payable_to_foundation_usd"),
             "fiat_operator_payout_usd":
                 float(fiat_operator_payout)
                 if fiat_operator_payout is not None

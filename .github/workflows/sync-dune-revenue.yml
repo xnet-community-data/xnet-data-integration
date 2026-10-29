@@ -50,6 +50,25 @@ jobs:
           python scripts/v3_hydrate_live_state.py
       - name: Build Dune revenue state from the published feed
         run: python scripts/v3_build_revenue_state.py
+      - name: Queue affected charts when accepted source contents change
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          journal = Path("data/current/v3_refresh_state.json")
+          state = json.loads(journal.read_text())
+          source = json.loads(Path("data/current/xnet_revenue_state.json").read_text())["source"]
+          digest = source.get("sheet_sha256")
+          previous = state.get("external_sources", {}).get("revenue", {})
+          if digest and digest != previous.get("source_sha256"):
+              state["forced_presentations"] = sorted(set(state.get("forced_presentations", [])) | {"current", "commercial"})
+          if digest:
+              state.setdefault("external_sources", {})["revenue"] = {
+                  "source_sha256": digest,
+                  "source_fetched_at_utc": source.get("sheet_fetched_at_utc"),
+              }
+          journal.write_text(json.dumps(state, indent=2) + "\n")
+          PY
       - name: Rebuild atomic LiveFetch bundle
         run: python scripts/v3_build_live_bundle.py
       - name: Publish Dune revenue state

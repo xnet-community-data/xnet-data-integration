@@ -122,7 +122,17 @@ def evaluate(state, config, quality, now, *, external=None):
             if not healthy:
                 problems.append(f"Independent {key} observation is missing or overdue ({at})")
             domains["external_"+key] = {"status":"healthy" if healthy else "stalled",
-                "accepted_coverage_or_refresh_utc":at,"age_seconds":age,"maximum_delay_seconds":maximum}
+                 "accepted_coverage_or_refresh_utc":at,"age_seconds":age,"maximum_delay_seconds":maximum}
+        revenue_source = external.get("revenue", {}).get("source", {})
+        if revenue_source.get("schema_contract") == "section_aware_foundation_v2":
+            at = revenue_source.get("sheet_fetched_at_utc")
+            observed = instant(at)
+            age = (now-observed).total_seconds() if observed else None
+            healthy = age is not None and -300 <= age <= 48*3600
+            if not healthy:
+                problems.append(f"Revenue sheet ingestion is missing or overdue ({at}); rebuilding old data is not a fresh import")
+            domains["revenue_sheet_ingestion"] = {"status":"healthy" if healthy else "stalled",
+                "accepted_coverage_or_refresh_utc":at,"age_seconds":age,"maximum_delay_seconds":48*3600}
     return {"schema_version":1,"checked_at_utc":now.isoformat().replace("+00:00","Z"),
             "status":"unhealthy" if problems else "healthy", "problems":problems,
             "warnings":warnings,"domains":domains,

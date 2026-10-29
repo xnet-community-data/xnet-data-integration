@@ -99,6 +99,15 @@ class WatchdogTests(unittest.TestCase):
         self.assertEqual(self.check(external=ext)["status"],"healthy")
         ext["market"]["fetched_at_utc"]=at(8)
         self.assertEqual(self.check(external=ext)["status"],"unhealthy")
+    def test_fresh_rebuild_cannot_hide_a_stale_revenue_sheet_import(self):
+        ext={"market":{"fetched_at_utc":at()},"network":{"collected_at_utc":at()},
+             "revenue":{"generated_at_utc":at(),"source":{"schema_contract":"section_aware_foundation_v2",
+                                                            "sheet_fetched_at_utc":at(49)}}}
+        report=self.check(external=ext)
+        self.assertEqual(report["status"],"unhealthy")
+        self.assertTrue(any("sheet ingestion" in p for p in report["problems"]))
+        ext["revenue"]["source"]["sheet_fetched_at_utc"]=at(24)
+        self.assertEqual(self.check(external=ext)["status"],"healthy")
     def test_future_or_missing_collector_clocks_fail(self):
         for value in (None,"not-a-time",at(-1)):
             s,_,_=fixture();s["queries"]["xnet_transfers"]["completed_at_utc"]=value

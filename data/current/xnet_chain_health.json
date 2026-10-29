@@ -1,7 +1,15 @@
 {
   "automatic_retry": true,
   "cadence_minutes": 120,
-  "degraded_sources": {},
+  "degraded_sources": {
+    "xnet_transfers": {
+      "consecutive_failures": 1,
+      "error": "Execution 01M630T2TB6B22H58KXQPGF8Z2 cancellation confirmed; replacement deferred to a later scheduled run.",
+      "failed_at_utc": "2026-10-29T05:08:14Z",
+      "next_retry_at_utc": "2026-10-29T05:38:14.976237Z",
+      "unresolved_execution": false
+    }
+  },
   "error": "Collection recovered; source event timestamps remain explicit and standing Dune spending remains held",
   "holder_snapshot_completed_at_utc": "2026-10-29T04:10:06Z",
   "last_refresh_completed_utc": "2026-10-29T02:24:38Z",
@@ -31,8 +39,8 @@
     ],
     "last_weekly_manifest_utc": "2026-10-27T16:06:07Z",
     "manifest_decision": "aggregate_match_advisory_only",
-    "manifest_deferred_at_utc": "2026-10-27T21:55:15Z",
-    "manifest_deferred_reason": "Pending source recovery: current",
+    "manifest_deferred_at_utc": "2026-10-29T05:08:15Z",
+    "manifest_deferred_reason": "Primary transfer collector is degraded; preserve credits until hot-path recovery.",
     "manifest_identity_verified": false,
     "pending_mismatch_days": [],
     "presentation_invalidated_at_utc": "2026-10-14T23:02:18Z"
@@ -2954,5 +2962,5 @@
       }
     }
   },
-  "status": "HEALTHY"
+  "status": "DEGRADED"
 }

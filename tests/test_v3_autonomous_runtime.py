@@ -1,5 +1,5 @@
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import hashlib
 import importlib.util
 import json
@@ -107,6 +107,47 @@ class AutonomousRuntimeTests(unittest.TestCase):
                 refresh.execute({"key":"xnet_transfers","query_id":8894037},state=self.state)
         quote.assert_not_called();api.assert_not_called()
         self.assertNotIn("standing_credit_budget",self.state)
+
+    def test_deadline_risk_precedes_forced_daily_work_after_a_cron_gap(self):
+        specs=deepcopy(refresh.CONFIG["presentation"])
+        for spec in specs:
+            key=spec["key"]
+            # Reproduce the production gap: all charts were last refreshed just
+            # under six hours ago, but only five can be attempted in this run.
+            at=(NOW-timedelta(hours=5,minutes=40)).isoformat()
+            self.state["queries"][key]={"completed_at_utc":at}
+            self.state.setdefault("presentation_last_attempts",{})[key]=at
+        config={**refresh.CONFIG,"sources":[],"presentation":specs,"reconciliation":None}
+        self.state["forced_presentations"]=["commercial"]
+        frozen=deepcopy(self.state)
+        with patch.object(refresh,"CONFIG",config):
+            ordered=sorted(specs,key=lambda s:refresh.presentation_priority(self.state,s,{"commercial"}))
+        self.assertEqual(set(s["key"] for s in ordered[:5]),{"current","burns","tokenomics","holders","pools"})
+        self.assertEqual(self.state,frozen)  # sorting never edits clocks/finances
+
+    def test_safe_charts_keep_source_invalidation_and_attempt_rotation(self):
+        specs=deepcopy(refresh.CONFIG["presentation"][:3])
+        for index,spec in enumerate(specs):
+            self.state["queries"][spec["key"]]={"completed_at_utc":(NOW-timedelta(hours=2)).isoformat()}
+            self.state.setdefault("presentation_last_attempts",{})[spec["key"]]=(NOW-timedelta(minutes=index)).isoformat()
+        ordered=sorted(specs,key=lambda s:refresh.presentation_priority(self.state,s,{specs[0]["key"]}))
+        self.assertEqual([s["key"] for s in ordered],[specs[i]["key"] for i in (0,2,1)])
+
+    def test_deadline_priority_respects_budget_cadence_multiplier(self):
+        self.state["standing_credit_budget"]={"last_decision":{"cadence_multiplier":4}}
+        spec=next(s for s in refresh.CONFIG["presentation"] if s["key"]=="holders")
+        self.state["queries"]["holders"]={"completed_at_utc":(NOW-timedelta(hours=6)).isoformat()}
+        self.assertTrue(refresh.presentation_priority(self.state,spec,set())[0])  # 16h limit, not 6h
+        self.state["queries"]["holders"]["completed_at_utc"]=(NOW-timedelta(hours=15)).isoformat()
+        self.assertFalse(refresh.presentation_priority(self.state,spec,set())[0])
+
+    def test_urgent_failed_charts_still_rotate_by_last_attempt(self):
+        specs=deepcopy(refresh.CONFIG["presentation"][:2])
+        for index,spec in enumerate(specs):
+            self.state["queries"][spec["key"]]={"completed_at_utc":(NOW-timedelta(hours=8)).isoformat()}
+            self.state.setdefault("presentation_last_attempts",{})[spec["key"]]=(NOW-timedelta(minutes=index)).isoformat()
+        ordered=sorted(specs,key=lambda s:refresh.presentation_priority(self.state,s,set()))
+        self.assertEqual(ordered,[specs[1],specs[0]])
 
     def test_full_result_cache_denies_read_before_any_new_reservation(self):
         from v3_result_cache import ExportRetryDeferred

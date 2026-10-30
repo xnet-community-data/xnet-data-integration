@@ -25,6 +25,14 @@ def instant(value):
         return None
 
 
+def maximum_delay_seconds(spec, config, multiplier):
+    """Accepted-source freshness limit, also used to prioritize due charts."""
+    cadence = int(spec.get("cadence_minutes", config.get("chain_cadence_minutes", 120)))
+    if spec["key"] not in {"bbb_dex", "network", "commercial"}:
+        cadence *= multiplier
+    return max(6 * 3600, cadence * 60 * 2)
+
+
 def evaluate(state, config, quality, now, *, external=None):
     problems, warnings, domains = [], [], {}
     if state.get("paused"):
@@ -63,9 +71,7 @@ def evaluate(state, config, quality, now, *, external=None):
         cadence = int(spec.get("cadence_minutes", config.get("chain_cadence_minutes",120)))
         if cadence <= 0:
             problems.append(f"{key}: configured cadence must be positive")
-        if key not in {"bbb_dex","network","commercial"}:
-            cadence *= multiplier
-        maximum = max(6 * 3600, cadence * 60 * 2)
+        maximum = maximum_delay_seconds(spec, config, multiplier)
         age = (now-observed).total_seconds() if observed else None
         status = "healthy"
         if age is None or age < -300 or age > maximum:

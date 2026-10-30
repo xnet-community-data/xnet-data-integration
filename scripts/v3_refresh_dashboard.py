@@ -712,6 +712,27 @@ def presentation_in_backoff(state, key):
     return bool(until and now() < datetime.fromisoformat(until.replace("Z", "+00:00")))
 
 
+def presentation_priority(state, spec, forced):
+    from v3_autonomy_watchdog import maximum_delay_seconds
+    key = spec["key"]
+    maximum = maximum_delay_seconds(spec, CONFIG, cadence_multiplier(state, key))
+    # After a cron gap, daily/invalidated charts must not displace a chart
+    # that will cross the watchdog deadline before another collection cycle.
+    last = state.get("queries", {}).get(key, {}).get("completed_at_utc")
+    try:
+        age = (now() - parse_instant(last, "accepted presentation")).total_seconds()
+        urgent = age >= maximum - int(CONFIG.get("chain_cadence_minutes", 120)) * 60
+    except (BudgetInputError, TypeError, ValueError):
+        urgent = True
+    at = state.get("presentation_last_attempts", {}).get(key)
+    try:
+        oldest = parse_instant(at, "presentation attempt").timestamp() if at else float("-inf")
+    except BudgetInputError:
+        oldest = float("-inf")
+    # Retain attempt rotation within priority classes, including failures.
+    return (not urgent, key not in forced, oldest)
+
+
 def reconciliation_generation_due(state):
     configured = int(CONFIG.get("reconciliation_generation", 0))
     completed = int(state.get("reconciliation", {}).get("generation", 0))
@@ -2045,17 +2066,9 @@ def main():
         # exempt so existing execution IDs are always reconciled first.
         due_presentation = [s for s in due_presentation if not presentation_in_backoff(state, s["key"])]
         # A perpetually failing early chart must not starve later daily charts.
-        # Keep source-invalidated charts first, but rotate attempts within each
-        # priority class rather than sorting forever by configuration position.
-        attempts = state.setdefault("presentation_last_attempts", {})
-        def attempt_order(spec):
-            at = attempts.get(spec["key"])
-            try:
-                oldest = parse_instant(at, "presentation attempt").timestamp() if at else float("-inf")
-            except BudgetInputError:
-                oldest = float("-inf")
-            return (spec["key"] not in forced, oldest)
-        due_presentation.sort(key=attempt_order)
+        # Prioritize deadline risk, then source invalidation, rotating attempts
+        # within each class rather than using configuration position forever.
+        due_presentation.sort(key=lambda spec: presentation_priority(state, spec, forced))
         if billing is None:
             due_presentation = [s for s in due_presentation
                                 if state.get("pending_executions", {}).get(s["key"], {}).get("execution_id")]

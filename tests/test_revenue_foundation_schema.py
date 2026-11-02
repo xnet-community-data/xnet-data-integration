@@ -21,6 +21,7 @@ import sync_revenue as source
 FIXTURES = ROOT / "tests/fixtures"
 LEGACY = (FIXTURES / "revenue_sheet_legacy_20261026.csv").read_text()
 CURRENT = (FIXTURES / "revenue_sheet_foundation_20261029.csv").read_text()
+ONE_SIDED = (FIXTURES / "revenue_sheet_one_sided_20261102.csv").read_text()
 EPOCH = (FIXTURES / "epoch_summary_20261029.csv").read_text()
 
 
@@ -32,6 +33,71 @@ def edit(text, function):
 
 
 class FoundationSchemaTests(unittest.TestCase):
+    def test_one_sided_official_postings_are_retained_but_not_mirror_confirmed(self):
+        row = next(r for r in source.parse_revenue(ONE_SIDED)[0] if r["month"] == "2026-11-01")
+        self.assertEqual(row["transferred_to_foundation_usd"], 22500)
+        self.assertEqual(row["transferred_to_fiat_operators_usd"], 3308.75)
+        self.assertEqual(row["foundation_booked_balance_usd"], 39020.86)
+        self.assertEqual(row["inc_payable_to_foundation_usd"], 64829.61)
+        self.assertEqual(len(row["unconfirmed_ledger_mirrors"]), 2)
+        for flag in row["unconfirmed_ledger_mirrors"]:
+            self.assertEqual(flag["status"], "unconfirmed")
+            self.assertEqual(flag["missing_section"], "inc")
+            self.assertIsNone(flag["inc_usd"])
+    def test_inc_only_posting_is_not_copied_into_a_blank_foundation_cell(self):
+        def reverse(rows):
+            col = rows[0].index("Nov 2026")
+            for r in rows:
+                if len(r)>1 and r[1].strip()=="Payment Sent to Foundation":r[col]="$22,500"
+                if len(r)>1 and r[1].strip()=="Transferred to Foundation":r[col]=""
+        row = next(r for r in source.parse_revenue(edit(ONE_SIDED, reverse))[0] if r["month"]=="2026-11-01")
+        self.assertIsNone(row["transferred_to_foundation_usd"])
+        flag = next(f for f in row["unconfirmed_ledger_mirrors"] if f["comparison"]=="Foundation transfer mirrors")
+        self.assertEqual(flag["inc_usd"],22500)
+        self.assertIsNone(flag["foundation_usd"])
+        self.assertEqual(flag["missing_section"],"foundation")
+    def test_explicit_zero_is_not_a_blank_and_cannot_hide_a_conflict(self):
+        def zero(rows):
+            row = next(r for r in rows if len(r)>1 and r[1].strip()=="Payment Sent to Foundation")
+            row[rows[0].index("Nov 2026")]="0"
+        with self.assertRaisesRegex(RuntimeError,"Conflicting Foundation transfer mirrors"):
+            source.parse_revenue(edit(ONE_SIDED,zero))
+    def test_zero_with_a_blank_mirror_remains_an_unconfirmed_zero(self):
+        def zero(rows):
+            row = next(r for r in rows if len(r)>1 and r[1].strip()=="Transferred to Foundation")
+            row[rows[0].index("Nov 2026")]="0"
+        row = next(r for r in source.parse_revenue(edit(ONE_SIDED,zero))[0] if r["month"]=="2026-11-01")
+        self.assertEqual(row["transferred_to_foundation_usd"],0)
+        self.assertEqual(row["unconfirmed_ledger_mirrors"][0]["foundation_usd"],0)
+        self.assertIsNone(row["unconfirmed_ledger_mirrors"][0]["inc_usd"])
+    def test_equal_and_both_blank_mirrors_are_not_flagged(self):
+        for row in source.parse_revenue(CURRENT)[0]:self.assertEqual(row["unconfirmed_ledger_mirrors"],[])
+    def test_missing_optional_inc_row_is_unconfirmed_not_an_invented_counterpart(self):
+        def remove(rows):
+            rows[:] = [r for r in rows if not (len(r)>1 and r[1].strip()=="Payment Sent to Foundation")]
+        row = next(r for r in source.parse_revenue(edit(ONE_SIDED,remove))[0] if r["month"]=="2026-11-01")
+        self.assertEqual(row["transferred_to_foundation_usd"],22500)
+        self.assertIsNone(row["unconfirmed_ledger_mirrors"][0]["inc_usd"])
+    def test_blank_inc_payable_is_not_filled_from_foundation_due_from(self):
+        def blank(rows):
+            row = next(r for r in rows if len(r)>1 and r[1].strip()=="Balance Due to Foundation")
+            row[rows[0].index("Nov 2026")]=""
+        row = next(r for r in source.parse_revenue(edit(ONE_SIDED,blank))[0] if r["month"]=="2026-11-01")
+        self.assertIsNone(row["inc_payable_to_foundation_usd"])
+        self.assertEqual(row["foundation_due_from_inc_usd"],64829.61)
+        self.assertEqual(row["unconfirmed_ledger_mirrors"][0]["comparison"],"Inc payable / Foundation due-from")
+    def test_one_sided_import_warns_without_dropping_values_or_advancing_a_false_mirror(self):
+        with tempfile.TemporaryDirectory() as directory:
+            paths=[Path(directory)/name for name in ("raw.csv","monthly.json","epoch.json")]
+            captured=io.StringIO()
+            with patch.object(source,"RAW_PATH",paths[0]),patch.object(source,"JSON_PATH",paths[1]), \
+                 patch.object(source,"EPOCH_JSON_PATH",paths[2]),patch.object(source,"fetch_csv",side_effect=[
+                     (ONE_SIDED.encode(),ONE_SIDED),(EPOCH.encode(),EPOCH)]),redirect_stdout(captured):source.main()
+            self.assertIn("retaining the source posting as unconfirmed",captured.getvalue())
+            row=next(r for r in json.loads(paths[1].read_text())["data"] if r["month"]=="2026-11-01")
+            self.assertEqual(len(row["unconfirmed_ledger_mirrors"]),2)
+            self.assertEqual(row["transferred_to_foundation_usd"],22500)
+            self.assertIsNone(row["unconfirmed_ledger_mirrors"][0]["inc_usd"])
     def test_new_labels_preserve_two_different_october_balances(self):
         rows, mapping = source.parse_revenue(CURRENT)
         row = next(r for r in rows if r["month"] == "2026-10-01")
@@ -124,6 +190,34 @@ class FoundationSchemaTests(unittest.TestCase):
             self.assertEqual(paths[0].read_bytes(),CURRENT.encode())
             self.assertIn("do not prove market buys or token burns",result["notes"]["foundation_ledger_compatibility"])
     def test_offline_source_to_settlement_to_live_bundle(self):
+        revenue, defi, bundle = self.build_pipeline(CURRENT, 10, 29)
+        self.assertEqual(revenue["latest_payment"]["payment_date"],"2026-10-26")
+        self.assertEqual(revenue["latest_payment"]["amount_usd"],"32643.19")
+        self.assertEqual(revenue["foundation_accounting"]["booked_balance_usd"],"38715.05")
+        self.assertEqual(revenue["foundation_accounting"]["inc_payable_usd"],"64829.61")
+        self.assertEqual(revenue["latest_fiat_operator_transfer"]["service_month"],"2026-07")
+        receipt=next(r for r in defi["settlements"] if r["payment_received_date"]=="2026-10-26")
+        self.assertEqual(receipt["service_months"][0]["service_month"],"2026-08")
+        self.assertEqual(revenue["cumulative_source_sheet"]["wifi_payments_received_usd"],"204070.59")
+        self.assertEqual(bundle["revenue"],revenue)
+
+    def test_one_sided_source_to_published_bundle_preserves_accounting_and_flags(self):
+        revenue, defi, bundle = self.build_pipeline(ONE_SIDED, 11, 2)
+        self.assertEqual(revenue["foundation_accounting"]["booked_balance_usd"],"39020.86")
+        self.assertEqual(revenue["foundation_accounting"]["inc_payable_usd"],"64829.61")
+        self.assertEqual(revenue["foundation_accounting"]["latest_transfer_usd"],"22500.0")
+        self.assertEqual(revenue["foundation_accounting"]["cumulative_transfers_usd"],"119818.68")
+        self.assertEqual(revenue["latest_fiat_operator_transfer"]["operator_payout_usd"],"3308.75")
+        self.assertEqual(revenue["latest_fiat_operator_transfer"]["service_month"],"2026-08")
+        self.assertEqual(revenue["latest_payment"]["amount_usd"],"32643.19")
+        self.assertEqual(revenue["cumulative_source_sheet"]["wifi_payments_received_usd"],"204070.59")
+        self.assertEqual(len(revenue["source"]["unconfirmed_ledger_mirrors"]),2)
+        for flag in revenue["source"]["unconfirmed_ledger_mirrors"]:
+            self.assertEqual(flag["source_month"],"2026-11-01")
+            self.assertIsNone(flag["inc_usd"])
+        self.assertEqual(bundle["revenue"],revenue)
+
+    def build_pipeline(self, text, month, day):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory)
             shutil.copytree(ROOT/"data",root/"data")
@@ -132,7 +226,7 @@ class FoundationSchemaTests(unittest.TestCase):
             with patch.object(source,"RAW_PATH",root/"data/xnet_revenue_sheet_raw.csv"), \
                  patch.object(source,"JSON_PATH",root/"data/xnet_revenue_monthly.json"), \
                  patch.object(source,"EPOCH_JSON_PATH",root/"data/xnet_epoch_schedule.json"), \
-                 patch.object(source,"fetch_csv",side_effect=[(CURRENT.encode(),CURRENT),(EPOCH.encode(),EPOCH)]), \
+                 patch.object(source,"fetch_csv",side_effect=[(text.encode(),text),(EPOCH.encode(),EPOCH)]), \
                  redirect_stdout(io.StringIO()):source.main()
             for name in ("build_defillama_revenue.py","v3_build_revenue_state.py",
                          "v3_build_presentation_history.py","v3_build_live_bundle.py"):
@@ -140,25 +234,18 @@ class FoundationSchemaTests(unittest.TestCase):
 class Frozen(datetime.datetime):
     @classmethod
     def now(cls,tz=None):
-        value=cls(2026,10,29,0,30,tzinfo=datetime.timezone.utc)
+        value=cls(2026,MONTH,DAY,0,30,tzinfo=datetime.timezone.utc)
         return value.astimezone(tz) if tz else value.replace(tzinfo=None)
 datetime.datetime=Frozen
 runpy.run_path(sys.argv[1],run_name='__main__')
 """
+                clocked=clocked.replace("MONTH",str(month)).replace("DAY",str(day))
                 result=subprocess.run([sys.executable,"-c",clocked,str(root/"scripts"/name)],cwd=root,text=True,capture_output=True)
                 self.assertEqual(result.returncode,0,name+"\n"+result.stderr+result.stdout[-2000:])
             revenue=json.loads((root/"data/current/xnet_revenue_state.json").read_text())
             defi=json.loads((root/"data/xnet_defillama_revenue.json").read_text())
             bundle=json.loads((root/"data/current/xnet_live_bundle.json").read_text())
-            self.assertEqual(revenue["latest_payment"]["payment_date"],"2026-10-26")
-            self.assertEqual(revenue["latest_payment"]["amount_usd"],"32643.19")
-            self.assertEqual(revenue["foundation_accounting"]["booked_balance_usd"],"38715.05")
-            self.assertEqual(revenue["foundation_accounting"]["inc_payable_usd"],"64829.61")
-            self.assertEqual(revenue["latest_fiat_operator_transfer"]["service_month"],"2026-07")
-            receipt=next(r for r in defi["settlements"] if r["payment_received_date"]=="2026-10-26")
-            self.assertEqual(receipt["service_months"][0]["service_month"],"2026-08")
-            self.assertEqual(revenue["cumulative_source_sheet"]["wifi_payments_received_usd"],"204070.59")
-            self.assertEqual(bundle["revenue"],revenue)
+            return revenue, defi, bundle
     def test_only_changed_source_contents_queue_charts_without_touching_finances(self):
         workflow=yaml.safe_load((ROOT/".github/workflows/sync-dune-revenue.yml").read_text())
         step=next(s for s in workflow["jobs"]["sync"]["steps"] if s.get("name", "").startswith("Queue affected"))

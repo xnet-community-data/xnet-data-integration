@@ -530,6 +530,11 @@ state = {
         "schema_contract": monthly.get("source", {}).get("schema_contract"),
         "sheet_fetched_at_utc": monthly.get("source", {}).get("fetched_at_utc"),
         "sheet_sha256": monthly.get("source", {}).get("raw_csv_sha256"),
+        "unconfirmed_ledger_mirrors": [
+            {"source_month": row["month"], **mirror}
+            for row in eligible
+            for mirror in row.get("unconfirmed_ledger_mirrors", [])
+        ],
     },
 
     "latest_service": {

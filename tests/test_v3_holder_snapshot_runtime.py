@@ -18,7 +18,14 @@ class HolderSnapshotRuntimeTests(unittest.TestCase):
     def test_free_holder_activation_preserves_the_approved_dune_policy_hash(self):
         config=json.loads((ROOT/"config/v3_refresh.json").read_text())
         digest=hashlib.sha256(json.dumps(config["autonomous_operation"],sort_keys=True,separators=(",",":")).encode()).hexdigest()
-        self.assertEqual(digest,"acb6fccc05230070c274d8a296f59dc26f51068738ff588138c55ffd7d69d9e4")
+        # The user's separate 2 November commercial-risk approval changes only
+        # that query's allowance; free holder activation still grants no spend.
+        self.assertEqual(digest,"bf5b8ca9a6701d6ab7551b6e84a61f2012740244bf94159f78d6c55c52bf72f6")
+        predecessor=deepcopy(config["autonomous_operation"])
+        self.assertEqual(predecessor["queries"]["8895089"]["max_operation_risk_credits"],12)
+        predecessor["queries"]["8895089"]["max_operation_risk_credits"]=3
+        old_digest=hashlib.sha256(json.dumps(predecessor,sort_keys=True,separators=(",",":")).encode()).hexdigest()
+        self.assertEqual(old_digest,"acb6fccc05230070c274d8a296f59dc26f51068738ff588138c55ffd7d69d9e4")
         self.assertFalse(config["holder_reconciliation"]["dune_spending_authority"])
     def setUp(self):
         self.directory=tempfile.TemporaryDirectory();self.addCleanup(self.directory.cleanup)

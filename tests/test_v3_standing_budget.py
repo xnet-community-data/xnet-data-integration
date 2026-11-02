@@ -1,6 +1,7 @@
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+import json
 import sys
 import unittest
 
@@ -42,6 +43,28 @@ def state():
 
 
 class StandingBudgetTests(unittest.TestCase):
+    def test_user_approved_commercial_risk_still_preserves_monthly_and_other_query_limits(self):
+        deployed=json.loads((Path(__file__).resolve().parents[1]/"config/v3_refresh.json").read_text())
+        policy=deployed["autonomous_operation"]
+        self.assertEqual(policy["queries"]["8895089"]["max_operation_risk_credits"],12)
+        self.assertEqual(policy["operating_target_credits"],2500)
+        self.assertEqual(policy["period_hard_limit_credits"],3000)
+        self.assertEqual(policy["monthly_safety_reserve_credits"],100)
+        self.assertEqual(policy["legacy_unknown_risk_credits"],100)
+        self.assertEqual(policy["daily_risk_limit_credits"],100)
+        self.assertEqual(policy["minimum_unspent_quota_credits"],1000)
+        for query in ["8895090","8895091","8895092","8895093","8895088"]:
+            self.assertEqual(policy["queries"][query]["max_operation_risk_credits"],3)
+        original=deepcopy(self.state["financial_journal"])
+        spec={"query_id":8895089,"performance":"medium"}
+        approval=reserve(self.state,deployed,USAGE,NOW,spec,{},"execution",10.737029412,
+            operation_id="approved-commercial",evidence={"sample_execution_ids":["01M6CKVMT0K7CAF3YH0ET4RMB5"]})
+        self.assertEqual(approval["quote_credits"],10.737029412)
+        self.assertEqual(self.state["financial_journal"],original)
+        with self.assertRaisesRegex(BudgetInputError,"standing risk authority"):
+            reserve(self.state,deployed,USAGE,NOW,spec,{},"execution",12.01,
+                operation_id="still-blocked",evidence={"sample_execution_ids":["observed"]})
+
     def test_activated_book_loss_cannot_silently_create_a_new_spending_anchor(self):
         self.state["standing_authority_activation"]={"approved":{"predecessor_revision":"known"}}
         before=deepcopy(self.state)

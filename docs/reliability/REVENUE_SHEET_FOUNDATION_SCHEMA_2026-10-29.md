@@ -16,8 +16,15 @@ are not guessed. Both the old and new published labels are supported:
 | Booked balance | Balance Due to Buy/Burn | Balance Due to Foundation |
 | Due from Inc. | Due from XNET Inc | Due Balance from XNET Inc |
 
-Mirrored Inc./Foundation transfer and payable/due-from rows must agree; they are
-counted **once**. Duplicate metrics inside a section and duplicate calendar
+Populated Inc./Foundation transfer and payable/due-from mirror cells must agree;
+they are counted **once**. A blank or absent counterpart is **unconfirmed**, not
+zero and not a contradiction. The posting stays in its own ledger; missing cells
+are never filled from the other section. Each normalized month records any
+`unconfirmed_ledger_mirrors`, including both source values and the missing section.
+Current/past unconfirmed mirrors also appear in the live revenue component's
+`source` metadata, and the importer emits a nonblocking workflow warning.
+Explicit zero remains a reported value: zero versus a nonzero mirror still fails.
+Duplicate metrics inside a section and duplicate calendar
 columns fail closed. Blanks remain null. Nonfinite money is refused.
 
 Explicit normalized fields preserve all five concepts:
@@ -49,6 +56,13 @@ The frozen official sheet captured on 29 October includes:
 
 Historical pre-October normalized values are unchanged in the fixture replay.
 The legacy fixture reproduces every pre-migration normalized metric exactly.
+
+The 2 November regression fixture records November Foundation funding of
+**$22,500** and fiat payouts of **$3,308.75** with blank Inc. mirrors. These are
+accepted as source-recorded, **not mirror-confirmed**. November Foundation booked
+balance **$39,020.86** remains distinct from Inc. payable **$64,829.61**. The
+existing settlement builder maps the new fiat payout to August service through
+the October carrier receipt; no new attribution rule is introduced.
 
 ## Publication and freshness
 

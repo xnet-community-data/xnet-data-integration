@@ -419,19 +419,31 @@ def parse_revenue(text):
     # These are mirrored postings, NOT additional transfers to add together.
     inc_transfer = find("inc", ("Payment Sent to Foundation",), required=False) if sectioned else None
     inc_fiat = find("inc", ("Payment Sent to Fiat Operators",), required=False) if sectioned else None
+    unconfirmed = {month: [] for _, month in months}
     for left, right, label in ((inc_balance, foundation_due, "Inc payable / Foundation due-from"),
             (inc_transfer, selected["transferred_to_buy_burn_usd"], "Foundation transfer mirrors"),
             (inc_fiat, selected["transferred_to_fiat_operators_usd"], "Fiat transfer mirrors")):
-        if left is None or right is None:
+        if not sectioned:
             continue
         for col, month in months:
-            values = [parse_number(match[1][col] if col < len(match[1]) else "", label, month)
+            values = [parse_number(match[1][col] if match and col < len(match[1]) else "", label, month)
                       for match in (left, right)]
-            if values[0] != values[1]:
+            if all(value is not None for value in values) and values[0] != values[1]:
                 raise RuntimeError(f"Conflicting {label} at {month}: {values}")
+            if (values[0] is None) != (values[1] is None):
+                # A blank is not zero or contradictory evidence. Preserve the
+                # posting in its own ledger without inventing its counterpart.
+                unconfirmed[month].append({
+                    "comparison": label,
+                    "status": "unconfirmed",
+                    "inc_usd": values[0],
+                    "foundation_usd": values[1],
+                    "missing_section": "inc" if values[0] is None else "foundation",
+                })
     data = []
     for col, month in months:
         record = {"month": month}
+        record["unconfirmed_ledger_mirrors"] = unconfirmed[month]
         for key, source_label in METRICS.items():
             row = selected[key][1]
             value = row[col] if col < len(row) else ""
@@ -509,7 +521,13 @@ def main():
             ),
             "transferred_to_fiat_operators_usd": (
                 "Foundation section's fiat-transfer posting; the Inc section's "
-                "payment mirror is checked for equality, never counted twice."
+                "payment mirror is checked when both cells are populated, never counted twice."
+            ),
+            "ledger_mirrors": (
+                "Two populated mirror cells must agree, including explicit zero. "
+                "One-sided postings are retained in their own ledger and listed "
+                "as unconfirmed_ledger_mirrors; blank counterparts stay null. "
+                "An absent or blank mirror is not evidence of a zero payment."
             ),
             "balance_outstanding_to_transfer_usd": (
                 "Compatibility alias for the FOUNDATION section's booked "
@@ -535,6 +553,14 @@ def main():
         ],
     )
     epoch_schedule = parse_epoch_schedule(epoch_text)
+    for row in data:
+        for mirror in row["unconfirmed_ledger_mirrors"]:
+            print(
+                f"::warning::{row['month']} {mirror['comparison']}: "
+                f"{mirror['missing_section']} mirror is blank or absent; "
+                "retaining the source posting as unconfirmed without filling its counterpart.",
+                flush=True,
+            )
     epoch_sha256 = hashlib.sha256(epoch_raw_bytes).hexdigest()
 
     epoch_output = {

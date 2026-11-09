@@ -47,6 +47,23 @@ CONFIG = json.loads((ROOT / "config/v3_refresh.json").read_text())
 STATE = ROOT / "data/current/v3_refresh_state.json"
 HEALTH = ROOT / "data/current/xnet_chain_health.json"
 
+# User-approved targeted recovery (2026-11-09). Freshness-only mode widens
+# nothing: it permits one xnet_transfers hot collection judged by the EXISTING
+# planner fences (hot gap <= 12h plus the configured 4h overlap, never reduced)
+# and these five already-configured status-only charts. Paid historical
+# reconciliation, every other source and chart, and any wider window defer to
+# the normal runner. cached_only still always means zero fresh Dune compute.
+# The allowlists are validated only when the opt-in mode is invoked, never at
+# import, so the default runner is unaffected.
+FRESHNESS_SOURCE_KEYS = frozenset({"xnet_transfers"})
+FRESHNESS_PRESENTATION_KEYS = frozenset(
+    {"current", "burns", "tokenomics", "holders", "pools"}
+)
+FRESHNESS_PAID_DEFERRED = (
+    "Freshness-only mode defers paid reconciliation; free integrity evidence "
+    "stays visible for the normal runner."
+)
+
 def now():
     return datetime.now(timezone.utc)
 
@@ -845,8 +862,33 @@ def integrity_repair_due(state):
     )
 
 
-def source_reconciliation_plan(state, spec, regular_repair_due):
-    """Return (mode, lookback_hours) for bounded historical reconciliation."""
+def record_freshness_deferred_repair(state, key, mode, lookback_hours):
+    """Record a due paid repair that freshness-only mode refuses to widen.
+
+    The deferral is durable evidence (it may be replayed by the normal runner);
+    it never delays a clock, erases a due repair or authorizes a substitute.
+    """
+    receipt = state.setdefault("freshness_only_recovery", {})
+    deferred = receipt.setdefault("deferred_repairs", [])
+    if not any(item.get("key") == key and item.get("mode") == mode for item in deferred):
+        deferred.append({"key": key, "mode": mode,
+                         "lookback_hours": int(lookback_hours),
+                         "deferred_at_utc": stamp()})
+
+
+def source_reconciliation_plan(state, spec, regular_repair_due, allow_paid=True):
+    """Return (mode, lookback_hours) for bounded historical reconciliation.
+
+    Freshness-only recovery passes ``allow_paid=False``: any repair mode the
+    normal runner would plan (daily/approved_backfill/integrity) is recorded
+    as deferred and replaced by the ordinary hot-window path. It is never
+    executed or widened by that mode.
+    """
+    if not allow_paid:
+        paid_mode, paid_lookback = source_reconciliation_plan(state, spec, regular_repair_due)
+        if paid_mode is not None:
+            record_freshness_deferred_repair(state, spec["key"], paid_mode, paid_lookback)
+        return (None, None)
     if spec["key"] != "xnet_transfers":
         if regular_repair_due and spec.get("repair_on_global_cycle", True):
             return (
@@ -1072,7 +1114,7 @@ def historical_cost_quarantined(state):
     )
 
 
-def reconcile_historical_manifest(state, billing):
+def reconcile_historical_manifest(state, billing, allow_paid=True):
     policy = CONFIG.get("reconciliation")
     if not policy:
         return False
@@ -1094,6 +1136,13 @@ def reconcile_historical_manifest(state, billing):
             probe_seed_review(state,ROOT,load,now())
             if state.get("holder_seed_review")!=review_before:
                 checkpoint(state)  # Make the review fence visible to the reducer BEFORE it writes holders.
+        if not allow_paid:
+            # The free indexer/witness and holder-seed probes above already
+            # ran. Paid day recovery and the manifest scan defer to the normal
+            # runner; no clock, coverage or due-repair evidence is reset here.
+            recon["manifest_deferred_at_utc"] = stamp()
+            recon["manifest_deferred_reason"] = FRESHNESS_PAID_DEFERRED
+            return False
         if repair_days(state, CONFIG, now(), seed_cutoff=seed_day):
             names = ("ROOT", "CONFIG", "STATE", "now", "stamp", "encoded", "load", "save", "run",
                      "execute", "export_source", "stage_consumption", "publish", "checkpoint",
@@ -1113,6 +1162,13 @@ def reconcile_historical_manifest(state, billing):
             recon["manifest_deferred_reason"]="Holder inventory renews independently by free finalized snapshot; no paid manifest substitute"
             return False
 
+    if not allow_paid:
+        # Non-autonomous freshness run: the manifest itself is the only paid
+        # work here, so it defers as an explicit recorded decision.
+        recon = state.setdefault("reconciliation", {})
+        recon["manifest_deferred_at_utc"] = stamp()
+        recon["manifest_deferred_reason"] = FRESHNESS_PAID_DEFERRED
+        return False
     recon = state.setdefault("reconciliation", {})
     # Existing repairs use CURRENT_DATE-relative offsets, with no saved SQL/version
     # and immutable window proof bound to their original execution. Do NOT download,
@@ -1604,6 +1660,9 @@ def main():
     parser.add_argument("--cached-only", action="store_true", help="Publish independent API/cache data; never submit or export Dune work")
     parser.add_argument("--activate-holder-snapshot", action="store_true",
                         help="Activate the user-approved free finalized holder source; requires --cached-only")
+    parser.add_argument("--freshness-only", action="store_true",
+                        help="User-approved targeted recovery: one in-window xnet_transfers collection plus the five "
+                             "approved status charts only; paid reconciliation and every other source/chart defer")
     parser.add_argument("--benchmark", action="store_true", help="Measure query costs without changing canonical state")
     parser.add_argument("--benchmark-sources", action="store_true", help="Measure bounded sources only")
     parser.add_argument("--benchmark-batches", type=int, choices=range(1, 4), default=1)
@@ -1611,6 +1670,20 @@ def main():
     args = parser.parse_args()
     if args.activate_holder_snapshot and not args.cached_only:
         parser.error("--activate-holder-snapshot requires --cached-only; activation cannot buy Dune work")
+    if args.freshness_only and args.cached_only:
+        parser.error("--cached-only must remain entirely free; never combine it with --freshness-only")
+    if args.freshness_only and (args.benchmark or args.benchmark_sources):
+        parser.error("--freshness-only recovery does not measure benchmarks")
+    if args.freshness_only:
+        # Opt-in contracts are checked only when the mode is invoked, so a
+        # future configuration rename can never silently empty the allowlist.
+        missing = ((FRESHNESS_PRESENTATION_KEYS
+                    - {spec["key"] for spec in CONFIG.get("presentation", [])})
+                   | (FRESHNESS_SOURCE_KEYS
+                      - {spec["key"] for spec in CONFIG.get("sources", [])}))
+        if missing:
+            parser.error("Freshness-only allowlists drifted from configuration: "
+                         + ", ".join(sorted(missing)))
     state = load_authoritative_state()
     refresh_finalized_holders(state,activate=args.activate_holder_snapshot)
     if args.cached_only:
@@ -1676,6 +1749,10 @@ def main():
         state["paused"] = False
     state.setdefault("paused", False)
     state["started_at_utc"] = stamp()
+    if args.freshness_only:
+        # The receipt describes THIS opt-in run only; it is replaced by the
+        # next freshness run and neither read nor reset by a normal refresh.
+        state["freshness_only_recovery"] = {"started_at_utc": stamp(), "deferred_repairs": []}
     state.setdefault("queries", {})
     # Configuration changes must not erase prior accepted provenance/known IDs.
     paths, source_records = {}, {}
@@ -1720,11 +1797,23 @@ def main():
                 remaining, default_export_max_bytes = export_limits_for_mode("daily")
             else:
                 remaining, default_export_max_bytes = export_limits_for_mode(None)
+            if args.freshness_only:
+                # Freshness never plans repair modes in this run, so it keeps
+                # the base hot-collection export bounds rather than the larger
+                # daily/integrity-grade allowances of a deferred repair class.
+                remaining, default_export_max_bytes = export_limits_for_mode(None)
             active_sources = [
                 s
                 for s in CONFIG["sources"]
                 if s.get("enabled", True)
             ]
+            if args.freshness_only:
+                # Targeted recovery: ONLY the approved transfer collector may
+                # run in this mode; the BBB collector and every other source
+                # defer to the normal runner. There is no pending exception:
+                # known out-of-scope execution IDs stay durable and are
+                # metadata-reconciled at startup, never paid-processing here.
+                active_sources = [s for s in active_sources if s["key"] in FRESHNESS_SOURCE_KEYS]
 
             due_sources = []
 
@@ -1792,7 +1881,8 @@ def main():
                 )
 
                 reconciliation_mode, _ = source_reconciliation_plan(
-                    state, spec, repair
+                    state, spec, repair,
+                    **({"allow_paid": False} if args.freshness_only else {})
                 )
 
                 if (
@@ -1830,7 +1920,8 @@ def main():
                 previous_completed = previous.get("continuous_coverage_end_utc") or previous.get("completed_at_utc")
 
                 planned_mode, planned_lookback = source_reconciliation_plan(
-                    state, spec, repair
+                    state, spec, repair,
+                    **({"allow_paid": False} if args.freshness_only else {})
                 )
 
                 pending = state.get("pending_executions", {}).get(spec["key"])
@@ -1886,13 +1977,33 @@ def main():
                         )
                     )
 
-                if autonomous_enabled(state) and spec["key"] == "xnet_transfers" and not pending:
+                if (autonomous_enabled(state) or args.freshness_only) and spec["key"] == "xnet_transfers" and not pending:
+                    # Same deployed hot-gap fence in both modes: the configured
+                    # overlap is untouched and a wider gap defers to bounded
+                    # UTC-day recovery on the normal runner instead.
                     from v3_autonomous_reconcile import hot_catchup_limit
                     if lookback > hot_catchup_limit(CONFIG) + int(spec.get("overlap_hours",1)):
                         record_source_issue(state, spec["key"],
                             "Wide collection gap routed to bounded, separately quoted UTC-day recovery")
                         state["source_errors"][spec["key"]].update(
                             retry_kind="bounded_day_catchup", automatic_recheck=True)
+                        continue
+
+                if args.freshness_only and spec["key"] == "xnet_transfers" and pending:
+                    # Freshness-only is NEW spending authority, narrower than the
+                    # default runner (whose known-ID recovery alone may export a
+                    # wide pending window). A pending transfer whose recorded
+                    # window exceeds the approved hot fence defers BEFORE any
+                    # execute/export: its durable execution ID and metadata stay
+                    # preserved for the normal runner, and the metadata-only
+                    # reconciliation at startup already covered the known ID.
+                    from v3_autonomous_reconcile import hot_catchup_limit
+                    if lookback > hot_catchup_limit(CONFIG) + int(spec.get("overlap_hours",1)):
+                        record_source_issue(state, spec["key"],
+                            f"Pending transfer window ({lookback}h) exceeds the freshness-only "
+                            "hot fence; execution ID preserved unreconciled for the normal runner.")
+                        state["source_errors"][spec["key"]].update(
+                            freshness_pending_window_hours=int(lookback))
                         continue
 
                 try:
@@ -2044,7 +2155,13 @@ def main():
 
         # No canonical files or accepted source clocks have been mutated yet.
         # A manifest decision can checkpoint safely before the data transaction.
-        historical_changed = reconcile_historical_manifest(state, billing) if billing is not None else False
+        # Freshness-only keeps the free indexer/witness probes and defers only
+        # the paid manifest/day recovery; the added keyword is used ONLY in
+        # that opt-in mode so default calls keep the original two arguments.
+        historical_changed = reconcile_historical_manifest(
+            state, billing,
+            **({"allow_paid": False} if args.freshness_only else {})
+        ) if billing is not None else False
         if historical_changed:
             sync_holder_integrity_error(state)
         publish_data_generation(state, paths, source_records)
@@ -2069,6 +2186,14 @@ def main():
         # Prioritize deadline risk, then source invalidation, rotating attempts
         # within each class rather than using configuration position forever.
         due_presentation.sort(key=lambda spec: presentation_priority(state, spec, forced))
+        if args.freshness_only:
+            # Opt-in recovery refreshes only the five approved status charts,
+            # still in the usual due/forced/attempt order and per-run bound,
+            # with NO pending exception: a known out-of-allowlist execution ID
+            # stays durable and metadata-reconciled at startup, and is never
+            # re-executed, exported or cancelled by this mode's paid lanes.
+            due_presentation = [s for s in due_presentation
+                                if s["key"] in FRESHNESS_PRESENTATION_KEYS]
         if billing is None:
             due_presentation = [s for s in due_presentation
                                 if state.get("pending_executions", {}).get(s["key"], {}).get("execution_id")]
@@ -2156,6 +2281,8 @@ def main():
         except BudgetBlocked:
             pass  # New spending denied; accepted known work remains publishable.
         state["completed_at_utc"] = stamp()
+        if args.freshness_only and isinstance(state.get("freshness_only_recovery"), dict):
+            state["freshness_only_recovery"]["completed_at_utc"] = stamp()
         if not state.get("paused"):
             state["last_error"] = None
         # Health is reconciled after successful source commits, not before them.

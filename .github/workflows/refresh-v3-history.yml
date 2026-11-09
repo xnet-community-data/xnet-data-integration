@@ -50,6 +50,10 @@ on:
         description: "Activate approved free, same-slot finalized holder reconciliation; no Dune spending"
         type: boolean
         default: false
+      freshness_only:
+        description: "Targeted recovery: one in-window xnet_transfers collection plus the five approved status charts; paid reconciliation and other sources/charts defer. cached_only stays free and takes precedence"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -86,6 +90,7 @@ jobs:
           CACHED_ONLY: ${{ github.event_name == 'push' || inputs.cached_only || inputs.activate_holder_snapshot }}
           EVENT: ${{ github.event_name }}
           ACTIVATE_HOLDER_SNAPSHOT: ${{ inputs.activate_holder_snapshot }}
+          FRESHNESS_ONLY: ${{ inputs.freshness_only }}
         run: |
           if [ "$CACHED_ONLY" = "true" ]; then
             if [ "$ACTIVATE_HOLDER_SNAPSHOT" = "true" ]; then
@@ -93,6 +98,8 @@ jobs:
             else
               python scripts/v3_refresh_dashboard.py --cached-only
             fi
+          elif [ "$FRESHNESS_ONLY" = "true" ]; then
+            python scripts/v3_refresh_dashboard.py --freshness-only
           elif [ "$RESUME" = "true" ]; then
             python scripts/v3_refresh_dashboard.py --resume
           else

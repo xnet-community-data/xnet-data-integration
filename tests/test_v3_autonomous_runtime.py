@@ -137,9 +137,9 @@ class AutonomousRuntimeTests(unittest.TestCase):
         self.state["standing_credit_budget"]={"last_decision":{"cadence_multiplier":4}}
         spec=next(s for s in refresh.CONFIG["presentation"] if s["key"]=="holders")
         self.state["queries"]["holders"]={"completed_at_utc":(NOW-timedelta(hours=6)).isoformat()}
-        self.assertTrue(refresh.presentation_priority(self.state,spec,set())[0])  # 16h limit, not 6h
+        self.assertEqual(refresh.presentation_priority(self.state,spec,set())[0],2)  # 16h limit, not 6h
         self.state["queries"]["holders"]["completed_at_utc"]=(NOW-timedelta(hours=15)).isoformat()
-        self.assertFalse(refresh.presentation_priority(self.state,spec,set())[0])
+        self.assertEqual(refresh.presentation_priority(self.state,spec,set())[0],1)
 
     def test_urgent_failed_charts_still_rotate_by_last_attempt(self):
         specs=deepcopy(refresh.CONFIG["presentation"][:2])

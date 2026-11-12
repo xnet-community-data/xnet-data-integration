@@ -733,21 +733,28 @@ def presentation_priority(state, spec, forced):
     from v3_autonomy_watchdog import maximum_delay_seconds
     key = spec["key"]
     maximum = maximum_delay_seconds(spec, CONFIG, cadence_multiplier(state, key))
-    # After a cron gap, daily/invalidated charts must not displace a chart
-    # that will cross the watchdog deadline before another collection cycle.
+    # Use the watchdog's existing deadline, not source event/generated time.
+    # Expired charts must precede those merely nearing that deadline: after
+    # a long cron gap both used to share one "urgent" bucket, allowing a
+    # forced daily chart to displace an already-overdue hourly chart.
     last = state.get("queries", {}).get(key, {}).get("completed_at_utc")
     try:
         age = (now() - parse_instant(last, "accepted presentation")).total_seconds()
-        urgent = age >= maximum - int(CONFIG.get("chain_cadence_minutes", 120)) * 60
+        overdue = age < -300 or age >= maximum
+        urgent = overdue or age >= maximum - int(CONFIG.get("chain_cadence_minutes", 120)) * 60
     except (BudgetInputError, TypeError, ValueError):
-        urgent = True
+        overdue = urgent = True
     at = state.get("presentation_last_attempts", {}).get(key)
     try:
         oldest = parse_instant(at, "presentation attempt").timestamp() if at else float("-inf")
     except BudgetInputError:
         oldest = float("-inf")
-    # Retain attempt rotation within priority classes, including failures.
-    return (not urgent, key not in forced, oldest)
+    # Rotate expired work by attempt before source invalidation, so repeatedly
+    # forced/failing charts cannot monopolize every bounded run. For charts
+    # still within their deadline, retain invalidation-first attempt rotation.
+    if overdue:
+        return (0, oldest, key not in forced)
+    return (1 if urgent else 2, key not in forced, oldest)
 
 
 def reconciliation_generation_due(state):

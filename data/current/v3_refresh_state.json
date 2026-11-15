@@ -14635,38 +14635,6 @@
   "execution_history": [
     {
       "cancellation_requested_at_utc": null,
-      "cost_outlier": {
-        "cooldown_until_utc": "2026-10-23T08:44:39.650432Z",
-        "detected_at_utc": "2026-10-23T08:14:39Z",
-        "execution_id": "01M5KX69XWYNCNNK67E1PCSMS9",
-        "observed_cost_credits": 2.245029412,
-        "performance": "medium",
-        "post_run_threshold_credits": 1.5,
-        "query_id": 8894185,
-        "query_parameters": {},
-        "recovery_policy": "accept_completed_outlier",
-        "returned_for_validation_at_utc": "2026-10-23T08:14:39Z",
-        "shape_version": null,
-        "source_key": "current",
-        "threshold_is_precharge_cap": false
-      },
-      "execution_cost_credits": 2.245029412,
-      "execution_ended_at": "2026-10-23T08:14:36.70961308Z",
-      "execution_id": "01M5KX69XWYNCNNK67E1PCSMS9",
-      "execution_started_at": "2026-10-23T08:14:15.160186977Z",
-      "financial_attempt_id": "8cd5c837c6e342bd814ec65ecd9ff12c",
-      "key": "current",
-      "performance": "medium",
-      "query_id": 8894185,
-      "query_parameters": {},
-      "result_bytes": 5695,
-      "result_row_count": 5,
-      "shape_version": null,
-      "state": "QUERY_STATE_COMPLETED",
-      "submitted_at_utc": "2026-10-23T08:14:10.987502Z"
-    },
-    {
-      "cancellation_requested_at_utc": null,
       "execution_cost_credits": 0.18423134,
       "execution_ended_at": "2026-10-23T08:14:52.390582531Z",
       "execution_id": "01M5KX7EWS4XD47K7VPG6RFX1Y",
@@ -33140,6 +33108,23 @@
       "shape_version": null,
       "state": "QUERY_STATE_COMPLETED",
       "submitted_at_utc": "2026-11-15T07:08:07.401923Z"
+    },
+    {
+      "cancellation_requested_at_utc": null,
+      "execution_cost_credits": 0.041205883,
+      "execution_ended_at": "2026-11-15T07:08:42.493055314Z",
+      "execution_id": "01M7F0JRPHHSG10S822T4Y8HXK",
+      "execution_started_at": "2026-11-15T07:08:39.830764519Z",
+      "financial_attempt_id": "3259f0a5e06c46de9199fa7a6f98365e",
+      "key": "bbb_dex",
+      "performance": "medium",
+      "query_id": 8894132,
+      "query_parameters": {
+        "lookback_hours": 30
+      },
+      "shape_version": null,
+      "state": "QUERY_STATE_COMPLETED",
+      "submitted_at_utc": "2026-11-15T07:08:34.272414Z"
     }
   ],
   "external_sources": {
@@ -60839,9 +60824,9 @@
         "unresolved": false
       },
       "exec:01M7F0JRPHHSG10S822T4Y8HXK": {
-        "cost_credits": null,
+        "cost_credits": 0.041205883,
         "execution_id": "01M7F0JRPHHSG10S822T4Y8HXK",
-        "incurred_at_utc": null,
+        "incurred_at_utc": "2026-11-15T07:08:42.493055314Z",
         "kind": "execution",
         "liability_id": "exec:01M7F0JRPHHSG10S822T4Y8HXK",
         "query_id": 8894132,
@@ -60850,7 +60835,7 @@
         },
         "submission_id": "submission:3259f0a5e06c46de9199fa7a6f98365e",
         "submitted_at_utc": "2026-11-15T07:08:34.272414Z",
-        "unresolved": true
+        "unresolved": false
       },
       "export_0191a9e1b6eb486e93c0748eb7a0cf39": {
         "basis": "observed_charge_not_inclusion",
@@ -69846,6 +69831,62 @@
         "query_id": 8894132
       },
       "submitted_at_utc": "2026-11-15T07:08:34.272414Z",
+      "terminal_status": {
+        "execution_cost_credits": 0.041205883,
+        "execution_ended_at": "2026-11-15T07:08:42.493055314Z",
+        "execution_id": "01M7F0JRPHHSG10S822T4Y8HXK",
+        "execution_started_at": "2026-11-15T07:08:39.830764519Z",
+        "expires_at": "2027-02-13T07:08:42.493065Z",
+        "is_execution_finished": true,
+        "query_id": 8894132,
+        "result_metadata": {
+          "column_names": [
+            "block_date",
+            "block_time",
+            "block_slot",
+            "tx_id",
+            "trader_id",
+            "economic_side",
+            "gross_xnet_bought",
+            "gross_xnet_sold",
+            "net_xnet_change",
+            "trade_value_usd",
+            "primary_project",
+            "trade_source",
+            "project_main_id",
+            "quote_symbol",
+            "quote_mint",
+            "decoded_xnet_leg_count"
+          ],
+          "column_types": [
+            "date",
+            "timestamp(3) with time zone",
+            "bigint",
+            "varchar",
+            "varchar",
+            "varchar(10)",
+            "double",
+            "double",
+            "double",
+            "double",
+            "varchar",
+            "varchar",
+            "varchar",
+            "varchar",
+            "varchar",
+            "bigint"
+          ],
+          "datapoint_count": 0,
+          "execution_time_millis": 2662,
+          "pending_time_millis": 324,
+          "result_set_bytes": 0,
+          "row_count": 0,
+          "total_result_set_bytes": 0,
+          "total_row_count": 0
+        },
+        "state": "QUERY_STATE_COMPLETED",
+        "submitted_at": "2026-11-15T07:08:39.506149Z"
+      },
       "timeout_seconds": 360
     },
     "xnet_transfers": {

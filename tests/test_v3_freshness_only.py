@@ -177,6 +177,41 @@ class FreshnessOnlyScopeTests(unittest.TestCase):
 
 
 class FreshnessOnlyWorkflowTests(unittest.TestCase):
+    def test_scope_flag_is_forwarded_by_real_shell_without_touching_cached_only(self):
+        import os
+        import subprocess
+        import yaml
+        config = yaml.safe_load((ROOT / ".github/workflows/refresh-v3-history.yml").read_text())
+        script = next(step["run"] for step in config["jobs"]["refresh"]["steps"]
+                      if step.get("name") == "Refresh bounded sources and cached charts")
+        for cached, freshness, resume, skip, expected in (
+                ("false", "false", "false", "true", ["--skip-bbb"]),
+                ("false", "false", "true", "true", ["--resume", "--skip-bbb"]),
+                ("false", "true", "false", "true", ["--freshness-only", "--skip-bbb"]),
+                ("true", "false", "false", "true", ["--cached-only"]),
+                ("false", "false", "false", "false", [])):
+            with self.subTest(cached=cached, freshness=freshness, resume=resume, skip=skip):
+                # Replace Python with a shell function: no module, HTTP request
+                # or execution transport can run during this workflow test.
+                env = {"PATH": os.environ["PATH"], "CACHED_ONLY": cached, "FRESHNESS_ONLY": freshness,
+                       "RESUME": resume, "SKIP_BBB": skip, "ACTIVATE_HOLDER_SNAPSHOT": "false"}
+                result = subprocess.run(["bash", "-c", "python() { printf '%s\\0' \"$@\"; };\n" + script],
+                                        env=env, capture_output=True, check=True)
+                self.assertEqual(result.stdout.decode().rstrip("\0").split("\0"),
+                                 ["scripts/v3_refresh_dashboard.py", *expected])
+
+    def test_manual_bbb_scope_is_opt_in_and_never_changes_cached_only(self):
+        import yaml
+        path = ROOT / ".github/workflows/refresh-v3-history.yml"
+        config = yaml.safe_load(path.read_text())
+        trigger = config.get("on") or config.get(True)
+        self.assertIs(trigger["workflow_dispatch"]["inputs"]["skip_bbb"]["default"], False)
+        self.assertEqual(trigger["workflow_dispatch"]["inputs"]["skip_bbb"]["type"], "boolean")
+        text = path.read_text()
+        self.assertIn('extra_args+=(--skip-bbb)', text)
+        self.assertIn('SKIP_BBB: ${{ inputs.skip_bbb }}', text)
+        self.assertIn('python scripts/v3_refresh_dashboard.py --cached-only\n', text)
+
     def test_workflow_input_is_opt_in_and_cached_only_stays_free_first(self):
         import yaml
         path = ROOT / ".github/workflows/refresh-v3-history.yml"
@@ -596,6 +631,62 @@ class FreshnessOnlyRunTests(unittest.TestCase):
         self.assertEqual(executed["bbb_dex"], {"lookback_hours": 50})
         self.assertNotIn("freshness_only_recovery", result["state"])
         self.assertNotIn("manifest_deferred_reason", result["state"]["reconciliation"])
+
+    def test_manual_bbb_exclusion_fences_the_actual_preferred_calendar_day_case(self):
+        frozen = refresh.datetime(2026, 11, 20, 1, 44, tzinfo=refresh.timezone.utc)
+        with patch.object(refresh, "now", return_value=frozen), \
+             patch.object(refresh, "reconcile_historical_manifest", return_value=False) as reconcile:
+            state = authorized_state()
+            state["reconciliation"] = {"generation": refresh.CONFIG["reconciliation_generation"]}
+            state["queries"] = {
+                **fresh_chart_state(),
+                "xnet_transfers": fresh_source_state(6),
+                "bbb_dex": fresh_source_state(26, "2026-11-19T04:10:32Z"),
+            }
+            # Only21.5h old: ordinary cadence alone says "not due", but the
+            # real calendar/preferred-hour rule DOES select a new UTC day.
+            ordinary = self.run_refresh(state, records={"bbb_dex": bbb_record({"lookback_hours": 26})})
+            self.assertEqual(ordinary["execute_calls"], [("bbb_dex", {"lookback_hours": 26})])
+            scoped = self.run_refresh(state, ["--skip-bbb"])
+        self.assertEqual(scoped["execute_calls"], [])
+        self.assertEqual(scoped["export_source"].call_count, 0)
+        self.assertEqual(scoped["state"]["queries"]["bbb_dex"], state["queries"]["bbb_dex"])
+        self.assertEqual(reconcile.call_count, 2)  # This flag does not disable normal maintenance.
+
+    def test_manual_bbb_exclusion_keeps_known_id_metadata_but_never_exports_it(self):
+        entry = pending_entry("bbb_dex", 8894132, {"lookback_hours": 26}, "exec-bbb")
+        state = self.base_state()
+        state["reconciliation"] = {"generation": refresh.CONFIG["reconciliation_generation"]}
+        state["queries"] = {**fresh_chart_state(), "xnet_transfers": fresh_source_state(6)}
+        state["pending_executions"] = {"bbb_dex": entry}
+        with patch.object(refresh, "reconcile_historical_manifest", return_value=False):
+            result = self.run_refresh(state, ["--skip-bbb"])
+        self.assertEqual(result["execute_calls"], [])
+        self.assertEqual(result["export_source"].call_count, 0)
+        self.assert_free_api_only(result["api"])
+        self.assertTrue(entry.items() <= result["state"]["pending_executions"]["bbb_dex"].items())
+        self.assertNotIn("exec-bbb", result["state"].get("consumed_executions", {}))
+
+    def test_manual_bbb_exclusion_retains_normal_network_and_commercial_charts(self):
+        state = self.base_state()
+        state["reconciliation"] = {"generation": refresh.CONFIG["reconciliation_generation"]}
+        state["queries"] = {**fresh_chart_state(), "xnet_transfers": fresh_source_state(6)}
+        for key in OUT_OF_ALLOWLIST_CHART_KEYS:
+            state["queries"].pop(key)
+        with patch.object(refresh, "reconcile_historical_manifest", return_value=False):
+            result = self.run_refresh(state, ["--skip-bbb"], records={
+                key: chart_record(key) for key in OUT_OF_ALLOWLIST_CHART_KEYS})
+        self.assertEqual({key for key, _ in result["execute_calls"]}, set(OUT_OF_ALLOWLIST_CHART_KEYS))
+        self.assertEqual(result["export_source"].call_count, 0)
+
+    def test_manual_bbb_exclusion_rejects_benchmarks_before_any_work(self):
+        for option in ["--benchmark", "--benchmark-sources"]:
+            with self.subTest(option=option), patch("sys.argv", ["refresh", "--skip-bbb", option]), \
+                 patch.object(refresh, "load_authoritative_state") as load:
+                with self.assertRaises(SystemExit) as error:
+                    refresh.main()
+                self.assertEqual(error.exception.code, 2)
+                load.assert_not_called()
 
 
 if __name__ == "__main__":

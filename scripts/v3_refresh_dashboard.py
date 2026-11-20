@@ -1757,6 +1757,9 @@ def main():
     parser.add_argument("--freshness-only", action="store_true",
                         help="User-approved targeted recovery: one in-window xnet_transfers collection plus the five "
                              "approved status charts only; paid reconciliation and every other source/chart defer")
+    parser.add_argument("--skip-bbb", action="store_true",
+                        help="Exclude BBB execution/result retrieval from a scoped run; other sources, "
+                             "reconciliation and charts retain their normal policy")
     parser.add_argument("--benchmark", action="store_true", help="Measure query costs without changing canonical state")
     parser.add_argument("--benchmark-sources", action="store_true", help="Measure bounded sources only")
     parser.add_argument("--benchmark-batches", type=int, choices=range(1, 4), default=1)
@@ -1768,6 +1771,8 @@ def main():
         parser.error("--cached-only must remain entirely free; never combine it with --freshness-only")
     if args.freshness_only and (args.benchmark or args.benchmark_sources):
         parser.error("--freshness-only recovery does not measure benchmarks")
+    if args.skip_bbb and (args.benchmark or args.benchmark_sources):
+        parser.error("--skip-bbb scope cannot be combined with benchmarks")
     if args.freshness_only:
         # Opt-in contracts are checked only when the mode is invoked, so a
         # future configuration rename can never silently empty the allowlist.
@@ -1901,6 +1906,11 @@ def main():
                 for s in CONFIG["sources"]
                 if s.get("enabled", True)
             ]
+            if args.skip_bbb:
+                # A manual operation's scope must survive preferred-hour/date
+                # changes while queued. Known IDs still get startup status-only
+                # reconciliation, but no excluded BBB result is paid-processed.
+                active_sources = [s for s in active_sources if s["key"] != "bbb_dex"]
             if args.freshness_only:
                 # Targeted recovery: ONLY the approved transfer collector may
                 # run in this mode; the BBB collector and every other source

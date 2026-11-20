@@ -87,3 +87,16 @@ out-of-scope pending IDs staying durable with status-only API traffic
 Workflow: `workflow_dispatch` input `freshness_only` (default `false`) maps to
 the CLI flag; branch order in `.github/workflows/refresh-v3-history.yml` is
 cached-only → freshness-only → resume.
+
+## Manual BBB exclusion (20 November2026)
+
+Use workflow input `skip_bbb=true` / CLI `--skip-bbb` when a separately quoted
+manual operation excludes BBB collection. It fences both execution and result
+retrieval before source planning, including preferred-hour/calendar-day overrides.
+Existing known IDs retain metadata-only startup reconciliation and their durable
+evidence; no excluded result is consumed. Normal sources, maintenance and charts
+otherwise retain their policy. Benchmarks cannot combine with this scope flag.
+
+The default is false: ordinary scheduled BBB policy is unchanged. Cached-only
+still takes precedence and remains free. This switch grants no financial
+authority; price and approve every operation in the actual remaining scope.

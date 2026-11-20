@@ -459,10 +459,13 @@ class FinalReviewTests(unittest.TestCase):
                   "result_metadata": {"total_row_count": 1}}
         config = self.config(sources=[source_spec(output="state/hot.json"),
                                       source_spec("bbb_dex", output="state/bbb.json")])
+        # Isolate the paid durability barrier from the free collector's own
+        # pre-submission failure journaling (covered by network-source tests).
         with patch("sys.argv", ["refresh"]), patch.object(refresh, "CONFIG", config), \
-             patch.object(refresh, "load_authoritative_state", return_value={"schema_version": 1, "queries": {}}), \
-             patch.object(refresh, "run"), patch.object(refresh, "api") as api, \
-             patch.object(refresh, "usage_guard", return_value={}), \
+              patch.object(refresh, "load_authoritative_state", return_value={"schema_version": 1, "queries": {}}), \
+              patch.object(refresh, "run"), patch.object(refresh, "api") as api, \
+              patch.object(refresh, "sync_independent_network"), \
+              patch.object(refresh, "usage_guard", return_value={}), \
              patch.object(refresh, "execute", return_value=dict(record)) as execute, \
              patch.object(refresh, "export_source",
                           side_effect=refresh.StateError("publication durability failed")) as export:

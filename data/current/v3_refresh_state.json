@@ -88928,13 +88928,28 @@
         "reviewed_main_revision": "f1d20751d3fd324183d39a2ca6d2df7adb44e094",
         "scope": "Only query 8895089 per-operation risk allowance: 3 -> 12 credits; not a provider hard cap",
         "user_selection": "Allow 12-credit risk"
+      },
+      {
+        "approval_ref": "user-commercial-aging-risk-16.11-20261120",
+        "approved_value": 16.11,
+        "authorized_by": "user",
+        "changed_field": "autonomous_operation.queries.8895089.max_operation_risk_credits",
+        "installed_at_utc": "2026-11-20T01:42:25.214832Z",
+        "monthly_limits_reserves_other_queries_unchanged": true,
+        "policy_sha256": "4d35df425635bcec151e88d1a45fe258162fefff38c9056d4d96ea185b40fc63",
+        "predecessor_live_revision": "d588a1f6b2b1f241bc2641f9660496b1ae009285",
+        "previous_policy_sha256": "bf5b8ca9a6701d6ab7551b6e84a61f2012740244bf94159f78d6c55c52bf72f6",
+        "previous_value": 12,
+        "reviewed_main_revision": "e89a82a4a8c8c7ebd1c39f53c21704a21811ecb8",
+        "scope": "Only commercial query risk12 ->16.11; not a provider charge cap",
+        "user_selection": "Approve scoped exception"
       }
     ],
     "approval_ref": "user-standing-autonomy-20261020",
     "authorization_text": "User selected Approve standing autonomy: recurring sample-backed source, repair and presentation operations and bounded retries; target 2500, ceiling min(3000, quota minus 1000), safety 100 and legacy uncertainty 100; renew automatically with verified billing periods until revoked.",
     "authorized_by": "user",
     "confirmed_at_utc": "2026-10-20T10:14:10Z",
-    "policy_sha256": "bf5b8ca9a6701d6ab7551b6e84a61f2012740244bf94159f78d6c55c52bf72f6",
+    "policy_sha256": "4d35df425635bcec151e88d1a45fe258162fefff38c9056d4d96ea185b40fc63",
     "risk_is_not_provider_cap": true,
     "scope": "Pinned existing source/repair/presentation SQL; per-operation sample-backed estimates; recurring verified billing periods until revoked",
     "unknown_costs_not_settled": true
@@ -235367,7 +235382,19 @@
       },
       "2026-11-04T00:00:00Z/2026-12-04T00:00:00Z": {
         "approval_ref": "user-standing-autonomy-20261020",
-        "authority_sha256": "bf5b8ca9a6701d6ab7551b6e84a61f2012740244bf94159f78d6c55c52bf72f6",
+        "authority_amendments": [
+          {
+            "approval_ref": "user-commercial-aging-risk-16.11-20261120",
+            "authority_sha256": "4d35df425635bcec151e88d1a45fe258162fefff38c9056d4d96ea185b40fc63",
+            "bound_at_utc": "2026-11-20T01:42:25.214832Z",
+            "financial_fields_sha256": "1a82d6bd631b3e00c0cfae1cee69100d4899018827f53118e1c4f07c7bf00ce1",
+            "period_key": "2026-11-04T00:00:00Z/2026-12-04T00:00:00Z",
+            "predecessor_live_revision": "d588a1f6b2b1f241bc2641f9660496b1ae009285",
+            "previous_authority_sha256": "bf5b8ca9a6701d6ab7551b6e84a61f2012740244bf94159f78d6c55c52bf72f6",
+            "scope": "Approved commercial risk12 ->16.11 only; existing period anchors preserved"
+          }
+        ],
+        "authority_sha256": "4d35df425635bcec151e88d1a45fe258162fefff38c9056d4d96ea185b40fc63",
         "carry_schema_version": 1,
         "inherited_operations": {},
         "opened_at_utc": "2026-11-04T01:45:37.787710Z",

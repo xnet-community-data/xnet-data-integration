@@ -130,6 +130,10 @@ class BudgetBlocked(RuntimeError):
     """New spending is not admitted; metadata reconciliation may continue."""
 
 
+class ExecutionAdmissionDenied(BudgetBlocked):
+    """A local refusal proven to precede execution intent and provider transport."""
+
+
 def autonomous_enabled(state):
     """Config alone never creates authority; activation is an explicit journal commit."""
     authority = CONFIG.get("autonomous_operation", {})
@@ -432,8 +436,16 @@ def write_operational_health(state):
     save(ROOT / "data/current/v3_operational_health.json", report)
 
 def tracker(state, proposed_spec=None, proposed_params=None):
+    def admission_guard():
+        # ExecutionTracker calls this ONLY for new work, before recording an
+        # execution intent or invoking transport. Never classify a generic
+        # BudgetBlocked raised later as proof that no work could have run.
+        try:
+            return usage_guard(state, proposed_spec, proposed_params)
+        except BudgetBlocked as error:
+            raise ExecutionAdmissionDenied(str(error)) from error
     return ExecutionTracker(state, api, lambda: checkpoint(state),
-                            lambda: usage_guard(state, proposed_spec, proposed_params),
+                            admission_guard,
                             now, time.sleep, CONFIG["performance"])
 
 def execute(spec, params=None, enforce_cap=True, timeout_seconds=None, state=None):
@@ -450,7 +462,11 @@ def execute(spec, params=None, enforce_cap=True, timeout_seconds=None, state=Non
             public_sources.update(CONFIG["reconciliation"][name] for name in ("manifest_query_id","repair_query_id"))
         if spec["query_id"] in public_sources:
             result_cache().require_capacity(state)
-        spec = prepare_standing_spec(state, spec, params)
+        try:
+            spec = prepare_standing_spec(state, spec, params)
+        except (BudgetBlocked, BudgetInputError) as error:
+            # Metadata/quote preparation cannot have submitted an execution.
+            raise ExecutionAdmissionDenied(str(error)) from error
     spec = {**spec, "accept_completed_outlier": bool(pending.get("execution_id")) or autonomous_enabled(state)}
     return tracker(state, spec, params).execute(spec, params, enforce_cap, timeout_seconds)
 
@@ -2229,18 +2245,31 @@ def main():
         )
 
         presentation_errors = {}
-        for spec in due_presentation[:max_presentation]:
+        presentation_attempts = 0
+        for spec in due_presentation:
+            if presentation_attempts >= max_presentation:
+                break
+            presentation_attempts += 1
             state.setdefault("presentation_last_attempts", {})[spec["key"]] = stamp()
             acceptance_before = None
+            admission_denied_before_submission = False
             try:
                 # Do not download presentation rows: charts use Dune's cached
                 # executions. Presentation failures are fail-soft because the
                 # previous successful Dune result remains valid.
-                record = execute(
-                    spec,
-                    timeout_seconds=presentation_timeout,
-                    state=state,
-                )
+                try:
+                    record = execute(
+                        spec,
+                        timeout_seconds=presentation_timeout,
+                        state=state,
+                    )
+                except ExecutionAdmissionDenied:
+                    # Still record this refusal below, without spending one of
+                    # the provider-attempt slots on a proven local denial. All
+                    # other failures and known-ID reconciliations keep a slot.
+                    presentation_attempts -= 1
+                    admission_denied_before_submission = True
+                    raise
                 # Execute/checkpoints are already durable. Roll back only the
                 # local acceptance attempt if its validation fails, never the ID.
                 acceptance_before = deepcopy(state)
@@ -2271,6 +2300,8 @@ def main():
                     "next_retry_at_utc": (
                         retry_at.isoformat().replace("+00:00", "Z") if retry_at else None
                     ),
+                    **({"admission_denied_before_submission": True}
+                       if admission_denied_before_submission else {}),
                 }
                 print(
                     f"::warning::Presentation refresh {spec['key']} "

@@ -1625,13 +1625,84 @@ def publish_data_generation(state, paths, source_records):
             raise
 
 def sync_independent_network(state):
-    """Import ONLY the collector-owned lane; never replace financial recovery."""
+    """Import ONLY the collector-owned lane; never replace financial recovery.
+
+    ``v3_sync_network.py`` deliberately exits 0 when an upstream payload fails
+    validation, so a zero exit is NOT evidence of a fresh acquisition. Its own
+    journal record is authoritative: ``preserved_last_good`` is surfaced here as
+    a truthful source issue carrying the collector's recorded error and its
+    actual attempt time, and that issue clears only after a validated
+    acquisition is really published. A cadence ("not due") skip moves no clock:
+    it never clears, re-stamps the attempt time, or resets the recorded backoff,
+    so an outstanding issue survives every skip. Publication stays all-or-nothing.
+    """
+    before = deepcopy(state.get("external_sources", {}).get("network", {}))
     try:
         run("v3_sync_network.py")
         refreshed = validate_journal(STATE.read_bytes())
-        if "network" in refreshed.get("external_sources", {}):
-            state.setdefault("external_sources", {})["network"] = refreshed["external_sources"]["network"]
-        state.setdefault("source_errors", {}).pop("network", None)
+        network = refreshed.get("external_sources", {}).get("network")
+        if not isinstance(network, dict):
+            # The collector owns this lane; a missing or malformed record can
+            # never prove a fresh acquisition, so fail closed via the existing path.
+            raise RuntimeError("network collector record is missing or not an object")
+        status = network.get("status")
+        if status not in ("live", "preserved_last_good"):
+            raise RuntimeError(f"network collector record has unknown status {status!r}")
+        attempt = network.get("last_attempt_utc")
+        if not isinstance(attempt, str) or not attempt.strip():
+            raise RuntimeError("network collector record has no attempt time")
+        try:
+            parse_instant(attempt, "network collector attempt")
+        except BudgetInputError as error:
+            raise RuntimeError(f"network collector attempt time is invalid: {error}") from error
+        if status == "live" and network.get("last_success_utc") != attempt:
+            raise RuntimeError("network collector live record lacks matching success evidence")
+        state.setdefault("external_sources", {})["network"] = deepcopy(network)
+        # A cadence skip leaves last_attempt_utc untouched: no fetch happened.
+        attempted = attempt != before.get("last_attempt_utc")
+        if status == "live":
+            if not attempted:
+                # A skip is not a validated acquisition; never clear on exit 0.
+                return
+            from v3_sync_network import uncommitted_network_collection
+            try:
+                published = load(ROOT / "data/current/xnet_network_state.json", {})
+            except (OSError, ValueError) as error:
+                raise RuntimeError(f"published network state is unreadable: {error}") from error
+            if uncommitted_network_collection(network, published):
+                # A success checkpoint ahead of its published data is not a
+                # published acquisition; the collector repairs it on retry.
+                print("::warning::Network acquisition is not published yet; "
+                      "retaining the recorded network source issue.", flush=True)
+                return
+            state.setdefault("source_errors", {}).pop("network", None)
+            return
+        # preserved_last_good: mirror the collector's truth, never invent a time.
+        detail = network.get("last_error") or (
+            "Network collector preserved last-good data without a recorded error")
+        issues = state.setdefault("source_errors", {})
+        previous = issues.get("network")
+        if not isinstance(previous, dict):
+            previous = {}
+        try:
+            prior = int(previous.get("consecutive_failures", 0) or 0)
+        except (TypeError, ValueError):
+            prior = 0
+        if attempted and previous.get("failed_at_utc") != attempt:
+            failures = prior + 1
+        else:
+            # Same attempt (or a skip): keep the recorded backoff, never reset it.
+            failures = max(prior, 1)
+        issues["network"] = {
+            "error": str(detail),
+            "failed_at_utc": attempt,
+            "consecutive_failures": failures,
+            "next_retry_at_utc": (previous.get("next_retry_at_utc")
+                                  if not attempted else None),
+            "unresolved_execution": False,
+            "automatic_recheck": True,
+        }
+        print(f"::warning::Source network preserved last-good data at {attempt}: {detail}", flush=True)
     except StateError:
         raise
     except (subprocess.CalledProcessError, OSError, RuntimeError) as error:

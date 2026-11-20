@@ -46,7 +46,7 @@ class StandingBudgetTests(unittest.TestCase):
     def test_user_approved_commercial_risk_still_preserves_monthly_and_other_query_limits(self):
         deployed=json.loads((Path(__file__).resolve().parents[1]/"config/v3_refresh.json").read_text())
         policy=deployed["autonomous_operation"]
-        self.assertEqual(policy["queries"]["8895089"]["max_operation_risk_credits"],12)
+        self.assertEqual(policy["queries"]["8895089"]["max_operation_risk_credits"],16.11)
         self.assertEqual(policy["operating_target_credits"],2500)
         self.assertEqual(policy["period_hard_limit_credits"],3000)
         self.assertEqual(policy["monthly_safety_reserve_credits"],100)
@@ -60,9 +60,15 @@ class StandingBudgetTests(unittest.TestCase):
         approval=reserve(self.state,deployed,USAGE,NOW,spec,{},"execution",10.737029412,
             operation_id="approved-commercial",evidence={"sample_execution_ids":["01M6CKVMT0K7CAF3YH0ET4RMB5"]})
         self.assertEqual(approval["quote_credits"],10.737029412)
+        aged=reserve(self.state,deployed,USAGE,NOW,spec,{},"execution",10.737029412*1.5,
+            operation_id="approved-commercial-aging",evidence={"sample_execution_ids":["01M6CKVMT0K7CAF3YH0ET4RMB5"]})
+        self.assertLessEqual(aged["quote_credits"],16.11)
+        boundary=reserve(self.state,deployed,USAGE,NOW,spec,{},"execution",16.11,
+            operation_id="approved-commercial-boundary",evidence={"sample_execution_ids":["observed"]})
+        self.assertEqual(boundary["quote_credits"],16.11)
         self.assertEqual(self.state["financial_journal"],original)
         with self.assertRaisesRegex(BudgetInputError,"standing risk authority"):
-            reserve(self.state,deployed,USAGE,NOW,spec,{},"execution",12.01,
+            reserve(self.state,deployed,USAGE,NOW,spec,{},"execution",16.12,
                 operation_id="still-blocked",evidence={"sample_execution_ids":["observed"]})
 
     def test_activated_book_loss_cannot_silently_create_a_new_spending_anchor(self):

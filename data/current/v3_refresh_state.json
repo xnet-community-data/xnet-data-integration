@@ -16448,23 +16448,6 @@
   "execution_history": [
     {
       "cancellation_requested_at_utc": null,
-      "execution_cost_credits": 0.098810767,
-      "execution_ended_at": "2026-10-25T13:49:31.360740229Z",
-      "execution_id": "01M5SN5NFCQ9TGENJ65FB6XCRZ",
-      "execution_started_at": "2026-10-25T13:49:30.991935964Z",
-      "financial_attempt_id": "a01ef3b7f5eb4dde8e6948609a1a32fd",
-      "key": "holders",
-      "performance": "medium",
-      "query_id": 8895092,
-      "query_parameters": {},
-      "result_bytes": 188,
-      "result_row_count": 6,
-      "shape_version": null,
-      "state": "QUERY_STATE_COMPLETED",
-      "submitted_at_utc": "2026-10-25T13:49:26.898383Z"
-    },
-    {
-      "cancellation_requested_at_utc": null,
       "execution_cost_credits": 0.171,
       "execution_ended_at": "2026-10-25T13:49:53.726074432Z",
       "execution_id": "01M5SN69QDC58AP1MM71YB9T78",
@@ -35120,6 +35103,23 @@
       "shape_version": null,
       "state": "QUERY_STATE_COMPLETED",
       "submitted_at_utc": "2026-11-25T11:47:32.371058Z"
+    },
+    {
+      "cancellation_requested_at_utc": null,
+      "execution_cost_credits": 0.260970589,
+      "execution_ended_at": "2026-11-25T20:45:22.355891986Z",
+      "execution_id": "01M8A793QFNSHD6MY6CC9635J0",
+      "execution_started_at": "2026-11-25T20:45:14.752924608Z",
+      "financial_attempt_id": "87ee6a75a57a4219bfdd5b39fcabab71",
+      "key": "xnet_transfers",
+      "performance": "medium",
+      "query_id": 8894037,
+      "query_parameters": {
+        "lookback_hours": 14
+      },
+      "shape_version": null,
+      "state": "QUERY_STATE_COMPLETED",
+      "submitted_at_utc": "2026-11-25T20:45:05.956131Z"
     }
   ],
   "external_sources": {
@@ -65435,9 +65435,9 @@
         "unresolved": false
       },
       "exec:01M8A793QFNSHD6MY6CC9635J0": {
-        "cost_credits": null,
+        "cost_credits": 0.260970589,
         "execution_id": "01M8A793QFNSHD6MY6CC9635J0",
-        "incurred_at_utc": null,
+        "incurred_at_utc": "2026-11-25T20:45:22.355891986Z",
         "kind": "execution",
         "liability_id": "exec:01M8A793QFNSHD6MY6CC9635J0",
         "query_id": 8894037,
@@ -65446,7 +65446,7 @@
         },
         "submission_id": "submission:87ee6a75a57a4219bfdd5b39fcabab71",
         "submitted_at_utc": "2026-11-25T20:45:05.956131Z",
-        "unresolved": true
+        "unresolved": false
       },
       "export_0191a9e1b6eb486e93c0748eb7a0cf39": {
         "basis": "observed_charge_not_inclusion",
@@ -75803,6 +75803,54 @@
         "query_id": 8894037
       },
       "submitted_at_utc": "2026-11-25T20:45:05.956131Z",
+      "terminal_status": {
+        "execution_cost_credits": 0.260970589,
+        "execution_ended_at": "2026-11-25T20:45:22.355891986Z",
+        "execution_id": "01M8A793QFNSHD6MY6CC9635J0",
+        "execution_started_at": "2026-11-25T20:45:14.752924608Z",
+        "expires_at": "2027-02-23T20:45:22.355902Z",
+        "is_execution_finished": true,
+        "query_id": 8894037,
+        "result_metadata": {
+          "column_names": [
+            "block_date",
+            "block_time",
+            "block_slot",
+            "tx_id",
+            "action",
+            "from_owner",
+            "to_owner",
+            "from_token_account",
+            "to_token_account",
+            "amount_raw",
+            "amount_xnet",
+            "event_multiplicity"
+          ],
+          "column_types": [
+            "date",
+            "timestamp(3) with time zone",
+            "bigint",
+            "varchar",
+            "varchar",
+            "varchar",
+            "varchar",
+            "varchar",
+            "varchar",
+            "uint256",
+            "double",
+            "bigint"
+          ],
+          "datapoint_count": 2892,
+          "execution_time_millis": 7602,
+          "pending_time_millis": 1936,
+          "result_set_bytes": 81752,
+          "row_count": 241,
+          "total_result_set_bytes": 81752,
+          "total_row_count": 241
+        },
+        "state": "QUERY_STATE_COMPLETED",
+        "submitted_at": "2026-11-25T20:45:12.81664Z"
+      },
       "timeout_seconds": 360
     }
   },
